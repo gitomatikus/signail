@@ -1,17 +1,35 @@
 import React, { useEffect, useState } from 'react';
-import QuestionModal from './QuestionModal';
+import { useNavigate } from 'react-router-dom';
 import Settings from './Settings';
 import { indexedDBService } from '../services/indexedDB';
+import wsManager from '../utils/websocket';
 
-const GameBoard = () => {
+const GameBoard = ({ isAdmin = false }) => {
+  const navigate = useNavigate();
   const [pack, setPack] = useState(null);
-  const [selectedQuestion, setSelectedQuestion] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedQuestionId, setSelectedQuestionId] = useState(null);
+  const [selectedQuestions, setSelectedQuestions] = useState(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState({});
   const [downloadProgress, setDownloadProgress] = useState(null); // null means not downloading
+
+  // Load selected questions from localStorage on component mount
+  useEffect(() => {
+    const savedQuestions = localStorage.getItem('selectedQuestions');
+    if (savedQuestions) {
+      const parsedQuestions = JSON.parse(savedQuestions);
+      setSelectedQuestions(new Set(parsedQuestions));
+    }
+  }, []);
+
+  // Save selected questions to localStorage whenever they change
+  useEffect(() => {
+    if (selectedQuestions.size > 0) {
+      localStorage.setItem('selectedQuestions', JSON.stringify([...selectedQuestions]));
+    }
+  }, [selectedQuestions]);
 
   const loadPack = async () => {
     try {
@@ -76,7 +94,97 @@ const GameBoard = () => {
 
   useEffect(() => {
     loadPack();
+    // Request selected questions update when component mounts
+    if (wsManager.ws && wsManager.ws.readyState === WebSocket.OPEN) {
+      wsManager.ws.send(JSON.stringify({
+        type: 'request_selected_questions'
+      }));
+    }
   }, []);
+
+  // Update selected questions when received from server
+  useEffect(() => {
+    const unsubscribe = wsManager.subscribe((data) => {
+      if (data.type === 'selected_questions_update') {
+        setSelectedQuestions(new Set(data.data));
+      } else if (data.type === 'question_select') {
+        const { questionId } = data.data;
+        setSelectedQuestionId(questionId);
+        if (isAdmin) {
+          navigate(`/admin/question/${questionId}`);
+        }
+      } else if (data.type === 'question_reveal') {
+        const { questionId } = data.data;
+        navigate(`/question/${questionId}`);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [navigate, isAdmin]);
+
+  const handleQuestionClick = (question) => {
+    // Check both conditions before allowing selection
+    if (selectedQuestionId || selectedQuestions.has(question.id)) {
+      console.log('Question already selected:', question.id);
+      return;
+    }
+    
+    // Update local state
+    setSelectedQuestionId(question.id);
+    
+    // Send WebSocket message
+    wsManager.sendQuestionSelect(question.id, isAdmin ? 'admin' : 'user');
+    
+    // Only navigate to question page if user is admin
+    if (isAdmin) {
+      navigate(`/admin/question/${question.id}`);
+    }
+  };
+
+  const goToNextRound = () => {
+    if (currentRoundIndex < pack.rounds.length - 1) {
+      setCurrentRoundIndex(currentRoundIndex + 1);
+    }
+  };
+
+  const goToPreviousRound = () => {
+    if (currentRoundIndex > 0) {
+      setCurrentRoundIndex(currentRoundIndex - 1);
+    }
+  };
+
+  // Add a function to clear selected questions
+  const clearSelectedQuestions = () => {
+    setSelectedQuestions(new Set());
+    setSelectedQuestionId(null);
+    localStorage.removeItem('selectedQuestions');
+  };
+
+  const handleSettingsClose = () => {
+    setSettingsOpen(false);
+    // Reload pack after settings are closed in case cache was cleared
+    loadPack();
+  };
+
+  const buttonStyle = {
+    padding: '8px 16px',
+    background: '#007bff',
+    color: 'white',
+    border: 'none',
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontSize: '16px',
+    minWidth: '40px'
+  };
+
+  const disabledButtonStyle = {
+    ...buttonStyle,
+    background: '#6c757d',
+    cursor: 'not-allowed',
+    opacity: 0.6
+  };
 
   if (loading) {
     return (
@@ -124,52 +232,6 @@ const GameBoard = () => {
   const round = pack.rounds[currentRoundIndex];
   const themes = round.themes;
   const maxQuestions = Math.max(...themes.map(theme => theme.questions.length));
-
-  const handleQuestionClick = (question) => {
-    setSelectedQuestion(question);
-    setModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setModalOpen(false);
-    setSelectedQuestion(null);
-  };
-
-  const goToNextRound = () => {
-    if (currentRoundIndex < pack.rounds.length - 1) {
-      setCurrentRoundIndex(currentRoundIndex + 1);
-    }
-  };
-
-  const goToPreviousRound = () => {
-    if (currentRoundIndex > 0) {
-      setCurrentRoundIndex(currentRoundIndex - 1);
-    }
-  };
-
-  const handleSettingsClose = () => {
-    setSettingsOpen(false);
-    // Reload pack after settings are closed in case cache was cleared
-    loadPack();
-  };
-
-  const buttonStyle = {
-    padding: '8px 16px',
-    background: '#007bff',
-    color: 'white',
-    border: 'none',
-    borderRadius: 4,
-    cursor: 'pointer',
-    fontSize: '16px',
-    minWidth: '40px'
-  };
-
-  const disabledButtonStyle = {
-    ...buttonStyle,
-    background: '#6c757d',
-    cursor: 'not-allowed',
-    opacity: 0.6
-  };
 
   // --- Modern Board Styles for left-side themes ---
   const pageStyle = {
@@ -244,6 +306,23 @@ const GameBoard = () => {
     boxShadow: 'none',
     cursor: 'default',
     minHeight: '64px',
+  };
+
+  const selectedCardStyle = {
+    ...cardStyle,
+    background: 'linear-gradient(180deg, #424242 60%, #616161 100%)',
+    cursor: 'default',
+    opacity: 0.7,
+    transform: 'scale(0.95)',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+  };
+
+  const disabledCardStyle = {
+    ...cardStyle,
+    opacity: 0.3,
+    cursor: 'not-allowed',
+    transform: 'scale(0.95)',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
   };
 
   // --- End Modern Board Styles ---
@@ -353,17 +432,28 @@ const GameBoard = () => {
           <div key={`theme-${rowIdx}`} style={themeCellStyle}>{theme.name}</div>,
           ...Array.from({ length: maxQuestions }).map((_, colIdx) => {
             const question = theme.questions[colIdx];
-            if (!question) {
+            if (!question || question.type === 'empty') {
               return <div key={`empty-${rowIdx}-${colIdx}`} style={emptyCardStyle}></div>;
             }
             const isHovered = hovered[`${rowIdx}-${colIdx}`];
+            const isSelected = question.id === selectedQuestionId;
+            const isDisabled = selectedQuestionId && question.id !== selectedQuestionId || selectedQuestions.has(question.id);
+            
             return (
               <div
                 key={`q-${rowIdx}-${colIdx}`}
-                style={isHovered ? { ...cardStyle, ...cardHoverStyle } : cardStyle}
-                onClick={() => handleQuestionClick(question)}
-                onMouseEnter={() => setHovered(h => ({ ...h, [`${rowIdx}-${colIdx}`]: true }))}
-                onMouseLeave={() => setHovered(h => ({ ...h, [`${rowIdx}-${colIdx}`]: false }))}
+                style={
+                  isSelected ? selectedCardStyle :
+                  isDisabled ? disabledCardStyle :
+                  isHovered ? { ...cardStyle, ...cardHoverStyle } : cardStyle
+                }
+                onClick={() => {
+                  if (!isDisabled) {
+                    handleQuestionClick(question);
+                  }
+                }}
+                onMouseEnter={() => !isDisabled && setHovered(h => ({ ...h, [`${rowIdx}-${colIdx}`]: true }))}
+                onMouseLeave={() => !isDisabled && setHovered(h => ({ ...h, [`${rowIdx}-${colIdx}`]: false }))}
               >
                 {question.price?.text || ''}
               </div>
@@ -371,10 +461,9 @@ const GameBoard = () => {
           })
         ])}
       </div>
-      <QuestionModal open={modalOpen} question={selectedQuestion} onClose={handleCloseModal} />
       {settingsOpen && <Settings onClose={handleSettingsClose} />}
     </div>
   );
 };
 
-export default GameBoard; 
+export default GameBoard;

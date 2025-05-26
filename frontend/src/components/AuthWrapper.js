@@ -37,35 +37,42 @@ const AuthWrapper = ({ children, isAdmin = false }) => {
   useEffect(() => {
     let unsubscribe;
 
-    // Check for existing user data in localStorage
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        const userData = JSON.parse(storedUser);
-        setUser(userData);
-        
-        // Set up WebSocket connection
-        unsubscribe = handleWebSocketConnection();
-        
-        // Wait for WebSocket to connect before sending user data
-        const checkConnection = setInterval(() => {
-          if (wsManager.ws && wsManager.ws.readyState === WebSocket.OPEN) {
-            clearInterval(checkConnection);
-            // Notify server about existing user
-            wsManager.sendUserLogin(userData);
-            // Fetch current online users
-            fetchOnlineUsers();
-          }
-        }, 100);
+    if (isAdmin) {
+      // For admin mode, set up WebSocket and fetch users immediately
+      unsubscribe = handleWebSocketConnection();
+      fetchOnlineUsers();
+      setLoading(false);
+    } else {
+      // Check for existing user data in localStorage
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        try {
+          const userData = JSON.parse(storedUser);
+          setUser(userData);
+          
+          // Set up WebSocket connection
+          unsubscribe = handleWebSocketConnection();
+          
+          // Wait for WebSocket to connect before sending user data
+          const checkConnection = setInterval(() => {
+            if (wsManager.ws && wsManager.ws.readyState === WebSocket.OPEN) {
+              clearInterval(checkConnection);
+              // Notify server about existing user
+              wsManager.sendUserLogin(userData);
+              // Fetch current online users
+              fetchOnlineUsers();
+            }
+          }, 100);
 
-        // Cleanup interval after 5 seconds if connection fails
-        setTimeout(() => clearInterval(checkConnection), 5000);
-      } catch (error) {
-        console.error('Error parsing stored user data:', error);
-        localStorage.removeItem('user');
+          // Cleanup interval after 5 seconds if connection fails
+          setTimeout(() => clearInterval(checkConnection), 5000);
+        } catch (error) {
+          console.error('Error parsing stored user data:', error);
+          localStorage.removeItem('user');
+        }
       }
+      setLoading(false);
     }
-    setLoading(false);
 
     // Cleanup
     return () => {
@@ -74,7 +81,7 @@ const AuthWrapper = ({ children, isAdmin = false }) => {
       }
       wsManager.disconnect();
     };
-  }, []);
+  }, [isAdmin]);
 
   const handleLogin = (userData) => {
     setUser(userData);
@@ -133,7 +140,7 @@ const AuthWrapper = ({ children, isAdmin = false }) => {
             Admin Mode
           </div>
         </div>
-        {React.cloneElement(children, { onlineUsers })}
+        {React.cloneElement(children, { onlineUsers, isAdmin })}
       </div>
     );
   }
@@ -182,7 +189,7 @@ const AuthWrapper = ({ children, isAdmin = false }) => {
           Logout
         </button>
       </div>
-      {React.cloneElement(children, { onlineUsers })}
+      {React.cloneElement(children, { onlineUsers, isAdmin })}
     </div>
   );
 };

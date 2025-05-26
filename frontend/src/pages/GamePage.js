@@ -2,7 +2,7 @@ import React from 'react';
 import GameBoard from '../components/GameBoard';
 import OnlineUsers from '../components/OnlineUsers';
 
-const GamePage = ({ onlineUsers }) => (
+const GamePage = ({ onlineUsers, isAdmin = false }) => (
   <div
     style={{
       display: 'flex',
@@ -14,7 +14,7 @@ const GamePage = ({ onlineUsers }) => (
     }}
   >
     <div style={{ width: '100%', maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
-      <GameBoard />
+      <GameBoard isAdmin={isAdmin} />
     </div>
     <div style={{ width: '100%', maxWidth: 1200, margin: 0, padding: 0, lineHeight: 1 }}>
       <OnlineUsers users={onlineUsers} />

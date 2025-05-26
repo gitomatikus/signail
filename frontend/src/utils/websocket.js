@@ -4,6 +4,7 @@ class WebSocketManager {
   constructor() {
     this.ws = null;
     this.subscribers = new Set();
+    this.selectedQuestions = new Set();
   }
 
   connect() {
@@ -43,6 +44,93 @@ class WebSocketManager {
       this.ws.send(JSON.stringify({
         type: 'user_login',
         data: userData
+      }));
+    }
+  }
+
+  sendQuestionSelect(questionId, userType) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'question_select',
+        data: { questionId, userType }
+      }));
+    }
+  }
+
+  sendClearSelectedQuestions() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'clear_selected_questions'
+      }));
+    }
+  }
+
+  getSelectedQuestions() {
+    return this.selectedQuestions;
+  }
+
+  handleMessage(event) {
+    try {
+      const data = JSON.parse(event.data);
+      
+      if (data.type === 'selected_questions_update') {
+        this.selectedQuestions = new Set(data.data);
+        // Notify subscribers about the update
+        this.notifySubscribers(data);
+      } else if (data.type === 'return_to_game') {
+        // When returning to game, request an update of selected questions
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({
+            type: 'request_selected_questions'
+          }));
+        }
+        this.notifySubscribers(data);
+      } else {
+        // Notify subscribers for other message types
+        this.notifySubscribers(data);
+      }
+    } catch (error) {
+      console.error('Error handling WebSocket message:', error);
+    }
+  }
+
+  sendQuestionReveal(questionId) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'question_reveal',
+        data: {
+          questionId
+        }
+      }));
+    }
+  }
+
+  sendAnswerReveal(questionId) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'answer_reveal',
+        data: {
+          questionId
+        }
+      }));
+    }
+  }
+
+  sendResponseReveal(questionId) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'response_reveal',
+        data: {
+          questionId
+        }
+      }));
+    }
+  }
+
+  sendReturnToGame() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'return_to_game'
       }));
     }
   }

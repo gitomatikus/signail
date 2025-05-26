@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { indexedDBService } from '../services/indexedDB';
+import wsManager from '../utils/websocket';
 
 const Settings = ({ onClose }) => {
   const [isClearing, setIsClearing] = useState(false);
@@ -10,6 +11,7 @@ const Settings = ({ onClose }) => {
       setIsClearing(true);
       setMessage('');
       await indexedDBService.deletePack('current');
+      wsManager.sendClearSelectedQuestions();
       setMessage('Cache cleared successfully!');
     } catch (error) {
       setMessage('Error clearing cache: ' + error.message);
