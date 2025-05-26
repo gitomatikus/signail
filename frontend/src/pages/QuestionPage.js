@@ -17,8 +17,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   const [currentRuleIndex, setCurrentRuleIndex] = useState(0);
   const [showAfterRound, setShowAfterRound] = useState(false);
   const [currentAfterRoundIndex, setCurrentAfterRoundIndex] = useState(0);
-  const [timer, setTimer] = useState(0);
-  const [isTimerActive, setIsTimerActive] = useState(false);
+  const [timer, setTimer] = useState(15);
 
   useEffect(() => {
     const loadQuestion = async () => {
@@ -106,29 +105,25 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   }, [question, currentRuleIndex, currentAfterRoundIndex, showAfterRound]);
 
   useEffect(() => {
-    if (!question || !isQuestionRevealed) return;
+    // Start timer immediately for user page, or when question is revealed for admin page
+    if (isReadOnly || isQuestionRevealed) {
+      const interval = setInterval(() => {
+        setTimer((prevTimer) => {
+          if (prevTimer <= 0) {
+            return 0;
+          }
+          return prevTimer - 1;
+        });
+      }, 1000);
 
-    // Calculate total duration from all rules
-    const totalDuration = question.rules.reduce((sum, rule) => sum + (rule.duration || 15), 0);
-    setTimer(totalDuration);
-    setIsTimerActive(true);
+      return () => clearInterval(interval);
+    }
+  }, [isQuestionRevealed, isReadOnly]);
 
-    const timerInterval = setInterval(() => {
-      setTimer(prevTimer => {
-        if (prevTimer <= 0) {
-          clearInterval(timerInterval);
-          setIsTimerActive(false);
-          return 0;
-        }
-        return prevTimer - 1;
-      });
-    }, 1000);
-
-    return () => {
-      clearInterval(timerInterval);
-      setIsTimerActive(false);
-    };
-  }, [question, isQuestionRevealed]);
+  // Reset timer when question page is opened
+  useEffect(() => {
+    setTimer(15);
+  }, [questionId, isQuestionRevealed]);
 
   const handleShowQuestion = () => {
     if (isAdmin && question) {
@@ -216,7 +211,6 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: '200px',
-    position: 'relative'
   };
 
   const buttonStyle = {
@@ -276,27 +270,8 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
     if (rules.length > 0) {
       const lastRuleIndex = Math.min(currentRuleIndex, rules.length - 1);
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {isTimerActive && (
-            <div style={{
-              background: 'rgba(0, 0, 0, 0.7)',
-              padding: '16px 32px',
-              borderRadius: '20px',
-              color: timer <= 5 ? '#ff4444' : '#ffd600',
-              fontSize: '3rem',
-              fontWeight: 'bold',
-              transition: 'color 0.3s ease',
-              textAlign: 'center',
-              marginBottom: '16px',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
-              border: '2px solid #fffde7'
-            }}>
-              {timer}s
-            </div>
-          )}
-          <div style={cardStyle}>
-            {renderRule(rules[lastRuleIndex])}
-          </div>
+        <div style={cardStyle}>
+          {renderRule(rules[lastRuleIndex])}
         </div>
       );
     }
@@ -350,6 +325,23 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           }}>
             SignAil
           </span>
+        </div>
+      </div>
+      {/* Timer centered above the question block */}
+      <div style={{
+        width: '100%',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}>
+        <div style={{
+          fontSize: '4rem',
+          color: 'white',
+          fontWeight: 'bold',
+          textShadow: '0 4px 24px rgba(0,0,0,0.3)',
+          marginBottom: '8px',
+        }}>
+          {timer}
         </div>
       </div>
       {/* Main board: rules grid */}
