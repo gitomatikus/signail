@@ -3,7 +3,7 @@ import LoginPage from './LoginPage';
 import wsManager from '../utils/websocket';
 import config from '../config';
 
-const AuthWrapper = ({ children }) => {
+const AuthWrapper = ({ children, isAdmin = false }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState([]);
@@ -105,6 +105,35 @@ const AuthWrapper = ({ children }) => {
         height: '100vh'
       }}>
         Loading...
+      </div>
+    );
+  }
+
+  // In admin mode, skip login and render the game directly
+  if (isAdmin) {
+    return (
+      <div>
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          padding: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '1rem',
+          zIndex: 1000
+        }}>
+          <div style={{ 
+            padding: '0.5rem 1rem',
+            background: '#28a745',
+            color: 'white',
+            borderRadius: '4px',
+            fontWeight: 'bold'
+          }}>
+            Admin Mode
+          </div>
+        </div>
+        {React.cloneElement(children, { onlineUsers })}
       </div>
     );
   }

@@ -365,7 +365,7 @@ const GameBoard = () => {
                 onMouseEnter={() => setHovered(h => ({ ...h, [`${rowIdx}-${colIdx}`]: true }))}
                 onMouseLeave={() => setHovered(h => ({ ...h, [`${rowIdx}-${colIdx}`]: false }))}
               >
-                {question.price}
+                {question.price?.text || ''}
               </div>
             );
           })

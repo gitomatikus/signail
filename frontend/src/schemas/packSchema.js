@@ -8,7 +8,6 @@
 /**
  * @typedef {Object} Round
  * @property {string} name - The name of the round
- * @property {string} [music] - Optional music file path
  * @property {Theme[]} themes - Array of themes in the round
  */
 
@@ -22,11 +21,19 @@
 
 /**
  * @typedef {Object} Question
- * @property {string} id - Unique identifier for the question
+ * @property {number} id - Unique identifier for the question
  * @property {Price} [price] - Optional price information
  * @property {QuestionType} type - Type of the question
  * @property {Rule[]} [rules] - Optional rules for the question
  * @property {Rule[]} [after_round] - Optional rules to apply after the round
+ */
+
+/**
+ * @typedef {Object} Price
+ * @property {string} text - Text representation of the price
+ * @property {number} correct - Points for correct answer
+ * @property {number} incorrect - Points for incorrect answer
+ * @property {string} random_range - Range for random price selection (e.g. "1-300" or "null")
  */
 
 /**
@@ -38,26 +45,11 @@
  */
 
 /**
- * @typedef {Object} Price
- * @property {string} text - Text representation of the price
- * @property {number} correct - Points for correct answer
- * @property {number} incorrect - Points for incorrect answer
- * @property {RandomRange} random_range - Range for random price selection
- */
-
-/**
- * @typedef {Object} RandomRange
- * @property {number} min - Minimum value
- * @property {number} max - Maximum value
- */
-
-/**
  * @enum {string}
  */
 const QuestionType = {
     Normal: 'normal',
     Secret: 'secret',
-    Self: 'self',
     Empty: 'empty'
 };
 

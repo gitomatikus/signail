@@ -13,6 +13,6 @@ ENV PORT=8000
 ENV WS_PATH=/ws
 ENV CORS_ORIGIN=*
 
-EXPOSE ${PORT}
+EXPOSE 8000
 
 CMD ["npm", "run", "dev"] 

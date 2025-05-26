@@ -1,0 +1,151 @@
+{
+  "author": "cat",
+  "name": "super pack",
+  "rounds": [
+    {
+      "name": "Pack",
+      "themes": [
+        {
+          "name": "pes patron",
+          "description": "хто тримає весь район?",
+          "ordered": false,
+          "questions": [
+            {
+                "id" :  1,
+                "price": {
+                "text": "???",
+                "correct": 300,
+                "incorrect": -300,
+                "random_range": "1-300"
+              },
+              "type": "secret",
+              "rules": [
+                {
+                  "type": "embedded",
+                  "content": "some embedded bullshit/markdown",
+                  "duration": 3
+                },
+                {
+                  "type": "app",
+                  "path": "/visual_novel",
+                  "duration": 1
+                }
+              ],
+              "after_round": [
+                {
+                  "type": "embedded",
+                  "content": "some embedded bullshit/markdown",
+                  "duration": 3
+                }
+              ]
+            },{
+                "id" :  2,
+                "price": {
+                "text": "300",
+                "correct": 300,
+                "incorrect": -300,
+                "random_range": "null"
+              },
+              "type": "normal",
+              "rules": [
+                {
+                  "type": "embedded",
+                  "content": "some embedded bullshit/markdown",
+                  "duration": 3
+                }
+              ],
+              "after_round": [
+                {
+                  "type": "embedded",
+                  "content": "some embedded bullshit/markdown",
+                  "duration": 3
+                }
+              ]
+            },
+            {
+              "id" :  3,
+              "type": "empty"
+            }
+          ]
+        },
+        {
+          "name": "second theme",
+          "description": "друга тема?",
+          "ordered": false,
+          "questions": [
+            {
+                "id" :  4,
+                "price": {
+                "text": "100",
+                "correct": 300,
+                "incorrect": -300,
+                "random_range": "1-300"
+              },
+              "type": "secret",
+              "rules": [
+                {
+                  "type": "embedded",
+                  "content": "питання",
+                  "duration": 3
+                }
+              ],
+              "after_round": [
+                {
+                  "type": "embedded",
+                  "content": "some embedded bullshit/markdown",
+                  "duration": 3
+                }
+              ]
+            },{
+              "id": 5,
+              "price": {
+                "text": "200",
+                "correct": 300,
+                "incorrect": -300,
+                "random_range": "null"
+              },
+              "type": "normal",
+              "rules": [
+                {
+                  "type": "embedded",
+                  "content": "some embedded bullshit/markdown",
+                  "duration": 3
+                }
+              ],
+              "after_round": [
+                {
+                  "type": "embedded",
+                  "content": "some embedded bullshit/markdown",
+                  "duration": 3
+                }
+              ]
+            },{
+              "id": 6,
+              "price": {
+                "text": "200",
+                "correct": 300,
+                "incorrect": -300,
+                "random_range": "null"
+              },
+              "type": "normal",
+              "rules": [
+                {
+                  "type": "embedded",
+                  "content": "some embedded bullshit/markdown",
+                  "duration": 3
+                }
+              ],
+              "after_round": [
+                {
+                  "type": "embedded",
+                  "content": "some embedded bullshit/markdown",
+                  "duration": 3
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

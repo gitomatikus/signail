@@ -95,7 +95,7 @@ app.get('/api/data', (req, res) => {
 
 // Serve pack.json
 app.get('/api/pack', (req, res) => {
-    fs.readFile(path.join(__dirname, 'pack.json'), 'utf8', (err, data) => {
+    fs.readFile(path.join(__dirname, 'pack1.json'), 'utf8', (err, data) => {
         if (err) {
             return res.status(500).json({ error: 'Could not read pasck.json' });
         }
