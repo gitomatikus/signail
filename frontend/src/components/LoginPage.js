@@ -92,6 +92,11 @@ const LoginPage = ({ onLogin }) => {
             <label style={{ display: 'block', marginBottom: '0.5rem' }}>
               Image URL:
             </label>
+            <div style={{ fontSize: '0.8rem', marginBottom: '0.5rem' }}>
+              <a href="https://giphy.com" target="_blank" rel="noopener noreferrer" style={{ color: '#007bff', textDecoration: 'none' }}>
+                upload
+              </a>
+            </div>
             {showPreview && (
               <div style={{
                 width: 80,
@@ -105,17 +110,33 @@ const LoginPage = ({ onLogin }) => {
                 background: '#fafafa',
                 overflow: 'hidden',
               }}>
-                <img
-                  src={imageUrl}
-                  alt="preview"
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                    borderRadius: 12,
-                  }}
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
+                {imageUrl.toLowerCase().endsWith('.mp4') ? (
+                  <video
+                    src={imageUrl}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      borderRadius: 12,
+                    }}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                  />
+                ) : (
+                  <img
+                    src={imageUrl}
+                    alt="preview"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      borderRadius: 12,
+                    }}
+                    onError={e => { e.target.style.display = 'none'; }}
+                  />
+                )}
               </div>
             )}
             <input

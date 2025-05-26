@@ -461,7 +461,7 @@ const GameBoard = ({ isAdmin = false }) => {
           })
         ])}
       </div>
-      {settingsOpen && <Settings onClose={handleSettingsClose} />}
+      {settingsOpen && <Settings onClose={handleSettingsClose} isAdmin={isAdmin} />}
     </div>
   );
 };

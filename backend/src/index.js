@@ -72,6 +72,39 @@ app.get('/api/users/online', (req, res) => {
     });
 });
 
+// Update user score endpoint
+app.post('/api/users/:userId/score', express.json(), (req, res) => {
+    const { userId } = req.params;
+    const { score } = req.body;
+
+    if (typeof score !== 'number') {
+        return res.status(400).json({
+            status: 'error',
+            message: 'Score must be a number'
+        });
+    }
+
+    const userData = wsManager.persistentUsers.get(userId);
+    if (!userData) {
+        return res.status(404).json({
+            status: 'error',
+            message: 'User not found'
+        });
+    }
+
+    // Update the score
+    userData.score = score;
+    wsManager.persistentUsers.set(userId, userData);
+
+    // Broadcast the updated user list to all clients
+    wsManager.broadcastOnlineUsers();
+
+    res.json({
+        status: 'success',
+        data: userData
+    });
+});
+
 // Sample JSON API endpoints
 app.get('/api/messages', (req, res) => {
     res.json({
@@ -106,6 +139,16 @@ app.get('/api/pack', (req, res) => {
             res.status(500).json({ error: 'Invalid JSON in pack.json' });
         }
     });
+});
+
+// Get times for a specific question
+app.get('/api/questions/:questionId/times', (req, res) => {
+  const questionId = parseInt(req.params.questionId);
+  const times = wsManager.getQuestionTimes(questionId);
+  res.json({
+    status: 'success',
+    data: Object.fromEntries(times)
+  });
 });
 
 // Start the server

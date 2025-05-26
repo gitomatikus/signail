@@ -2,21 +2,34 @@ import React, { useState } from 'react';
 import { indexedDBService } from '../services/indexedDB';
 import wsManager from '../utils/websocket';
 
-const Settings = ({ onClose }) => {
-  const [isClearing, setIsClearing] = useState(false);
+const Settings = ({ onClose, isAdmin = false }) => {
+  const [isClearingCache, setIsClearingCache] = useState(false);
+  const [isClearingPack, setIsClearingPack] = useState(false);
   const [message, setMessage] = useState('');
 
   const handleClearCache = async () => {
     try {
-      setIsClearing(true);
+      setIsClearingCache(true);
       setMessage('');
-      await indexedDBService.deletePack('current');
-      wsManager.sendClearSelectedQuestions();
+      wsManager.sendClearCache();
       setMessage('Cache cleared successfully!');
     } catch (error) {
       setMessage('Error clearing cache: ' + error.message);
     } finally {
-      setIsClearing(false);
+      setIsClearingCache(false);
+    }
+  };
+
+  const handleClearPack = async () => {
+    try {
+      setIsClearingPack(true);
+      setMessage('');
+      await indexedDBService.deletePack('current');
+      setMessage('Pack cleared successfully!');
+    } catch (error) {
+      setMessage('Error clearing pack: ' + error.message);
+    } finally {
+      setIsClearingPack(false);
     }
   };
 
@@ -41,20 +54,36 @@ const Settings = ({ onClose }) => {
         maxWidth: 600
       }}>
         <h2>Settings</h2>
-        <div style={{ marginTop: 20 }}>
+        <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {isAdmin && (
+            <button
+              onClick={handleClearCache}
+              disabled={isClearingCache}
+              style={{
+                padding: '8px 16px',
+                background: '#dc3545',
+                color: 'white',
+                border: 'none',
+                borderRadius: 4,
+                cursor: isClearingCache ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isClearingCache ? 'Clearing...' : 'Clear Cache'}
+            </button>
+          )}
           <button
-            onClick={handleClearCache}
-            disabled={isClearing}
+            onClick={handleClearPack}
+            disabled={isClearingPack}
             style={{
               padding: '8px 16px',
               background: '#dc3545',
               color: 'white',
               border: 'none',
               borderRadius: 4,
-              cursor: isClearing ? 'not-allowed' : 'pointer'
+              cursor: isClearingPack ? 'not-allowed' : 'pointer'
             }}
           >
-            {isClearing ? 'Clearing...' : 'Clear Cache'}
+            {isClearingPack ? 'Clearing...' : 'Clear Pack'}
           </button>
           {message && (
             <p style={{

@@ -65,6 +65,14 @@ class WebSocketManager {
     }
   }
 
+  sendClearCache() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'clear_cache'
+      }));
+    }
+  }
+
   getSelectedQuestions() {
     return this.selectedQuestions;
   }
@@ -122,6 +130,19 @@ class WebSocketManager {
         type: 'response_reveal',
         data: {
           questionId
+        }
+      }));
+    }
+  }
+
+  sendElapsedTime(questionId, elapsedTime, userId) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'elapsed_time',
+        data: {
+          questionId,
+          elapsedTime,
+          userId
         }
       }));
     }

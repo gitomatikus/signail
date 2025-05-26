@@ -6,6 +6,7 @@ class WebSocketManager {
     this.onlineUsers = new Map(); // Map of user data by WebSocket connection
     this.persistentUsers = new Map(); // Map of user data by userId
     this.selectedQuestions = new Set(); // Track selected questions
+    this.questionTimes = new Map(); // Map of question ID to user times
   }
 
   initialize(server) {
@@ -66,6 +67,9 @@ class WebSocketManager {
           } else if (data.type === 'return_to_game') {
             // Broadcast return to game to all clients
             this.broadcastReturnToGame();
+          } else if (data.type === 'elapsed_time') {
+            // Broadcast elapsed time to all clients
+            this.broadcastElapsedTime(data.data);
           } else if (data.type === 'clear_selected_questions') {
             // Clear selected questions
             this.selectedQuestions.clear();
@@ -77,6 +81,28 @@ class WebSocketManager {
               type: 'selected_questions_update',
               data: Array.from(this.selectedQuestions)
             }));
+          } else if (data.type === 'clear_cache') {
+            // Clear selected questions
+            this.selectedQuestions.clear();
+            // Clear all question times
+            this.clearAllQuestionTimes();
+            // Reset all user scores
+            this.persistentUsers.forEach(userData => {
+              userData.score = 0;
+            });
+            // Broadcast updated selected questions to all clients
+            this.broadcastSelectedQuestions();
+            // Broadcast updated user list to all clients
+            this.broadcastOnlineUsers();
+          } else if (data.type === 'update_score') {
+            const { userId, score } = data.data;
+            const userData = this.persistentUsers.get(userId);
+            if (userData) {
+              userData.score = score;
+              this.persistentUsers.set(userId, userData);
+              // Broadcast updated user list to all clients
+              this.broadcastOnlineUsers();
+            }
           }
         } catch (error) {
           console.error('Error processing message:', error);
@@ -189,8 +215,59 @@ class WebSocketManager {
     });
   }
 
+  broadcastElapsedTime(data) {
+    const { questionId, elapsedTime, userId } = data;
+    
+    // Store the time in memory
+    if (!this.questionTimes.has(questionId)) {
+      this.questionTimes.set(questionId, new Map());
+    }
+    
+    // Only store the time if the user doesn't already have one
+    const questionTimes = this.questionTimes.get(questionId);
+    if (!questionTimes.has(userId)) {
+      questionTimes.set(userId, elapsedTime);
+
+      const message = JSON.stringify({
+        type: 'elapsed_time',
+        data: data
+      });
+
+      this.wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(message);
+        }
+      });
+    }
+  }
+
   getOnlineUsers() {
     return Array.from(this.persistentUsers.values());
+  }
+
+  // Add method to get times for a specific question
+  getQuestionTimes(questionId) {
+    return this.questionTimes.get(questionId) || new Map();
+  }
+
+  // Add method to clear times for a specific question
+  clearQuestionTimes(questionId) {
+    this.questionTimes.delete(questionId);
+  }
+
+  // Add method to clear all question times
+  clearAllQuestionTimes() {
+    this.questionTimes.clear();
+    // Broadcast the clear times event to all clients
+    const message = JSON.stringify({
+      type: 'clear_question_times'
+    });
+
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
   }
 }
 

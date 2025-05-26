@@ -87,8 +87,17 @@ const AuthWrapper = ({ children, isAdmin = false }) => {
     setUser(userData);
     // Notify server about new user
     wsManager.sendUserLogin(userData);
-    // Fetch current online users
-    fetchOnlineUsers();
+    // Wait for WebSocket to connect before fetching online users
+    const checkConnection = setInterval(() => {
+      if (wsManager.ws && wsManager.ws.readyState === WebSocket.OPEN) {
+        clearInterval(checkConnection);
+        // Fetch current online users
+        fetchOnlineUsers();
+      }
+    }, 100);
+
+    // Cleanup interval after 5 seconds if connection fails
+    setTimeout(() => clearInterval(checkConnection), 5000);
   };
 
   const handleLogout = () => {
@@ -163,16 +172,32 @@ const AuthWrapper = ({ children, isAdmin = false }) => {
         zIndex: 1000
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <img
-            src={user.imageUrl}
-            alt={user.name}
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              objectFit: 'cover'
-            }}
-          />
+          {user.imageUrl.toLowerCase().endsWith('.mp4') ? (
+            <video
+              src={user.imageUrl}
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                objectFit: 'cover'
+              }}
+              autoPlay
+              loop
+              muted
+              playsInline
+            />
+          ) : (
+            <img
+              src={user.imageUrl}
+              alt={user.name}
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                objectFit: 'cover'
+              }}
+            />
+          )}
           <span style={{ color: '#aaa' }}>{user.name}</span>
         </div>
         <button

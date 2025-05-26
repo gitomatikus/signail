@@ -22,23 +22,14 @@
               "rules": [
                 {
                   "type": "embedded",
-                  "content": "Question 1"
-                },
-                {
-                  "type": "embedded",
-                  "content": "Question 2",
-                  "duration": 1
+                  "content": "Хто дасть правильну відповідь на це питання?",
+                  "duration": 10
                 }
               ],
               "after_round": [
                 {
                   "type": "embedded",
-                  "content": "Response 1",
-                  "duration": 3
-                },
-                {
-                  "type": "embedded",
-                  "content": "Response 2",
+                  "content": "<img src='https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExNjZheml4ODhhN2c0YnludmV1N3dwYm1uNm42NDdqajhvenN4bDc3ZSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/lBfdQL9yPeDNapbBgL/giphy.gif'>",
                   "duration": 3
                 }
               ]
@@ -58,14 +49,19 @@
               "rules": [
                 {
                   "type": "embedded",
-                  "content": "some embedded bullshit/markdown",
+                  "content": "<img src='https://i.ytimg.com/vi/IeouIsdFEcw/mqdefault.jpg'>",
                   "duration": 3
                 }
               ],
               "after_round": [
                 {
                   "type": "embedded",
-                  "content": "some embedded bullshit/markdown",
+                  "content": "Гном",
+                  "duration": 3
+                },
+                {
+                  "type": "embedded",
+                  "content": "Обмазаний гімном",
                   "duration": 3
                 }
               ]
@@ -81,8 +77,8 @@
                 "id" :  4,
                 "price": {
                 "text": "100",
-                "correct": 300,
-                "incorrect": -300,
+                "correct": 100,
+                "incorrect": -150,
                 "random_range": "1-300"
               },
               "type": "secret",
@@ -91,12 +87,17 @@
                   "type": "embedded",
                   "content": "питання",
                   "duration": 3
+                },
+                {
+                  "type": "embedded",
+                  "content": "Question 2",
+                  "duration": 1
                 }
               ],
               "after_round": [
                 {
                   "type": "embedded",
-                  "content": "some embedded bullshit/markdown",
+                  "content": "відповідь",
                   "duration": 3
                 }
               ]
@@ -104,8 +105,8 @@
               "id": 5,
               "price": {
                 "text": "200",
-                "correct": 300,
-                "incorrect": -300,
+                "correct": 200,
+                "incorrect": -340,
                 "random_range": "null"
               },
               "type": "normal",
@@ -127,8 +128,8 @@
               "id": 6,
               "price": {
                 "text": "200",
-                "correct": 300,
-                "incorrect": -300,
+                "correct": 200,
+                "incorrect": -200,
                 "random_range": "null"
               },
               "type": "normal",

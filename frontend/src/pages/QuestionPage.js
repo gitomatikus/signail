@@ -4,6 +4,66 @@ import { indexedDBService } from '../services/indexedDB';
 import wsManager from '../utils/websocket';
 import OnlineUsers from '../components/OnlineUsers';
 import Settings from '../components/Settings';
+import config from '../config';
+
+// Sanitize HTML content to allow only safe tags and attributes
+const sanitizeHtml = (html) => {
+  const allowedTags = ['img', 'video', 'audio', 'source', 'p', 'br', 'strong', 'em', 'u', 'i', 'b'];
+  const allowedAttributes = {
+    img: ['src', 'alt', 'width', 'height', 'style'],
+    video: ['src', 'controls', 'autoplay', 'loop', 'muted', 'width', 'height', 'style'],
+    audio: ['src', 'controls', 'autoplay', 'loop', 'muted', 'style'],
+    source: ['src', 'type'],
+    '*': ['style', 'class']
+  };
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  
+  const sanitizeNode = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent;
+    }
+    
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName.toLowerCase();
+      
+      if (!allowedTags.includes(tagName)) {
+        return node.textContent;
+      }
+      
+      const allowedAttrs = allowedAttributes[tagName] || allowedAttributes['*'] || [];
+      const sanitizedAttrs = {};
+      
+      for (const attr of allowedAttrs) {
+        if (node.hasAttribute(attr)) {
+          sanitizedAttrs[attr] = node.getAttribute(attr);
+        }
+      }
+      
+      const sanitizedNode = document.createElement(tagName);
+      for (const [attr, value] of Object.entries(sanitizedAttrs)) {
+        sanitizedNode.setAttribute(attr, value);
+      }
+      
+      for (const child of node.childNodes) {
+        const sanitizedChild = sanitizeNode(child);
+        if (typeof sanitizedChild === 'string') {
+          sanitizedNode.appendChild(document.createTextNode(sanitizedChild));
+        } else {
+          sanitizedNode.appendChild(sanitizedChild);
+        }
+      }
+      
+      return sanitizedNode;
+    }
+    
+    return '';
+  };
+
+  const sanitized = sanitizeNode(doc.body);
+  return sanitized.innerHTML;
+};
 
 const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] }) => {
   const { questionId } = useParams();
@@ -18,6 +78,11 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   const [showAfterRound, setShowAfterRound] = useState(false);
   const [currentAfterRoundIndex, setCurrentAfterRoundIndex] = useState(0);
   const [timer, setTimer] = useState(15);
+  const [startTime, setStartTime] = useState(null);
+  const [elapsedTime, setElapsedTime] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [hasRecordedTime, setHasRecordedTime] = useState(false);
+  const [userTimes, setUserTimes] = useState({});
 
   useEffect(() => {
     const loadQuestion = async () => {
@@ -42,6 +107,17 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           throw new Error('Question not found');
         }
         setQuestion(foundQuestion);
+
+        // Fetch existing times for this question
+        try {
+          const response = await fetch(`${config.apiUrl}/api/questions/${questionId}/times`);
+          const result = await response.json();
+          if (result.status === 'success') {
+            setUserTimes(result.data);
+          }
+        } catch (error) {
+          console.error('Error fetching question times:', error);
+        }
       } catch (error) {
         console.error('Error loading question:', error);
         navigate(isAdmin ? '/admin' : '/');
@@ -65,6 +141,15 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         setShowAfterRound(true);
       } else if (data.type === 'return_to_game') {
         navigate(isAdmin ? '/admin' : '/');
+      } else if (data.type === 'elapsed_time') {
+        setUserTimes(prev => ({
+          ...prev,
+          [data.data.userId]: data.data.elapsedTime
+        }));
+      } else if (data.type === 'clear_question_times') {
+        setUserTimes({});
+        setElapsedTime(null);
+        setHasRecordedTime(false);
       }
     });
     return () => {
@@ -120,10 +205,64 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
     }
   }, [isQuestionRevealed, isReadOnly]);
 
-  // Reset timer when question page is opened
+  // Helper to calculate total duration from question rules
+  const getInitialTimerValue = (question) => {
+    if (!question || !question.rules || question.rules.length === 0) return 15;
+    return question.rules.reduce((sum, rule) => sum + (rule.duration || 15), 0);
+  };
+
+  // Reset timer when question page is opened or question is revealed
   useEffect(() => {
-    setTimer(15);
-  }, [questionId, isQuestionRevealed]);
+    setTimer(getInitialTimerValue(question));
+  }, [questionId, isQuestionRevealed, question]);
+
+  // Get current user from localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        const userData = JSON.parse(storedUser);
+        setCurrentUserId(userData.id);
+      } catch (error) {
+        console.error('Error parsing stored user data:', error);
+      }
+    }
+  }, []);
+
+  // Add keyboard event listener for space and right arrow
+  useEffect(() => {
+    const handleKeyPress = (event) => {
+      if ((event.code === 'Space' || event.code === 'ArrowRight') && 
+          ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) &&
+          !hasRecordedTime && 
+          !userTimes[currentUserId]) {
+        const endTime = Date.now();
+        const timeTaken = (endTime - startTime) / 1000; // Convert to seconds
+        setElapsedTime(timeTaken);
+        setHasRecordedTime(true);
+        // Send elapsed time to other users
+        wsManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
+        console.log('=== SCORE LOG ===');
+        console.log(`Score: ${question?.price?.correct || 0} points`);
+        console.log(`Time taken: ${timeTaken.toFixed(3)} seconds`);
+        console.log('================');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [isQuestionRevealed, isAnswerRevealed, startTime, question, isAdmin, hasRecordedTime, questionId, currentUserId, userTimes]);
+
+  // Start timer when question is revealed or when non-admin user sees the question
+  useEffect(() => {
+    if ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) {
+      console.log('Starting timer at:', new Date().toISOString());
+      setStartTime(Date.now());
+      setElapsedTime(null);
+      setHasRecordedTime(false);
+      setUserTimes({}); // Reset all user times when starting new question
+    }
+  }, [isQuestionRevealed, isAnswerRevealed, isAdmin]);
 
   const handleShowQuestion = () => {
     if (isAdmin && question) {
@@ -211,6 +350,17 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: '200px',
+    '& img, & video, & audio': {
+      maxWidth: '100%',
+      maxHeight: '400px',
+      margin: '10px 0',
+      borderRadius: '8px',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+    },
+    '& video, & audio': {
+      width: '100%',
+      maxWidth: '600px'
+    }
   };
 
   const buttonStyle = {
@@ -227,9 +377,10 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   const renderRule = (rule) => {
     if (rule.type === 'embedded') {
       return (
-        <div style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}>
-          {rule.content}
-        </div>
+        <div
+          style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
+          dangerouslySetInnerHTML={{ __html: rule.content }}
+        />
       );
     } else if (rule.type === 'app') {
       return (
@@ -252,14 +403,23 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
               <div style={cardStyle}>
                 <div style={{ color: '#ffd600', fontSize: '1.5rem', marginBottom: '16px' }}>Question:</div>
                 {question.rules.map((rule, index) => (
-                  <div key={index} style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap', marginBottom: '8px' }}>
-                    {rule.content}
-                  </div>
+                  <div 
+                    key={index} 
+                    style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap', marginBottom: '8px' }}
+                    dangerouslySetInnerHTML={{ __html: rule.content }}
+                  />
                 ))}
               </div>
             )}
             <div style={cardStyle}>
-              {renderRule(afterRoundRules[lastRuleIndex])}
+              {afterRoundRules[lastRuleIndex].type === 'embedded' ? (
+                <div
+                  style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
+                  dangerouslySetInnerHTML={{ __html: afterRoundRules[lastRuleIndex].content }}
+                />
+              ) : (
+                renderRule(afterRoundRules[lastRuleIndex])
+              )}
             </div>
           </div>
         );
@@ -271,7 +431,14 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
       const lastRuleIndex = Math.min(currentRuleIndex, rules.length - 1);
       return (
         <div style={cardStyle}>
-          {renderRule(rules[lastRuleIndex])}
+          {rules[lastRuleIndex].type === 'embedded' ? (
+            <div
+              style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
+              dangerouslySetInnerHTML={{ __html: rules[lastRuleIndex].content }}
+            />
+          ) : (
+            renderRule(rules[lastRuleIndex])
+          )}
         </div>
       );
     }
@@ -398,9 +565,16 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
       </div>
       {/* Online users below the board */}
       <div style={{ width: '100%', maxWidth: 1200, margin: 0, padding: 0, lineHeight: 1 }}>
-        <OnlineUsers users={onlineUsers} />
+        <OnlineUsers 
+          users={onlineUsers} 
+          elapsedTime={elapsedTime}
+          currentUserId={currentUserId}
+          userTimes={userTimes}
+          isAdmin={isAdmin}
+          question={question}
+        />
       </div>
-      {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} isAdmin={isAdmin} />}
     </div>
   );
 };
