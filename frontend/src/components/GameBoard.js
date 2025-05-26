@@ -11,10 +11,12 @@ const GameBoard = () => {
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState({});
+  const [downloadProgress, setDownloadProgress] = useState(null); // null means not downloading
 
   const loadPack = async () => {
     try {
       setLoading(true);
+      setDownloadProgress(null);
       // Try to get the pack from IndexedDB first
       const cachedPack = await indexedDBService.getPack('current');
       
@@ -24,18 +26,51 @@ const GameBoard = () => {
         return;
       }
 
-      // If not in IndexedDB, fetch from API
+      // If not in IndexedDB, fetch from API with progress
       const response = await fetch('http://localhost:8000/api/pack');
-      const data = await response.json();
-      
-      // Save to IndexedDB
+      if (!response.body || !window.ReadableStream) {
+        // Fallback: no progress support
+        const data = await response.json();
+        await indexedDBService.savePack({ id: 'current', ...data });
+        setPack(data);
+        setLoading(false);
+        return;
+      }
+      const contentLength = response.headers.get('Content-Length');
+      const total = contentLength ? parseInt(contentLength, 10) : null;
+      let loaded = 0;
+      let chunks = [];
+      const reader = response.body.getReader();
+      let progressKnown = !!total;
+      let progress = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.length;
+        if (total) {
+          progress = Math.round((loaded / total) * 100);
+          setDownloadProgress(progress);
+        } else {
+          setDownloadProgress(-1); // -1 means indeterminate
+        }
+      }
+      // Combine chunks and decode
+      const allChunks = new Uint8Array(chunks.reduce((acc, val) => acc + val.length, 0));
+      let offset = 0;
+      for (const chunk of chunks) {
+        allChunks.set(chunk, offset);
+        offset += chunk.length;
+      }
+      const text = new TextDecoder('utf-8').decode(allChunks);
+      const data = JSON.parse(text);
       await indexedDBService.savePack({ id: 'current', ...data });
-      
       setPack(data);
     } catch (error) {
       console.error('Error loading pack:', error);
     } finally {
       setLoading(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -43,7 +78,47 @@ const GameBoard = () => {
     loadPack();
   }, []);
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '40vh' }}>
+        {downloadProgress !== null ? (
+          downloadProgress === -1 ? (
+            <>
+              <div style={{ width: 240, height: 16, background: '#eee', borderRadius: 8, overflow: 'hidden', marginBottom: 18, position: 'relative' }}>
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #007bff 25%, #fff 50%, #007bff 75%)',
+                  backgroundSize: '200% 100%',
+                  animation: 'progressIndeterminate 1.2s linear infinite',
+                  borderRadius: 8,
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                }} />
+                <style>{`
+                  @keyframes progressIndeterminate {
+                    0% { background-position: 200% 0; }
+                    100% { background-position: -200% 0; }
+                  }
+                `}</style>
+              </div>
+              <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '1.5rem', marginTop: 8 }}>Downloading...</div>
+            </>
+          ) : (
+            <>
+              <div style={{ width: 240, height: 16, background: '#eee', borderRadius: 8, overflow: 'hidden', marginBottom: 18 }}>
+                <div style={{ width: `${downloadProgress}%`, height: '100%', background: '#007bff', transition: 'width 0.2s', borderRadius: 8 }} />
+              </div>
+              <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '1.5rem', marginTop: 8 }}>{downloadProgress}%</div>
+            </>
+          )
+        ) : (
+          <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '1.5rem' }}>Loading...</div>
+        )}
+      </div>
+    );
+  }
   if (!pack) return <div>Error loading pack</div>;
 
   const round = pack.rounds[currentRoundIndex];
@@ -98,7 +173,6 @@ const GameBoard = () => {
 
   // --- Modern Board Styles for left-side themes ---
   const pageStyle = {
-    // background: 'linear-gradient(180deg, #0d133d 0%, #1a237e 100%)',
     padding: 0,
     margin: 0,
     width: '100vw',
