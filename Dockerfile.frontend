@@ -1,0 +1,23 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+ENV PORT=8000
+ENV HOST=0.0.0.0
+ENV WDS_SOCKET_PORT=0
+ENV NODE_ENV=development
+ENV CHOKIDAR_USEPOLLING=true
+ENV FAST_REFRESH=true
+ENV WATCHPACK_POLLING=true
+ENV REACT_APP_WS_URL=ws://localhost:8000/ws
+ENV REACT_APP_API_URL=http://localhost:8000
+
+EXPOSE ${PORT}
+
+CMD ["npm", "run", "start"] 
