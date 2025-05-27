@@ -75,6 +75,11 @@ class WebSocketManager {
             this.selectedQuestions.clear();
             // Broadcast updated selected questions to all clients
             this.broadcastSelectedQuestions();
+          } else if (data.type === 'admin_clicked_red_number') {
+            // Log the user ID when admin clicks red number
+            console.log('Admin clicked red number for user ID:', data.data.userId);
+            // Broadcast the event to all clients
+            this.broadcastAdminClickedRedNumber(data.data);
           } else if (data.type === 'request_selected_questions') {
             // Send current selected questions to the requesting client
             ws.send(JSON.stringify({
@@ -239,6 +244,19 @@ class WebSocketManager {
         }
       });
     }
+  }
+
+  broadcastAdminClickedRedNumber(data) {
+    const message = JSON.stringify({
+      type: 'admin_clicked_red_number',
+      data: data
+    });
+
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
   }
 
   getOnlineUsers() {

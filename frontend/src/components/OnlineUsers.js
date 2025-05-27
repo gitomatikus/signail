@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import wsManager from '../utils/websocket';
 
 const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question }) => {
@@ -6,6 +6,21 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
   const [updatedUsers, setUpdatedUsers] = useState(new Set());
   // Track which users have been penalized
   const [penalizedUsers, setPenalizedUsers] = useState(new Set());
+
+  // Add WebSocket event listener for admin_clicked_red_number
+  useEffect(() => {
+    const unsubscribe = wsManager.subscribe((data) => {
+      if (data.type === 'admin_clicked_red_number') {
+        console.log('Admin clicked red number for user ID:', data.data.userId);
+        // Add user to penalized set to show red frame
+        setPenalizedUsers(prev => new Set([...prev, data.data.userId]));
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   // Sort users by their times
   const sortedUsers = [...users].sort((a, b) => {
@@ -47,6 +62,15 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
     } else {
       // If it's an incorrect answer, add user to penalized set
       setPenalizedUsers(prev => new Set([...prev, userId]));
+      // Log the user ID when admin clicks red number under gold frame
+      console.log('Admin clicked red number for user ID:', userId);
+      // Send the event to WebSocket server
+      wsManager.ws.send(JSON.stringify({
+        type: 'admin_clicked_red_number',
+        data: {
+          userId
+        }
+      }));
     }
   };
 
@@ -74,8 +98,8 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
         const getFrameStyle = () => {
           if (isPenalized) {
             return {
-              border: 'none',
-              boxShadow: 'none'
+              border: '3px solid #ff4444',
+              boxShadow: '0 0 15px #ff4444, 0 0 5px #ff4444'
             };
           }
 
