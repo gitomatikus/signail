@@ -16,7 +16,7 @@
                 "text": "???",
                 "correct": 300,
                 "incorrect": -300,
-                "random_range": "1-300"
+                "random_range": "1-300" 
               },
               "type": "secret",
               "rules": [
