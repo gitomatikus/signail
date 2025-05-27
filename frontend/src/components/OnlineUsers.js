@@ -246,7 +246,8 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                 }}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  if (isAdmin) {
+                  const isAdminUrl = location.pathname.startsWith('/admin');
+                  if (isAdminUrl) {
                     wsManager.ws.send(JSON.stringify({
                       type: 'admin_clicked_green_number',
                       data: {
