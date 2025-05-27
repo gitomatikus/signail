@@ -145,7 +145,7 @@ const GameBoard = ({ isAdmin = false }) => {
     // Update local state
     setSelectedQuestionId(question.id);
     
-    // Send WebSocket message
+    // Send WebSocket message - ensure admin events can only be sent by admins
     wsManager.sendQuestionSelect(question.id, isAdmin ? 'admin' : 'user');
     
     // Only navigate to question page if user is admin
@@ -460,6 +460,12 @@ const GameBoard = ({ isAdmin = false }) => {
                 }
                 onClick={() => {
                   if (!isDisabled) {
+                    handleQuestionClick(question);
+                  }
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault(); // Prevent default context menu
+                  if (isAdmin && !isDisabled) {
                     handleQuestionClick(question);
                   }
                 }}

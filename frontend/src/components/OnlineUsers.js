@@ -246,12 +246,14 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                 }}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  wsManager.ws.send(JSON.stringify({
-                    type: 'admin_clicked_green_number',
-                    data: {
-                      userId: user.id
-                    }
-                  }));
+                  if (isAdmin) {
+                    wsManager.ws.send(JSON.stringify({
+                      type: 'admin_clicked_green_number',
+                      data: {
+                        userId: user.id
+                      }
+                    }));
+                  }
                 }}
               />
             )}
