@@ -257,7 +257,28 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             )}
             <span style={{ fontWeight: 'bold', fontSize: '1.5rem', color: user.isCurrent ? '#aaa' : '#aaa', marginBottom: '0.4rem', textAlign: 'center', wordBreak: 'break-word' }}>{user.name}</span>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-              <span style={{ fontWeight: 'bold', fontSize: '1.5rem', color: '#aaa', textAlign: 'center' }}>{previousScore}</span>
+              <span 
+                contentEditable="true" 
+                suppressContentEditableWarning={true} 
+                onBlur={(e) => {
+                  const newScore = e.target.textContent.trim();
+                  if (newScore !== '') {
+                    wsManager.ws.send(JSON.stringify({
+                      type: 'update_score',
+                      data: {
+                        userId: user.id,
+                        score: newScore
+                      }
+                    }));
+                  } else {
+                    // Reset to previous score if empty
+                    e.target.textContent = previousScore;
+                  }
+                }}
+                style={{ fontWeight: 'bold', fontSize: '1.5rem', color: '#aaa', textAlign: 'center' }}
+              >
+                {previousScore}
+              </span>
               {isAdmin && position === 0 && !isUpdated && !isPenalized && (
                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                   <span 
