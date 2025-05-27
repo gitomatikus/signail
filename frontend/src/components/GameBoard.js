@@ -10,7 +10,10 @@ const GameBoard = ({ isAdmin = false }) => {
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const [selectedQuestions, setSelectedQuestions] = useState(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
+  const [currentRoundIndex, setCurrentRoundIndex] = useState(() => {
+    const savedRoundIndex = localStorage.getItem('currentRoundIndex');
+    return savedRoundIndex ? parseInt(savedRoundIndex) : 0;
+  });
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState({});
   const [downloadProgress, setDownloadProgress] = useState(null); // null means not downloading
@@ -156,13 +159,17 @@ const GameBoard = ({ isAdmin = false }) => {
 
   const goToNextRound = () => {
     if (currentRoundIndex < pack.rounds.length - 1) {
-      setCurrentRoundIndex(currentRoundIndex + 1);
+      const newIndex = currentRoundIndex + 1;
+      setCurrentRoundIndex(newIndex);
+      localStorage.setItem('currentRoundIndex', newIndex.toString());
     }
   };
 
   const goToPreviousRound = () => {
     if (currentRoundIndex > 0) {
-      setCurrentRoundIndex(currentRoundIndex - 1);
+      const newIndex = currentRoundIndex - 1;
+      setCurrentRoundIndex(newIndex);
+      localStorage.setItem('currentRoundIndex', newIndex.toString());
     }
   };
 

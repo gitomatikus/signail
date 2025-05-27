@@ -77,6 +77,10 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   const [currentRuleIndex, setCurrentRuleIndex] = useState(0);
   const [showAfterRound, setShowAfterRound] = useState(false);
   const [currentAfterRoundIndex, setCurrentAfterRoundIndex] = useState(0);
+  const [currentRoundIndex, setCurrentRoundIndex] = useState(() => {
+    const savedRoundIndex = localStorage.getItem('currentRoundIndex');
+    return savedRoundIndex ? parseInt(savedRoundIndex) : 0;
+  });
   const [timer, setTimer] = useState(15);
   const [startTime, setStartTime] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(null);
@@ -93,20 +97,29 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           throw new Error('Pack not found');
         }
         let foundQuestion = null;
-        for (const round of pack.rounds) {
+        let foundRoundIndex = 0;
+        
+        // Search through rounds to find the question and its round index
+        for (let roundIndex = 0; roundIndex < pack.rounds.length; roundIndex++) {
+          const round = pack.rounds[roundIndex];
           for (const theme of round.themes) {
             const q = theme.questions.find(q => q.id === parseInt(questionId));
             if (q) {
               foundQuestion = q;
+              foundRoundIndex = roundIndex;
               break;
             }
           }
           if (foundQuestion) break;
         }
+        
         if (!foundQuestion) {
           throw new Error('Question not found');
         }
+        
         setQuestion(foundQuestion);
+        setCurrentRoundIndex(foundRoundIndex);
+        localStorage.setItem('currentRoundIndex', foundRoundIndex.toString());
 
         // Fetch existing times for this question
         try {
