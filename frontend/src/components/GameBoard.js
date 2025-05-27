@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Settings from './Settings';
 import { indexedDBService } from '../services/indexedDB';
 import wsManager from '../utils/websocket';
-
+import config from '../config';
 const GameBoard = ({ isAdmin = false }) => {
   const navigate = useNavigate();
   const [pack, setPack] = useState(null);
@@ -45,7 +45,7 @@ const GameBoard = ({ isAdmin = false }) => {
       }
 
       // If not in IndexedDB, fetch from API with progress
-      const response = await fetch('http://localhost:8000/api/pack');
+      const response = await fetch(`${config.apiUrl}/api/pack`);
       if (!response.body || !window.ReadableStream) {
         // Fallback: no progress support
         const data = await response.json();

@@ -24,7 +24,7 @@ services:
       context: ./frontend
       dockerfile: ../Dockerfile.frontend
     ports:
-      - "${PORT}:${PORT}"
+      - "3001:3001"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -32,7 +32,7 @@ services:
       - REACT_APP_API_URL=http://localhost:8000
       - REACT_APP_WS_URL=ws://localhost:8000/ws
       - WDS_SOCKET_PORT=0
-      - PORT=${PORT}
+      - PORT=3001
       - HOST=0.0.0.0
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
