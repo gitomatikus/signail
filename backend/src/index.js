@@ -5,6 +5,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
+const WebSocket = require('ws');
 
 const app = express();
 const server = http.createServer(app);
@@ -148,6 +149,17 @@ app.get('/api/questions/:questionId/times', (req, res) => {
   res.json({
     status: 'success',
     data: Object.fromEntries(times)
+  });
+});
+
+// Get last user with green frame
+app.get('/api/game/last-green-frame', (req, res) => {
+  const lastGreenFrameUser = wsManager.getLastGreenFrameUser();
+  res.json({
+    status: 'success',
+    data: {
+      userId: lastGreenFrameUser
+    }
   });
 });
 

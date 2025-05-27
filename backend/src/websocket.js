@@ -7,6 +7,7 @@ class WebSocketManager {
     this.persistentUsers = new Map(); // Map of user data by userId
     this.selectedQuestions = new Set(); // Track selected questions
     this.questionTimes = new Map(); // Map of question ID to user times
+    this.lastGreenFrameUser = null; // Track the last user with green frame
   }
 
   initialize(server) {
@@ -80,6 +81,11 @@ class WebSocketManager {
             console.log('Admin clicked red number for user ID:', data.data.userId);
             // Broadcast the event to all clients
             this.broadcastAdminClickedRedNumber(data.data);
+          } else if (data.type === 'admin_clicked_green_number') {
+            // Log the user ID when admin clicks green number
+            console.log('Admin clicked green number for user ID:', data.data.userId);
+            // Broadcast the event to all clients
+            this.broadcastAdminClickedGreenNumber(data.data);
           } else if (data.type === 'request_selected_questions') {
             // Send current selected questions to the requesting client
             ws.send(JSON.stringify({
@@ -259,6 +265,22 @@ class WebSocketManager {
     });
   }
 
+  broadcastAdminClickedGreenNumber(data) {
+    // Update the last user with green frame
+    this.lastGreenFrameUser = data.userId;
+    
+    const message = JSON.stringify({
+      type: 'admin_clicked_green_number',
+      data: data
+    });
+
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+
   getOnlineUsers() {
     return Array.from(this.persistentUsers.values());
   }
@@ -286,6 +308,16 @@ class WebSocketManager {
         client.send(message);
       }
     });
+  }
+
+  // Add method to get the last user with green frame
+  getLastGreenFrameUser() {
+    return this.lastGreenFrameUser;
+  }
+
+  // Add method to clear the last green frame user
+  clearLastGreenFrameUser() {
+    this.lastGreenFrameUser = null;
   }
 }
 

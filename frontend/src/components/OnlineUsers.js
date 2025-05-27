@@ -1,19 +1,43 @@
 import React, { useState, useEffect } from 'react';
 import wsManager from '../utils/websocket';
+import { useLocation } from 'react-router-dom';
 
 const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question }) => {
+  const location = useLocation();
+  const isQuestionPage = location.pathname.includes('/question/');
+  
   // Track which users have had their scores updated
   const [updatedUsers, setUpdatedUsers] = useState(new Set());
   // Track which users have been penalized
   const [penalizedUsers, setPenalizedUsers] = useState(new Set());
+  // Track which users have green frames
+  const [greenFrameUsers, setGreenFrameUsers] = useState(new Set());
 
-  // Add WebSocket event listener for admin_clicked_red_number
+  // Load green framed users from localStorage on component mount
+  useEffect(() => {
+    const storedGreenFramedUsers = JSON.parse(localStorage.getItem('greenFramedUsers') || '[]');
+    // Only set green frames if we're not on the question page
+    if (!isQuestionPage) {
+      setGreenFrameUsers(new Set(storedGreenFramedUsers));
+    }
+  }, [isQuestionPage]);
+
+  // Add WebSocket event listener for admin_clicked_red_number and admin_clicked_green_number
   useEffect(() => {
     const unsubscribe = wsManager.subscribe((data) => {
       if (data.type === 'admin_clicked_red_number') {
         console.log('Admin clicked red number for user ID:', data.data.userId);
         // Add user to penalized set to show red frame
         setPenalizedUsers(prev => new Set([...prev, data.data.userId]));
+      } else if (data.type === 'admin_clicked_green_number') {
+        console.log('Admin clicked green number for user ID:', data.data.userId);
+        // Add user to green frame set
+        setGreenFrameUsers(prev => {
+          const newSet = new Set([data.data.userId]);
+          // Store in localStorage
+          localStorage.setItem('greenFramedUsers', JSON.stringify([data.data.userId]));
+          return newSet;
+        });
       }
     });
 
@@ -59,6 +83,13 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
     if (value > 0) {
       // If it's a correct answer, add user to updated set
       setUpdatedUsers(prev => new Set([...prev, userId]));
+      // Send the event to WebSocket server
+      wsManager.ws.send(JSON.stringify({
+        type: 'admin_clicked_green_number',
+        data: {
+          userId
+        }
+      }));
     } else {
       // If it's an incorrect answer, add user to penalized set
       setPenalizedUsers(prev => new Set([...prev, userId]));
@@ -93,9 +124,17 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
         const previousScore = user.score ?? 0;
         const isUpdated = updatedUsers.has(user.id);
         const isPenalized = penalizedUsers.has(user.id);
+        const hasGreenFrame = greenFrameUsers.has(user.id);
         
         // Define frame styles based on position
         const getFrameStyle = () => {
+          if (hasGreenFrame) {
+            return {
+              border: '3px solid #44ff44',
+              boxShadow: '0 0 15px #44ff44, 0 0 5px #44ff44'
+            };
+          }
+          
           if (isPenalized) {
             return {
               border: '3px solid #ff4444',
@@ -204,6 +243,15 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   marginBottom: '0.7rem',
                   background: '#222',
                   ...getFrameStyle()
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  wsManager.ws.send(JSON.stringify({
+                    type: 'admin_clicked_green_number',
+                    data: {
+                      userId: user.id
+                    }
+                  }));
                 }}
               />
             )}

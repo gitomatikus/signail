@@ -125,6 +125,17 @@ const GameBoard = ({ isAdmin = false }) => {
   }, [navigate, isAdmin]);
 
   const handleQuestionClick = (question) => {
+    // Only check greenFramedUsers for non-admin users
+    if (!isAdmin) {
+      const greenFramedUsers = JSON.parse(localStorage.getItem('greenFramedUsers') || '[]');
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      
+      if (!greenFramedUsers.includes(currentUser.id)) {
+        console.log('Only users with green frame can select questions');
+        return;
+      }
+    }
+
     // Check both conditions before allowing selection
     if (selectedQuestionId || selectedQuestions.has(question.id)) {
       console.log('Question already selected:', question.id);

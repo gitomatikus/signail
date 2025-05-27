@@ -85,12 +85,18 @@ const AuthWrapper = ({ children, isAdmin = false }) => {
 
   const handleLogin = (userData) => {
     setUser(userData);
-    // Notify server about new user
-    wsManager.sendUserLogin(userData);
-    // Wait for WebSocket to connect before fetching online users
+    
+    // Ensure WebSocket is connected before sending login data
+    if (!wsManager.ws || wsManager.ws.readyState !== WebSocket.OPEN) {
+      wsManager.connect();
+    }
+    
+    // Wait for WebSocket to be ready
     const checkConnection = setInterval(() => {
       if (wsManager.ws && wsManager.ws.readyState === WebSocket.OPEN) {
         clearInterval(checkConnection);
+        // Send user login data immediately
+        wsManager.sendUserLogin(userData);
         // Fetch current online users
         fetchOnlineUsers();
       }
