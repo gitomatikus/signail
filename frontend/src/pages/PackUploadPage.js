@@ -2,20 +2,23 @@ import React, { useState } from 'react';
 import '../App.css';
 import config from '../config';
 
-
 const PackUploadPage = () => {
     const [file, setFile] = useState(null);
     const [uploadStatus, setUploadStatus] = useState('');
     const [error, setError] = useState('');
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [isUploading, setIsUploading] = useState(false);
 
     const handleFileChange = (event) => {
         const selectedFile = event.target.files[0];
         if (selectedFile && selectedFile.type === 'application/json') {
             setFile(selectedFile);
             setError('');
+            setUploadProgress(0);
         } else {
             setError('Please select a valid JSON file');
             setFile(null);
+            setUploadProgress(0);
         }
     };
 
@@ -25,44 +28,66 @@ const PackUploadPage = () => {
             return;
         }
 
+        setIsUploading(true);
+        setUploadProgress(0);
+        setError('');
+        setUploadStatus('');
+
         try {
             const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
                     const jsonData = JSON.parse(e.target.result);
-                    const response = await fetch(`${config.apiUrl}/api/pack/upload`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify(jsonData)
-                    });
+                    
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', `${config.apiUrl}/api/pack/upload`, true);
+                    xhr.setRequestHeader('Content-Type', 'application/json');
 
-                    const result = await response.json();
+                    xhr.upload.onprogress = (event) => {
+                        if (event.lengthComputable) {
+                            const progress = Math.round((event.loaded * 100) / event.total);
+                            setUploadProgress(progress);
+                        }
+                    };
 
-                    if (response.ok) {
-                        setUploadStatus('Pack uploaded successfully!');
-                        setError('');
-                    } else {
-                        setError(result.error || 'Failed to upload pack');
+                    xhr.onload = () => {
+                        if (xhr.status === 200) {
+                            setUploadStatus('Pack uploaded successfully!');
+                            setError('');
+                        } else {
+                            const result = JSON.parse(xhr.responseText);
+                            setError(result.error || 'Failed to upload pack');
+                            setUploadStatus('');
+                        }
+                        setIsUploading(false);
+                    };
+
+                    xhr.onerror = () => {
+                        setError('Network error occurred');
                         setUploadStatus('');
-                    }
+                        setIsUploading(false);
+                    };
+
+                    xhr.send(JSON.stringify(jsonData));
                 } catch (parseError) {
                     console.log(parseError);
                     setError('Invalid JSON format');
                     setUploadStatus('');
+                    setIsUploading(false);
                 }
             };
 
             reader.onerror = () => {
                 setError('Error reading file');
                 setUploadStatus('');
+                setIsUploading(false);
             };
 
             reader.readAsText(file);
         } catch (error) {
             setError('Error uploading file');
             setUploadStatus('');
+            setIsUploading(false);
         }
     };
 
@@ -75,14 +100,24 @@ const PackUploadPage = () => {
                     accept=".json"
                     onChange={handleFileChange}
                     className="file-input"
+                    disabled={isUploading}
                 />
                 <button 
                     onClick={handleUpload}
-                    disabled={!file}
+                    disabled={!file || isUploading}
                     className="upload-button"
                 >
-                    Upload Pack
+                    {isUploading ? 'Uploading...' : 'Upload Pack'}
                 </button>
+                {isUploading && (
+                    <div className="progress-container">
+                        <div 
+                            className="progress-bar" 
+                            style={{ width: `${uploadProgress}%` }}
+                        />
+                        <span className="progress-text">{uploadProgress}%</span>
+                    </div>
+                )}
             </div>
             {error && <div className="error-message">{error}</div>}
             {uploadStatus && <div className="success-message">{uploadStatus}</div>}
