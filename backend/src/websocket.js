@@ -114,6 +114,9 @@ class WebSocketManager {
               // Broadcast updated user list to all clients
               this.broadcastOnlineUsers();
             }
+          } else if (data.type === 'round_change') {
+            // Broadcast round change to all clients
+            this.broadcastRoundChange(data.data);
           }
         } catch (error) {
           console.error('Error processing message:', error);
@@ -250,6 +253,19 @@ class WebSocketManager {
         }
       });
     }
+  }
+
+  broadcastRoundChange(data) {
+    const message = JSON.stringify({
+      type: 'round_change',
+      data: data
+    });
+
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
   }
 
   broadcastAdminClickedRedNumber(data) {

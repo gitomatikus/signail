@@ -156,6 +156,17 @@ class WebSocketManager {
     }
   }
 
+  sendRoundChange(roundIndex) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'round_change',
+        data: {
+          roundIndex
+        }
+      }));
+    }
+  }
+
   disconnect() {
     if (this.ws) {
       this.ws.close();

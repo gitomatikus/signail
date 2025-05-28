@@ -119,6 +119,10 @@ const GameBoard = ({ isAdmin = false }) => {
       } else if (data.type === 'question_reveal') {
         const { questionId } = data.data;
         navigate(`/question/${questionId}`);
+      } else if (data.type === 'round_change') {
+        const { roundIndex } = data.data;
+        setCurrentRoundIndex(roundIndex);
+        localStorage.setItem('currentRoundIndex', roundIndex.toString());
       }
     });
 
@@ -162,6 +166,9 @@ const GameBoard = ({ isAdmin = false }) => {
       const newIndex = currentRoundIndex + 1;
       setCurrentRoundIndex(newIndex);
       localStorage.setItem('currentRoundIndex', newIndex.toString());
+      if (isAdmin) {
+        wsManager.sendRoundChange(newIndex);
+      }
     }
   };
 
@@ -170,6 +177,9 @@ const GameBoard = ({ isAdmin = false }) => {
       const newIndex = currentRoundIndex - 1;
       setCurrentRoundIndex(newIndex);
       localStorage.setItem('currentRoundIndex', newIndex.toString());
+      if (isAdmin) {
+        wsManager.sendRoundChange(newIndex);
+      }
     }
   };
 
@@ -406,18 +416,20 @@ const GameBoard = ({ isAdmin = false }) => {
           width: '100%',
           justifyContent: 'center'
         }}>
-          <span
-            onClick={currentRoundIndex === 0 ? undefined : goToPreviousRound}
-            style={{
-              color: currentRoundIndex === 0 ? '#6c757d' : '#007bff',
-              fontSize: '2.5rem',
-              cursor: currentRoundIndex === 0 ? 'default' : 'pointer',
-              userSelect: 'none',
-              opacity: currentRoundIndex === 0 ? 0.6 : 1
-            }}
-          >
-            &lt;
-          </span>
+          {isAdmin && (
+            <span
+              onClick={currentRoundIndex === 0 ? undefined : goToPreviousRound}
+              style={{
+                color: currentRoundIndex === 0 ? '#6c757d' : '#007bff',
+                fontSize: '2.5rem',
+                cursor: currentRoundIndex === 0 ? 'default' : 'pointer',
+                userSelect: 'none',
+                opacity: currentRoundIndex === 0 ? 0.6 : 1
+              }}
+            >
+              &lt;
+            </span>
+          )}
           <h2 style={{ 
             margin: 0, 
             color: 'white', 
@@ -429,18 +441,20 @@ const GameBoard = ({ isAdmin = false }) => {
           }}>
             {round.name}
           </h2>
-          <span
-            onClick={currentRoundIndex >= pack.rounds.length - 1 ? undefined : goToNextRound}
-            style={{
-              color: currentRoundIndex >= pack.rounds.length - 1 ? '#6c757d' : '#007bff',
-              fontSize: '2.5rem',
-              cursor: currentRoundIndex >= pack.rounds.length - 1 ? 'default' : 'pointer',
-              userSelect: 'none',
-              opacity: currentRoundIndex >= pack.rounds.length - 1 ? 0.6 : 1
-            }}
-          >
-            &gt;
-          </span>
+          {isAdmin && (
+            <span
+              onClick={currentRoundIndex >= pack.rounds.length - 1 ? undefined : goToNextRound}
+              style={{
+                color: currentRoundIndex >= pack.rounds.length - 1 ? '#6c757d' : '#007bff',
+                fontSize: '2.5rem',
+                cursor: currentRoundIndex >= pack.rounds.length - 1 ? 'default' : 'pointer',
+                userSelect: 'none',
+                opacity: currentRoundIndex >= pack.rounds.length - 1 ? 0.6 : 1
+              }}
+            >
+              &gt;
+            </span>
+          )}
         </div>
       </div>
       {/* Modern Game Board Grid with themes on the left */}

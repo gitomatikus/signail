@@ -261,7 +261,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             <span style={{ fontWeight: 'bold', fontSize: '1.5rem', color: user.isCurrent ? '#aaa' : '#aaa', marginBottom: '0.4rem', textAlign: 'center', wordBreak: 'break-word' }}>{user.name}</span>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
               <span 
-                contentEditable="true" 
+                contentEditable={location.pathname.startsWith('/admin')} 
                 suppressContentEditableWarning={true} 
                 onBlur={(e) => {
                   const newScore = e.target.textContent.trim();
