@@ -10,6 +10,9 @@ const WebSocket = require('ws');
 const app = express();
 const server = http.createServer(app);
 
+// Store uploaded pack in memory
+let uploadedPack = null;
+
 // Initialize WebSocket
 wsManager.initialize(server);
 
@@ -17,7 +20,7 @@ wsManager.initialize(server);
 app.use(cors({
   origin: config.corsOrigin
 }));
-app.use(express.json());
+app.use(express.json({ limit: '250mb' }));
 
 // Store connected clients
 const clients = new Set();
@@ -129,17 +132,47 @@ app.get('/api/data', (req, res) => {
 
 // Serve pack.json
 app.get('/api/pack', (req, res) => {
+    // If there's an uploaded pack, serve it
+    if (uploadedPack) {
+        return res.json(uploadedPack);
+    }
+    
+    // Otherwise serve the default pack1.json
     fs.readFile(path.join(__dirname, 'pack1.json'), 'utf8', (err, data) => {
         if (err) {
-            return res.status(500).json({ error: 'Could not read pasck.json' });
+            return res.status(500).json({ error: 'Could not read pack1.json' });
         }
         try {
             const pack = JSON.parse(data);
             res.json(pack);
         } catch (e) {
-            res.status(500).json({ error: 'Invalid JSON in pack.json' });
+            res.status(500).json({ error: 'Invalid JSON in pack1.json' });
         }
     });
+});
+
+// Upload new pack endpoint
+app.post('/api/pack/upload', express.json(), (req, res) => {
+    try {
+        // Validate that the request body is a valid pack
+        if (!req.body || typeof req.body !== 'object') {
+            return res.status(400).json({ error: 'Invalid pack format' });
+        }
+
+        // Store the pack in memory
+        uploadedPack = req.body;
+        
+        res.json({
+            status: 'success',
+            message: 'Pack uploaded successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to upload pack',
+            error: error.message
+        });
+    }
 });
 
 // Get times for a specific question
