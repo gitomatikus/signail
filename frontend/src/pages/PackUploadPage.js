@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import '../App.css';
+import config from '../config';
+
 
 const PackUploadPage = () => {
     const [file, setFile] = useState(null);
@@ -28,8 +30,7 @@ const PackUploadPage = () => {
             reader.onload = async (e) => {
                 try {
                     const jsonData = JSON.parse(e.target.result);
-                    
-                    const response = await fetch('http://localhost:8000/api/pack/upload', {
+                    const response = await fetch(`${config.apiUrl}/api/pack/upload`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
