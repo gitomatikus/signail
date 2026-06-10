@@ -27,7 +27,8 @@
  * @property {Rule[]} [rules] - Optional rules for the question
  * @property {Rule[]} [after_round] - Optional rules to apply after the round
  * @property {string} [image] - Image path for find-a-cat
- * @property {string} [name] - Target name for find-a-cat
+ * @property {string} [task] - Find-a-cat task text shown to players; supports %total% (total targets) and %left% (targets left) placeholders
+ * @property {string} [name] - Legacy find-a-cat target name (e.g. "котиків"); used when task is absent
  * @property {Object[]} [map] - Map areas for find-a-cat
  * @property {number} [duration] - Optional duration for the question
  * @property {number} [max_clicks] - Find-a-cat click budget (hits and misses); 0/absent = unlimited

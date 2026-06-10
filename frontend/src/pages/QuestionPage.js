@@ -683,6 +683,17 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
     const totalAreas = question.map ? question.map.length : 0;
     const remainingCount = totalAreas - clickedIndices.size;
     const hasFailed = isOutOfClicks && remainingCount > 0;
+    // `task` is full text with optional %total%/%left% placeholders;
+    // legacy packs only have `name` ("котиків") and keep the old wording
+    const taskTemplate = question.task
+      ? question.task
+      : `Знайдіть і клікніть на всіх ${question.name || ''}. Залишилось всього %left%`;
+    const renderTaskText = (left) => taskTemplate
+      .replace(/%total%/g, String(totalAreas))
+      .replace(/%left%/g, String(left));
+    const successText = question.task
+      ? 'Ви знайшли всіх!'
+      : `Ви знайшли всіх ${question.name || ''}!`;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '1.5rem' }}>
@@ -702,9 +713,9 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           {hasFailed ? (
             <span style={{ color: '#ef4444' }}>Кліки закінчилися! Зачекайте на рішення ведучого.</span>
           ) : remainingCount > 0 ? (
-            `Знайдіть і клікніть на всіх ${question.name || ''}. Залишилось всього ${remainingCount}`
+            renderTaskText(remainingCount)
           ) : (
-            `Ви знайшли всіх ${question.name || ''}!`
+            successText
           )}
           {hasClickLimit && !isAdmin && !hasFailed && remainingCount > 0 && (
             <div style={{
@@ -732,7 +743,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           }}>
           <img 
             src={question.image} 
-            alt={question.name} 
+            alt={question.task || question.name}
             style={{ 
               width: '100%', 
               height: 'auto', 
