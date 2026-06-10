@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import config from '../config';
+import { saveHostToken } from '../services/gameAuth';
 
-const PackUploadPage = () => {
+// Creates a game: registers it (host identity + optional password), then
+// streams the selected pack file to the server. The pack file is uploaded
+// as-is - the server validates it and stores it on disk.
+const CreateGamePage = ({ user }) => {
     const [file, setFile] = useState(null);
-    const [uploadStatus, setUploadStatus] = useState('');
+    const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isUploading, setIsUploading] = useState(false);
@@ -12,7 +16,7 @@ const PackUploadPage = () => {
 
     const handleFileChange = (event) => {
         const selectedFile = event.target.files[0];
-        if (selectedFile && selectedFile.type === 'application/json') {
+        if (selectedFile && (selectedFile.type === 'application/json' || selectedFile.name.endsWith('.json'))) {
             setFile(selectedFile);
             setError('');
             setUploadProgress(0);
@@ -23,72 +27,72 @@ const PackUploadPage = () => {
         }
     };
 
-    const handleUpload = async () => {
+    const uploadPack = (gameId, hostToken) => new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${config.apiUrl}/api/games/${gameId}/pack`, true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.setRequestHeader('X-Host-Token', hostToken);
+
+        xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+                setUploadProgress(Math.round((event.loaded * 100) / event.total));
+            }
+        };
+        xhr.onload = () => {
+            if (xhr.status === 200) {
+                resolve();
+            } else {
+                let message = 'Failed to upload pack';
+                try {
+                    message = JSON.parse(xhr.responseText).message || message;
+                } catch (e) { /* non-JSON error body */ }
+                reject(new Error(message));
+            }
+        };
+        xhr.onerror = () => reject(new Error('Network error occurred'));
+        // Send the raw file: the browser streams it, the server pipes it to disk
+        xhr.send(file);
+    });
+
+    const handleCreate = async () => {
         if (!file) {
-            setError('Please select a file first');
+            setError('Please select a pack file first');
             return;
         }
-
         setIsUploading(true);
         setUploadProgress(0);
         setError('');
-        setUploadStatus('');
 
+        let created = null;
         try {
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const jsonData = JSON.parse(e.target.result);
+            const response = await fetch(`${config.apiUrl}/api/games`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    hostName: user?.name || 'Host',
+                    hostImageUrl: user?.imageUrl || '',
+                    password: password || null
+                })
+            });
+            const result = await response.json();
+            if (result.status !== 'success') {
+                throw new Error(result.message || 'Failed to create game');
+            }
+            created = result.data;
+            saveHostToken(created.gameId, created.hostToken);
 
-                    const xhr = new XMLHttpRequest();
-                    xhr.open('POST', `${config.apiUrl}/api/pack/upload`, true);
-                    xhr.setRequestHeader('Content-Type', 'application/json');
-
-                    xhr.upload.onprogress = (event) => {
-                        if (event.lengthComputable) {
-                            const progress = Math.round((event.loaded * 100) / event.total);
-                            setUploadProgress(progress);
-                        }
-                    };
-
-                    xhr.onload = () => {
-                        if (xhr.status === 200) {
-                            setUploadStatus('Pack uploaded successfully!');
-                            setError('');
-                        } else {
-                            const result = JSON.parse(xhr.responseText);
-                            setError(result.error || 'Failed to upload pack');
-                            setUploadStatus('');
-                        }
-                        setIsUploading(false);
-                    };
-
-                    xhr.onerror = () => {
-                        setError('Network error occurred');
-                        setUploadStatus('');
-                        setIsUploading(false);
-                    };
-
-                    xhr.send(JSON.stringify(jsonData));
-                } catch (parseError) {
-                    console.log(parseError);
-                    setError('Invalid JSON format');
-                    setUploadStatus('');
-                    setIsUploading(false);
-                }
-            };
-
-            reader.onerror = () => {
-                setError('Error reading file');
-                setUploadStatus('');
-                setIsUploading(false);
-            };
-
-            reader.readAsText(file);
-        } catch (error) {
-            setError('Error uploading file');
-            setUploadStatus('');
+            await uploadPack(created.gameId, created.hostToken);
+            navigate(`/game/${created.gameId}`);
+        } catch (err) {
+            setError(err.message);
             setIsUploading(false);
+            // The empty game would only clutter the list - clean it up
+            if (created) {
+                fetch(`${config.apiUrl}/api/games/${created.gameId}`, {
+                    method: 'DELETE',
+                    headers: { 'X-Host-Token': created.hostToken }
+                }).catch(() => {});
+            }
         }
     };
 
@@ -110,7 +114,7 @@ const PackUploadPage = () => {
                 gap: '2rem'
             }}>
                 <button
-                    onClick={() => navigate('/admin')}
+                    onClick={() => navigate('/')}
                     className="btn-primary"
                     style={{
                         alignSelf: 'flex-start',
@@ -120,7 +124,7 @@ const PackUploadPage = () => {
                         border: '1px solid var(--glass-border)'
                     }}
                 >
-                    Back to Admin
+                    Back to Games
                 </button>
 
                 <h1 className="text-gradient" style={{
@@ -129,7 +133,7 @@ const PackUploadPage = () => {
                     margin: 0,
                     textAlign: 'center'
                 }}>
-                    Upload New Pack
+                    Create Game
                 </h1>
 
                 <div style={{
@@ -179,8 +183,27 @@ const PackUploadPage = () => {
                         )}
                     </div>
 
+                    <div>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '0.75rem',
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.875rem',
+                            fontWeight: '500'
+                        }}>
+                            Password (optional - players will need it to join)
+                        </label>
+                        <input
+                            type="text"
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            placeholder="Leave empty for an open game"
+                            disabled={isUploading}
+                        />
+                    </div>
+
                     <button
-                        onClick={handleUpload}
+                        onClick={handleCreate}
                         disabled={!file || isUploading}
                         className="btn-primary"
                         style={{
@@ -189,7 +212,7 @@ const PackUploadPage = () => {
                             cursor: (!file || isUploading) ? 'not-allowed' : 'pointer'
                         }}
                     >
-                        {isUploading ? 'Uploading...' : 'Upload Pack'}
+                        {isUploading ? 'Uploading...' : 'Create Game'}
                     </button>
 
                     {isUploading && (
@@ -241,23 +264,9 @@ const PackUploadPage = () => {
                         {error}
                     </div>
                 )}
-
-                {uploadStatus && (
-                    <div style={{
-                        padding: '1rem',
-                        background: 'rgba(34, 197, 94, 0.1)',
-                        border: '1px solid #22c55e',
-                        borderRadius: '8px',
-                        color: '#22c55e',
-                        fontSize: '0.875rem',
-                        textAlign: 'center'
-                    }}>
-                        {uploadStatus}
-                    </div>
-                )}
             </div>
         </div>
     );
 };
 
-export default PackUploadPage;
+export default CreateGamePage;

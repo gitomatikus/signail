@@ -2,22 +2,33 @@ import React, { useState, useEffect } from 'react';
 import wsManager from '../utils/websocket';
 import { useLocation } from 'react-router-dom';
 import ImageLightbox from './ImageLightbox';
+import { useGame } from '../contexts/GameContext';
+import { HIDE_HOST_KEY, HIDE_HOST_EVENT } from '../utils/hostVisibility';
 
 const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, secretTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false }) => {
   const location = useLocation();
   const isQuestionPage = location.pathname.includes('/question/');
+  const { gameId, gameInfo } = useGame() || {};
 
   const [updatedUsers, setUpdatedUsers] = useState(new Set());
   const [penalizedUsers, setPenalizedUsers] = useState(new Set());
   const [greenFrameUsers, setGreenFrameUsers] = useState(new Set());
   const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [hideHost, setHideHost] = useState(() => localStorage.getItem(HIDE_HOST_KEY) === 'true');
 
   useEffect(() => {
-    const storedGreenFramedUsers = JSON.parse(localStorage.getItem('greenFramedUsers') || '[]');
+    const storedGreenFramedUsers = JSON.parse(localStorage.getItem(`greenFramedUsers-${gameId}`) || '[]');
     if (!isQuestionPage) {
       setGreenFrameUsers(new Set(storedGreenFramedUsers));
     }
-  }, [isQuestionPage]);
+  }, [isQuestionPage, gameId]);
+
+  // React immediately when the player toggles "hide host" in Settings
+  useEffect(() => {
+    const onToggle = () => setHideHost(localStorage.getItem(HIDE_HOST_KEY) === 'true');
+    window.addEventListener(HIDE_HOST_EVENT, onToggle);
+    return () => window.removeEventListener(HIDE_HOST_EVENT, onToggle);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = wsManager.subscribe((data) => {
@@ -26,7 +37,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
       } else if (data.type === 'admin_clicked_green_number') {
         setGreenFrameUsers(prev => {
           const newSet = new Set([data.data.userId]);
-          localStorage.setItem('greenFramedUsers', JSON.stringify([data.data.userId]));
+          localStorage.setItem(`greenFramedUsers-${gameId}`, JSON.stringify([data.data.userId]));
           return newSet;
         });
       }
@@ -35,7 +46,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [gameId]);
 
   const sortedUsers = [...users].sort((a, b) => {
     const timeA = userTimes[a.id] ?? (a.id === currentUserId ? elapsedTime : null);
@@ -106,28 +117,16 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
     if (!isAdmin) return;
 
     const newScore = currentScore + value;
-    wsManager.ws.send(JSON.stringify({
-      type: 'update_score',
-      data: {
-        userId,
-        score: newScore
-      }
-    }));
+    wsManager.sendUpdateScore(userId, newScore);
 
     if (value > 0) {
       setUpdatedUsers(prev => new Set([...prev, userId]));
       if (grantsMove) {
-        wsManager.ws.send(JSON.stringify({
-          type: 'admin_clicked_green_number',
-          data: { userId }
-        }));
+        wsManager.sendAdminClickedGreenNumber(userId);
       }
     } else {
       setPenalizedUsers(prev => new Set([...prev, userId]));
-      wsManager.ws.send(JSON.stringify({
-        type: 'admin_clicked_red_number',
-        data: { userId }
-      }));
+      wsManager.sendAdminClickedRedNumber(userId);
     }
   };
 
@@ -372,11 +371,8 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    if (location.pathname.startsWith('/admin')) {
-                      wsManager.ws.send(JSON.stringify({
-                        type: 'admin_clicked_green_number',
-                        data: { userId: user.id }
-                      }));
+                    if (isAdmin) {
+                      wsManager.sendAdminClickedGreenNumber(user.id);
                     }
                   }}
                 />
@@ -397,16 +393,13 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
               <span
-                contentEditable={location.pathname.startsWith('/admin')}
+                contentEditable={isAdmin}
                 suppressContentEditableWarning={true}
                 onBlur={(e) => {
                   const newScore = e.target.textContent.trim();
                   const parsedScore = Number(newScore);
                   if (newScore !== '' && Number.isFinite(parsedScore)) {
-                    wsManager.ws.send(JSON.stringify({
-                      type: 'update_score',
-                      data: { userId: user.id, score: parsedScore }
-                    }));
+                    wsManager.sendUpdateScore(user.id, parsedScore);
                     e.target.textContent = parsedScore;
                   } else {
                     e.target.textContent = previousScore;
@@ -587,6 +580,83 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
           </div>
         );
       })}
+
+      {/* Host card: shown to the right of the players, separated by a divider.
+          When the row wraps, the host lands on the last line - the divider and
+          the HOST badge keep them visually distinct. Players can hide this
+          in Settings. */}
+      {gameInfo && !hideHost && (
+        <div
+          className="fade-in"
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '2rem',
+            borderLeft: '2px solid var(--glass-border)',
+            paddingLeft: '2rem'
+          }}
+        >
+          <div style={{
+            width: '140px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            position: 'relative'
+          }}>
+            <div style={{
+              width: '110px',
+              height: '110px',
+              borderRadius: '24px',
+              overflow: 'hidden',
+              marginBottom: '1rem',
+              background: 'var(--bg-dark)',
+              border: '3px solid var(--accent)',
+              boxShadow: '0 0 20px var(--accent-glow)',
+              opacity: gameInfo.hostOnline === false ? 0.5 : 1
+            }}>
+              {gameInfo.hostImageUrl ? (
+                gameInfo.hostImageUrl.toLowerCase().endsWith('.mp4') ? (
+                  <video
+                    src={gameInfo.hostImageUrl}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    autoPlay loop muted playsInline
+                  />
+                ) : (
+                  <img
+                    src={gameInfo.hostImageUrl}
+                    alt={gameInfo.hostName}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                )
+              ) : null}
+            </div>
+            <span style={{
+              fontWeight: '600',
+              fontSize: '1.25rem',
+              color: 'var(--text-primary)',
+              marginBottom: '0.25rem',
+              textAlign: 'center',
+              wordBreak: 'break-word',
+              textShadow: '0 2px 4px rgba(0,0,0,0.3)'
+            }}>
+              {gameInfo.hostName}
+            </span>
+            <span style={{
+              fontSize: '0.75rem',
+              fontWeight: '700',
+              letterSpacing: '0.15em',
+              color: 'var(--accent)',
+              background: 'rgba(34, 211, 238, 0.1)',
+              border: '1px solid var(--accent)',
+              borderRadius: '9999px',
+              padding: '2px 10px'
+            }}>
+              HOST
+            </span>
+          </div>
+        </div>
+      )}
+
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );

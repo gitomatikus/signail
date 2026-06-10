@@ -7,9 +7,26 @@ class WebSocketManager {
     this.selectedQuestions = new Set();
     this.reconnectTimer = null;
     this.intentionalClose = false;
+    this.connectionParams = null; // { gameId, hostToken, password } of the active game
   }
 
-  connect() {
+  // Connect to a specific game room. Reconnects (manual or automatic) reuse
+  // the stored params; connecting to a different game replaces the socket.
+  connect(params) {
+    if (params) {
+      const sameGame = this.connectionParams && this.connectionParams.gameId === params.gameId;
+      this.connectionParams = params;
+      if (!sameGame && this.ws) {
+        // Switching rooms: drop the old socket first
+        this.intentionalClose = true;
+        this.ws.close();
+        this.ws = null;
+      }
+    }
+    if (!this.connectionParams) {
+      console.error('WebSocket connect called without game params');
+      return;
+    }
     // Never open a second socket: a duplicate connection means every
     // broadcast is delivered (and applied) twice
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
@@ -21,11 +38,17 @@ class WebSocketManager {
     }
     this.intentionalClose = false;
 
-    const socket = new WebSocket(config.wsUrl);
+    const { gameId, hostToken, password } = this.connectionParams;
+    const query = new URLSearchParams({ gameId });
+    if (hostToken) query.set('hostToken', hostToken);
+    if (password) query.set('password', password);
+    const socket = new WebSocket(`${config.wsUrl}?${query.toString()}`);
     this.ws = socket;
 
     socket.onopen = () => {
       console.log('WebSocket connected');
+      // Let subscribers (re)introduce themselves, e.g. re-send user_login
+      this.notifySubscribers({ type: 'ws_open' });
     };
 
     socket.onmessage = (event) => {
@@ -59,190 +82,107 @@ class WebSocketManager {
     this.subscribers.forEach(callback => callback(data));
   }
 
-  sendUserLogin(userData) {
+  send(payload) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'user_login',
-        data: userData
-      }));
+      this.ws.send(JSON.stringify(payload));
     }
+  }
+
+  sendUserLogin(userData) {
+    this.send({ type: 'user_login', data: userData });
+  }
+
+  sendUserLogout(userData) {
+    this.send({ type: 'user_logout', data: userData });
+  }
+
+  sendStartGame() {
+    this.send({ type: 'start_game' });
   }
 
   sendQuestionSelect(questionId, userType, userId = null) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'question_select',
-        data: { questionId, userType, userId }
-      }));
-    }
+    this.send({ type: 'question_select', data: { questionId, userType, userId } });
   }
 
   sendCatClicks(questionId, userId, clicksLeft) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'cat_clicks',
-        data: { questionId, userId, clicksLeft }
-      }));
-    }
+    this.send({ type: 'cat_clicks', data: { questionId, userId, clicksLeft } });
   }
 
   sendCatClicksGrant(questionId, userId, amount = 1) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'cat_clicks_grant',
-        data: { questionId, userId, amount }
-      }));
-    }
+    this.send({ type: 'cat_clicks_grant', data: { questionId, userId, amount } });
   }
 
   sendNumberAnswer(questionId, userId, value) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'number_answer',
-        data: { questionId, userId, value }
-      }));
-    }
+    this.send({ type: 'number_answer', data: { questionId, userId, value } });
   }
 
   sendRevealNumberAnswers(questionId) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'reveal_number_answers',
-        data: { questionId }
-      }));
-    }
+    this.send({ type: 'reveal_number_answers', data: { questionId } });
   }
 
   sendSecretAssign(questionId, targetUserId, selectorUserId = null) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'secret_assign',
-        data: { questionId, targetUserId, selectorUserId }
-      }));
-    }
+    this.send({ type: 'secret_assign', data: { questionId, targetUserId, selectorUserId } });
   }
 
   sendClearSelectedQuestions() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'clear_selected_questions'
-      }));
-    }
+    this.send({ type: 'clear_selected_questions' });
   }
 
   sendClearCache() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'clear_cache'
-      }));
-    }
+    this.send({ type: 'clear_cache' });
+  }
+
+  sendUpdateScore(userId, score) {
+    this.send({ type: 'update_score', data: { userId, score } });
+  }
+
+  sendAdminClickedGreenNumber(userId) {
+    this.send({ type: 'admin_clicked_green_number', data: { userId } });
+  }
+
+  sendAdminClickedRedNumber(userId) {
+    this.send({ type: 'admin_clicked_red_number', data: { userId } });
   }
 
   getSelectedQuestions() {
     return this.selectedQuestions;
   }
 
-  handleMessage(event) {
-    try {
-      const data = JSON.parse(event.data);
-      
-      if (data.type === 'selected_questions_update') {
-        this.selectedQuestions = new Set(data.data);
-        // Notify subscribers about the update
-        this.notifySubscribers(data);
-      } else if (data.type === 'return_to_game') {
-        // When returning to game, request an update of selected questions
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-          this.ws.send(JSON.stringify({
-            type: 'request_selected_questions'
-          }));
-        }
-        this.notifySubscribers(data);
-      } else {
-        // Notify subscribers for other message types
-        this.notifySubscribers(data);
-      }
-    } catch (error) {
-      console.error('Error handling WebSocket message:', error);
-    }
-  }
-
   sendQuestionReveal(questionId) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'question_reveal',
-        data: {
-          questionId
-        }
-      }));
-    }
+    this.send({ type: 'question_reveal', data: { questionId } });
   }
 
   sendAnswerReveal(questionId) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'answer_reveal',
-        data: {
-          questionId
-        }
-      }));
-    }
+    this.send({ type: 'answer_reveal', data: { questionId } });
   }
 
   sendResponseReveal(questionId) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'response_reveal',
-        data: {
-          questionId
-        }
-      }));
-    }
+    this.send({ type: 'response_reveal', data: { questionId } });
   }
 
   sendElapsedTime(questionId, elapsedTime, userId) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'elapsed_time',
-        data: {
-          questionId,
-          elapsedTime,
-          userId
-        }
-      }));
-    }
+    this.send({ type: 'elapsed_time', data: { questionId, elapsedTime, userId } });
   }
 
   sendReturnToGame() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'return_to_game'
-      }));
-    }
+    this.send({ type: 'return_to_game' });
   }
 
   sendMediaControl(questionId, control) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'media_control',
-        data: { questionId, ...control }
-      }));
-    }
+    this.send({ type: 'media_control', data: { questionId, ...control } });
   }
 
   sendRoundChange(roundIndex) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'round_change',
-        data: {
-          roundIndex
-        }
-      }));
-    }
+    this.send({ type: 'round_change', data: { roundIndex } });
+  }
+
+  sendRequestSelectedQuestions() {
+    this.send({ type: 'request_selected_questions' });
   }
 
   disconnect() {
     this.intentionalClose = true;
+    this.connectionParams = null;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -255,4 +195,4 @@ class WebSocketManager {
 
 // Create a singleton instance
 const wsManager = new WebSocketManager();
-export default wsManager; 
+export default wsManager;

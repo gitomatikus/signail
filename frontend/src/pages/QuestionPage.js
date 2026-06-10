@@ -9,6 +9,7 @@ import ImageLightbox from '../components/ImageLightbox';
 import Settings from '../components/Settings';
 import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
+import { useGame } from '../contexts/GameContext';
 
 // Sanitize HTML content to allow only safe tags and attributes
 const sanitizeHtml = (html) => {
@@ -118,9 +119,14 @@ const getQuestionMedia = () =>
 const suppressMediaEvents = (el) => { el.__suppressMediaUntil = Date.now() + 400; };
 const isMediaEventSuppressed = (el) => !!el.__suppressMediaUntil && Date.now() < el.__suppressMediaUntil;
 
-const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] }) => {
+const QuestionPage = () => {
   const { questionId } = useParams();
   const navigate = useNavigate();
+  // The game host is the admin of their own game; everyone else is a player
+  const { gameId, isHost, onlineUsers } = useGame();
+  const isAdmin = isHost;
+  const isReadOnly = !isHost;
+  const boardPath = `/game/${gameId}`;
   const [question, setQuestion] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isQuestionRevealed, setIsQuestionRevealed] = useState(false);
@@ -131,7 +137,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   const [showAfterRound, setShowAfterRound] = useState(false);
   const [currentAfterRoundIndex, setCurrentAfterRoundIndex] = useState(0);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(() => {
-    const savedRoundIndex = localStorage.getItem('currentRoundIndex');
+    const savedRoundIndex = localStorage.getItem(`currentRoundIndex-${gameId}`);
     return savedRoundIndex ? parseInt(savedRoundIndex) : 0;
   });
   const [themeName, setThemeName] = useState('');
@@ -181,12 +187,12 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         autoPausedMediaRef.current.clear();
         // Stale cache (new pack uploaded / cache cleared): this question may
         // no longer exist, so go back to the board and load everything fresh
-        const cacheChanged = await checkCacheVersion();
+        const cacheChanged = await checkCacheVersion(gameId);
         if (cacheChanged) {
-          navigate(isAdmin ? '/admin' : '/');
+          navigate(boardPath);
           return;
         }
-        const pack = await indexedDBService.getPack('current');
+        const pack = await indexedDBService.getPack(`pack-${gameId}`);
         if (!pack) {
           throw new Error('Pack not found');
         }
@@ -216,13 +222,13 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         setQuestion(foundQuestion);
         setCurrentRoundIndex(foundRoundIndex);
         setThemeName(foundThemeName);
-        localStorage.setItem('currentRoundIndex', foundRoundIndex.toString());
+        localStorage.setItem(`currentRoundIndex-${gameId}`, foundRoundIndex.toString());
 
         // For cat-in-the-bag, restore who selected it and who answers it (survives refresh).
         // Must happen before the times fetch: assigning the target resets userTimes.
         if (foundQuestion.type === 'secret') {
           try {
-            const response = await fetch(`${config.apiUrl}/api/questions/${questionId}/secret`);
+            const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${questionId}/secret`);
             const result = await response.json();
             if (result.status === 'success') {
               setSecretSelectorId(result.data.selectorId || null);
@@ -243,7 +249,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
             const storedUser = localStorage.getItem('user');
             const myId = storedUser ? JSON.parse(storedUser).id : null;
             const query = myId ? `?userId=${encodeURIComponent(myId)}` : '';
-            const response = await fetch(`${config.apiUrl}/api/questions/${questionId}/answers${query}`);
+            const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${questionId}/answers${query}`);
             const result = await response.json();
             if (result.status === 'success') {
               setNumberAnswers(result.data.answers || {});
@@ -257,7 +263,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         // For find-a-cat with a click limit, restore remaining clicks (survives refresh)
         if (foundQuestion.type === 'find-a-cat' && foundQuestion.max_clicks > 0) {
           try {
-            const response = await fetch(`${config.apiUrl}/api/questions/${questionId}/clicks`);
+            const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${questionId}/clicks`);
             const result = await response.json();
             if (result.status === 'success') {
               setClicksLeftMap(result.data);
@@ -269,7 +275,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
 
         // Fetch existing times for this question
         try {
-          const response = await fetch(`${config.apiUrl}/api/questions/${questionId}/times`);
+          const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${questionId}/times`);
           const result = await response.json();
           if (result.status === 'success') {
             setUserTimes(result.data);
@@ -279,13 +285,14 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         }
       } catch (error) {
         console.error('Error loading question:', error);
-        navigate(isAdmin ? '/admin' : '/');
+        navigate(boardPath);
       } finally {
         setLoading(false);
       }
     };
     loadQuestion();
-  }, [questionId, navigate, isAdmin]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionId, navigate, isAdmin, gameId]);
 
   useEffect(() => {
     // Apply an admin playback command to the matching media element.
@@ -330,7 +337,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         setIsResponseRevealed(true);
         setShowAfterRound(true);
       } else if (data.type === 'return_to_game') {
-        navigate(isAdmin ? '/admin' : '/');
+        navigate(boardPath);
       } else if (data.type === 'elapsed_time') {
         setUserTimes(prev => ({
           ...prev,
@@ -697,7 +704,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   const handleReturnToGame = () => {
     if (isAdmin) {
       wsManager.sendReturnToGame();
-      navigate('/admin');
+      navigate(boardPath);
     }
   };
 

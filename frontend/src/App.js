@@ -1,37 +1,46 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import GamePage from './pages/GamePage';
+import HomePage from './pages/HomePage';
+import CreateGamePage from './pages/CreateGamePage';
+import GameRoomPage from './pages/GameRoomPage';
 import QuestionPage from './pages/QuestionPage';
-import PackUploadPage from './pages/PackUploadPage';
 import AuthWrapper from './components/AuthWrapper';
+import { GameProvider } from './contexts/GameContext';
+
+// GameProvider needs the logged-in user that AuthWrapper injects, so this
+// little bridge receives it as a prop and passes it down.
+const GameRoutes = ({ user, children }) => (
+  <GameProvider user={user}>
+    {children}
+  </GameProvider>
+);
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/admin" element={
-          <AuthWrapper isAdmin={true}>
-            <GamePage />
-          </AuthWrapper>
-        } />
-        <Route path="/admin/question/:questionId" element={
-          <AuthWrapper isAdmin={true}>
-            <QuestionPage />
-          </AuthWrapper>
-        } />
-        <Route path="/admin/pack" element={
-          <AuthWrapper isAdmin={true}>
-            <PackUploadPage />
-          </AuthWrapper>
-        } />
-        <Route path="/question/:questionId" element={
-          <AuthWrapper>
-            <QuestionPage isReadOnly={true} />
-          </AuthWrapper>
-        } />
         <Route path="/" element={
           <AuthWrapper>
-            <GamePage />
+            <HomePage />
+          </AuthWrapper>
+        } />
+        <Route path="/create" element={
+          <AuthWrapper>
+            <CreateGamePage />
+          </AuthWrapper>
+        } />
+        <Route path="/game/:gameId" element={
+          <AuthWrapper showHeader={false}>
+            <GameRoutes>
+              <GameRoomPage />
+            </GameRoutes>
+          </AuthWrapper>
+        } />
+        <Route path="/game/:gameId/question/:questionId" element={
+          <AuthWrapper showHeader={false}>
+            <GameRoutes>
+              <QuestionPage />
+            </GameRoutes>
           </AuthWrapper>
         } />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -40,4 +49,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;

@@ -1,12 +1,22 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { indexedDBService } from '../services/indexedDB';
 import wsManager from '../utils/websocket';
+import { useGame } from '../contexts/GameContext';
+import { isHostHidden, setHostHidden } from '../utils/hostVisibility';
+import { getHostToken, removeHostToken } from '../services/gameAuth';
+import config from '../config';
 
 const Settings = ({ onClose, isAdmin = false }) => {
+  const { gameId, gameInfo } = useGame() || {};
+  const navigate = useNavigate();
   const [isClearingCache, setIsClearingCache] = useState(false);
   const [isClearingPack, setIsClearingPack] = useState(false);
   const [message, setMessage] = useState('');
+  const [hideHost, setHideHost] = useState(() => isHostHidden());
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
   const handleClearCache = async () => {
     try {
@@ -25,12 +35,67 @@ const Settings = ({ onClose, isAdmin = false }) => {
     try {
       setIsClearingPack(true);
       setMessage('');
-      await indexedDBService.deletePack('current');
+      await indexedDBService.deletePack(`pack-${gameId}`);
       setMessage('Pack cleared successfully!');
     } catch (error) {
       setMessage('Error clearing pack: ' + error.message);
     } finally {
       setIsClearingPack(false);
+    }
+  };
+
+  const handleToggleHideHost = () => {
+    const next = !hideHost;
+    setHideHost(next);
+    setHostHidden(next);
+  };
+
+  // Leaving just disconnects: GameProvider tears the socket down on unmount
+  // and the server drops the player from the room
+  const handleExitGame = () => {
+    navigate('/');
+  };
+
+  const handleSavePassword = async () => {
+    try {
+      setIsSavingPassword(true);
+      setMessage('');
+      const response = await fetch(`${config.apiUrl}/api/games/${gameId}/password`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Host-Token': getHostToken(gameId)
+        },
+        body: JSON.stringify({ password: passwordInput })
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to update password');
+      }
+      setMessage(result.data.hasPassword ? 'Password set!' : 'Password removed!');
+      setPasswordInput('');
+    } catch (error) {
+      setMessage('Error updating password: ' + error.message);
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
+  const handleExitAndDelete = async () => {
+    if (!window.confirm('Delete this game for everyone? This cannot be undone.')) return;
+    try {
+      const response = await fetch(`${config.apiUrl}/api/games/${gameId}`, {
+        method: 'DELETE',
+        headers: { 'X-Host-Token': getHostToken(gameId) }
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.message || 'Failed to delete game');
+      }
+      removeHostToken(gameId);
+      navigate('/');
+    } catch (error) {
+      setMessage('Error deleting game: ' + error.message);
     }
   };
 
@@ -96,6 +161,92 @@ const Settings = ({ onClose, isAdmin = false }) => {
           >
             {isClearingPack ? 'Clearing...' : 'Clear Pack'}
           </button>
+
+          {!isAdmin && (
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              padding: '0.75rem 1rem',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '8px',
+              color: 'var(--text-primary)',
+              cursor: 'pointer'
+            }}>
+              <span>Hide host</span>
+              <input
+                type="checkbox"
+                checked={hideHost}
+                onChange={handleToggleHideHost}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+            </label>
+          )}
+
+          {isAdmin && gameId && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem',
+              padding: '0.75rem 1rem',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '8px'
+            }}>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                Game password {gameInfo?.hasPassword ? '(currently set)' : '(none)'}
+              </span>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  type="text"
+                  value={passwordInput}
+                  onChange={e => setPasswordInput(e.target.value)}
+                  placeholder="New password (empty = remove)"
+                  style={{ flex: 1 }}
+                />
+                <button
+                  onClick={handleSavePassword}
+                  disabled={isSavingPassword}
+                  className="btn-primary"
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  {isSavingPassword ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {gameId && (
+            <button
+              onClick={handleExitGame}
+              className="btn-primary"
+              style={{
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: 'var(--text-primary)',
+                boxShadow: 'none',
+                border: '1px solid var(--glass-border)',
+                width: '100%'
+              }}
+            >
+              Exit Game
+            </button>
+          )}
+
+          {isAdmin && gameId && (
+            <button
+              onClick={handleExitAndDelete}
+              className="btn-primary"
+              style={{
+                background: 'linear-gradient(135deg, #ef4444, #991b1b)',
+                boxShadow: '0 0 15px rgba(239, 68, 68, 0.4)',
+                width: '100%'
+              }}
+            >
+              Exit & Delete Game
+            </button>
+          )}
 
           {message && (
             <div style={{

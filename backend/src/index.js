@@ -1,293 +1,247 @@
 const express = require('express');
 const http = require('http');
-const wsManager = require('./websocket');
 const cors = require('cors');
-const path = require('path');
 const fs = require('fs');
+const wsManager = require('./websocket');
+const { GameManager } = require('./games');
 const config = require('./config');
-const WebSocket = require('ws');
 
 const app = express();
 const server = http.createServer(app);
 
-// Store uploaded pack in memory
-let uploadedPack = null;
-
-// Look up a question's type in the active pack (uploaded or default).
-// Needed to decide whether submitted answers may go out unmasked.
-let defaultPackCache = null;
-const getQuestionType = (questionId) => {
-  let pack = uploadedPack;
-  if (!pack) {
-    if (!defaultPackCache) {
-      try {
-        defaultPackCache = JSON.parse(fs.readFileSync(path.join(__dirname, 'pack1.json'), 'utf8'));
-      } catch (e) {
-        return null;
-      }
-    }
-    pack = defaultPackCache;
-  }
-  for (const round of pack.rounds || []) {
-    for (const theme of round.themes || []) {
-      const q = (theme.questions || []).find(q => q.id === questionId);
-      if (q) {
-        return q.type || null;
-      }
-    }
-  }
-  return null;
-};
-
-// Initialize WebSocket
-wsManager.initialize(server);
-wsManager.getQuestionType = getQuestionType;
+const gameManager = new GameManager();
+wsManager.initialize(server, gameManager);
 
 // CORS: allow any origin (reflect request origin) and handle preflight globally
 const corsHandler = cors({
   origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Host-Token']
 });
 
 app.use(corsHandler);
 app.options('*', corsHandler);
-app.use(express.json({ limit: '250mb' }));
 
-// Store connected clients
-const clients = new Set();
+const MAX_PACK_SIZE = 300 * 1024 * 1024;
 
-// WebSocket connection handler
-wsManager.wss.on('connection', (ws) => {
-    clients.add(ws);
-    console.log('Client connected');
+const requireGame = (req, res) => {
+  const game = gameManager.getGame(req.params.gameId);
+  if (!game) {
+    res.status(404).json({ status: 'error', message: 'Game not found' });
+    return null;
+  }
+  return game;
+};
 
-    // Send welcome message to the new client
-    ws.send(JSON.stringify({
-        type: 'system',
-        message: 'Welcome to the chatix!'
-    }));
+const requireHost = (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return null;
+  const token = req.headers['x-host-token'] || req.query.hostToken;
+  if (token !== game.hostToken) {
+    res.status(403).json({ status: 'error', message: 'Only the game host can do this' });
+    return null;
+  }
+  return game;
+};
 
-    ws.on('message', (message) => {
-        try {
-            const messageStr = message.toString();
-            console.log('Received message:', messageStr);
-            
-            // Broadcast message to all connected clients
-            clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify({
-                        type: 'message',
-                        content: messageStr,
-                        timestamp: new Date().toISOString()
-                    }));
-                }
-            });
-        } catch (error) {
-            console.error('Error handling message:', error);
-        }
-    });
+// Pack upload is registered BEFORE express.json so the body is never parsed
+// or buffered in memory - it streams straight to the game's pack file.
+app.post('/api/games/:gameId/pack', (req, res) => {
+  const game = requireHost(req, res);
+  if (!game) return;
+  if (game.status === 'started') {
+    return res.status(409).json({ status: 'error', message: 'Game already started' });
+  }
 
-    ws.on('close', () => {
-        clients.delete(ws);
-        console.log('Client disconnected');
-    });
-});
+  const fileStream = fs.createWriteStream(game.packPath);
+  let received = 0;
+  let aborted = false;
 
-// Root route handler
-app.get('/', (req, res) => {
-    res.json({ message: 'WebSocket Chat Server is running' });
-});
+  const fail = (status, message) => {
+    if (aborted) return;
+    aborted = true;
+    fileStream.destroy();
+    fs.unlink(game.packPath, () => {});
+    res.status(status).json({ status: 'error', message });
+  };
 
-// Get online users endpoint
-app.get('/api/users/online', (req, res) => {
-    const onlineUsers = wsManager.getOnlineUsers();
-    res.json({
-        status: 'success',
-        data: onlineUsers
-    });
-});
-
-// Update user score endpoint
-app.post('/api/users/:userId/score', express.json(), (req, res) => {
-    const { userId } = req.params;
-    const { score } = req.body;
-
-    if (typeof score !== 'number') {
-        return res.status(400).json({
-            status: 'error',
-            message: 'Score must be a number'
-        });
+  req.on('data', (chunk) => {
+    received += chunk.length;
+    if (received > MAX_PACK_SIZE) {
+      req.destroy();
+      fail(413, 'Pack is too large');
     }
+  });
+  req.on('aborted', () => fail(400, 'Upload aborted'));
+  req.pipe(fileStream);
 
-    const userData = wsManager.persistentUsers.get(userId);
-    if (!userData) {
-        return res.status(404).json({
-            status: 'error',
-            message: 'User not found'
-        });
-    }
-
-    // Update the score
-    userData.score = score;
-    wsManager.persistentUsers.set(userId, userData);
-    wsManager.userScores.set(userId, score);
-
-    // Broadcast the updated user list to all clients
-    wsManager.broadcastOnlineUsers();
-
-    res.json({
-        status: 'success',
-        data: userData
-    });
-});
-
-// Sample JSON API endpoints
-app.get('/api/messages', (req, res) => {
-    res.json({
-        messages: [
-            { id: 1, text: 'Hello from server!' },
-            { id: 2, text: 'This is a sample message' }
-        ]
-    });
-});
-
-// Serve static JSON files
-app.get('/api/data', (req, res) => {
-    res.json({
-        status: 'success',
-        data: {
-            timestamp: new Date().toISOString(),
-            message: 'This is a sample JSON response'
-        }
-    });
-});
-
-// Current cache key. Clients compare it with the one saved in localStorage
-// and drop their local caches (pack, answered questions) when it changed.
-app.get('/api/cache-key', (req, res) => {
-    res.json({
-        status: 'success',
-        data: { cacheKey: wsManager.getCacheKey() }
-    });
-});
-
-// Serve pack.json
-app.get('/api/pack', (req, res) => {
-    // If there's an uploaded pack, serve it
-    if (uploadedPack) {
-        return res.json(uploadedPack);
-    }
-    
-    // Otherwise serve the default pack1.json
-    fs.readFile(path.join(__dirname, 'pack1.json'), 'utf8', (err, data) => {
-        if (err) {
-            return res.status(500).json({ error: 'Could not read pack1.json' });
-        }
-        try {
-            const pack = JSON.parse(data);
-            res.json(pack);
-        } catch (e) {
-            res.status(500).json({ error: 'Invalid JSON in pack1.json' });
-        }
-    });
-});
-
-// Upload new pack endpoint
-app.post('/api/pack/upload', express.json(), (req, res) => {
+  fileStream.on('error', () => fail(500, 'Failed to save pack'));
+  fileStream.on('finish', () => {
+    if (aborted) return;
     try {
-        // Validate that the request body is a valid pack
-        if (!req.body || typeof req.body !== 'object') {
-            return res.status(400).json({ error: 'Invalid pack format' });
-        }
-
-        // Store the pack in memory
-        uploadedPack = req.body;
-
-        // A new pack invalidates all per-question state and every
-        // client's cached pack, so rotate the cache key
-        wsManager.resetQuestionState();
-        const cacheKey = wsManager.regenerateCacheKey();
-
-        res.json({
-            status: 'success',
-            message: 'Pack uploaded successfully',
-            cacheKey
-        });
-    } catch (error) {
-        res.status(500).json({
-            status: 'error',
-            message: 'Failed to upload pack',
-            error: error.message
-        });
+      // Single transient parse: validates the JSON and builds the small
+      // question-type index; the pack itself stays on disk only
+      gameManager.indexPackFile(game);
+    } catch (e) {
+      return fail(400, `Invalid pack: ${e.message}`);
     }
-});
-
-// Get times for a specific question
-app.get('/api/questions/:questionId/times', (req, res) => {
-  const questionId = parseInt(req.params.questionId);
-  const times = wsManager.getQuestionTimes(questionId);
-  res.json({
-    status: 'success',
-    data: Object.fromEntries(times)
+    if (game.status === 'awaiting_pack') {
+      game.status = 'lobby';
+    }
+    const cacheKey = game.regenerateCacheKey();
+    game.resetQuestionState();
+    game.broadcastGameInfo();
+    res.json({
+      status: 'success',
+      message: 'Pack uploaded successfully',
+      data: { gameId: game.id, packName: game.packName, cacheKey }
+    });
   });
 });
 
-// Get remaining find-a-cat clicks per user for a specific question
-app.get('/api/questions/:questionId/clicks', (req, res) => {
-  const questionId = parseInt(req.params.questionId);
-  const clicks = wsManager.getQuestionClicks(questionId);
+app.use(express.json({ limit: '1mb' }));
+
+app.get('/', (req, res) => {
+  res.json({ message: 'Signail game server is running' });
+});
+
+// ----- Game list / lifecycle -----
+
+app.get('/api/games', (req, res) => {
+  res.json({ status: 'success', data: gameManager.listGames() });
+});
+
+app.post('/api/games', (req, res) => {
+  const { hostName, hostImageUrl, password } = req.body || {};
+  if (!hostName || typeof hostName !== 'string') {
+    return res.status(400).json({ status: 'error', message: 'hostName is required' });
+  }
+  const game = gameManager.createGame({
+    hostName: hostName.trim(),
+    hostImageUrl: typeof hostImageUrl === 'string' ? hostImageUrl.trim() : '',
+    password: typeof password === 'string' && password.length > 0 ? password : null
+  });
   res.json({
     status: 'success',
-    data: Object.fromEntries(clicks)
+    data: { gameId: game.id, hostToken: game.hostToken }
   });
 });
 
-// Get close-enough submissions for a specific question.
-// Before the reveal, other players' numbers are masked as `true`;
-// pass ?userId= to still get your own submitted value back after a refresh.
-app.get('/api/questions/:questionId/answers', (req, res) => {
+app.get('/api/games/:gameId', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  res.json({ status: 'success', data: game.toListInfo() });
+});
+
+app.delete('/api/games/:gameId', (req, res) => {
+  const game = requireHost(req, res);
+  if (!game) return;
+  gameManager.deleteGame(game.id, 'deleted by host');
+  res.json({ status: 'success', message: 'Game deleted' });
+});
+
+// Set, change or remove the game password (host only). Affects new joins;
+// players already in the room stay connected.
+app.patch('/api/games/:gameId/password', (req, res) => {
+  const game = requireHost(req, res);
+  if (!game) return;
+  const { password } = req.body || {};
+  game.password = typeof password === 'string' && password.length > 0 ? password : null;
+  game.broadcastGameInfo();
+  res.json({ status: 'success', data: { hasPassword: !!game.password } });
+});
+
+// Pre-join password check so the client can show a friendly error before
+// opening the WebSocket
+app.post('/api/games/:gameId/verify', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  const { password } = req.body || {};
+  if (game.password && password !== game.password) {
+    return res.status(403).json({ status: 'error', message: 'Wrong password' });
+  }
+  res.json({ status: 'success' });
+});
+
+// ----- Per-game data -----
+
+// Stream the pack from disk - the server never holds packs in memory
+app.get('/api/games/:gameId/pack', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  fs.stat(game.packPath, (err, stat) => {
+    if (err) {
+      return res.status(404).json({ status: 'error', message: 'Pack not uploaded yet' });
+    }
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Length', stat.size);
+    const stream = fs.createReadStream(game.packPath);
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
+  });
+});
+
+app.get('/api/games/:gameId/cache-key', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  res.json({ status: 'success', data: { cacheKey: game.cacheKey } });
+});
+
+app.get('/api/games/:gameId/users', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  res.json({ status: 'success', data: Array.from(game.persistentUsers.values()) });
+});
+
+app.get('/api/games/:gameId/questions/:questionId/times', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  const times = game.getQuestionTimes(parseInt(req.params.questionId));
+  res.json({ status: 'success', data: Object.fromEntries(times) });
+});
+
+app.get('/api/games/:gameId/questions/:questionId/clicks', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  const clicks = game.getQuestionClicks(parseInt(req.params.questionId));
+  res.json({ status: 'success', data: Object.fromEntries(clicks) });
+});
+
+// Get submissions for a specific question. Before the reveal, other players'
+// values are masked as `true`; pass ?userId= to still get your own submitted
+// value back after a refresh.
+app.get('/api/games/:gameId/questions/:questionId/answers', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
   const questionId = parseInt(req.params.questionId);
   const requesterId = req.query.userId;
-  const info = wsManager.getNumberAnswersInfo(questionId);
+  const info = game.getNumberAnswersInfo(questionId);
   // Choice picks are not masked: the admin shows them in real time
   // (the player UI still hides other players' picks until the reveal)
-  const isChoice = getQuestionType(questionId) === 'choice';
+  const isChoice = game.getQuestionType(questionId) === 'choice';
   const answers = {};
   for (const [userId, value] of info.answers) {
     answers[userId] = info.revealed || isChoice || userId === requesterId ? value : true;
   }
   res.json({
     status: 'success',
-    data: {
-      revealed: info.revealed,
-      answers
-    }
+    data: { revealed: info.revealed, answers }
   });
 });
 
-// Get cat-in-the-bag state for a specific question (who selected it, who answers it)
-app.get('/api/questions/:questionId/secret', (req, res) => {
-  const questionId = parseInt(req.params.questionId);
-  res.json({
-    status: 'success',
-    data: wsManager.getSecretInfo(questionId)
-  });
+app.get('/api/games/:gameId/questions/:questionId/secret', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  res.json({ status: 'success', data: game.getSecretInfo(parseInt(req.params.questionId)) });
 });
 
-// Get last user with green frame
-app.get('/api/game/last-green-frame', (req, res) => {
-  const lastGreenFrameUser = wsManager.getLastGreenFrameUser();
-  res.json({
-    status: 'success',
-    data: {
-      userId: lastGreenFrameUser
-    }
-  });
+app.get('/api/games/:gameId/last-green-frame', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  res.json({ status: 'success', data: { userId: game.lastGreenFrameUser } });
 });
 
-// Start the server
 server.listen(config.port, () => {
-    console.log(`Server is running on port ${config.port}`);
-}); 
+  console.log(`Server is running on port ${config.port}`);
+});

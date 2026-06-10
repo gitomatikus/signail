@@ -4,16 +4,18 @@ import Settings from './Settings';
 import { indexedDBService } from '../services/indexedDB';
 import { checkCacheVersion } from '../services/cacheVersion';
 import wsManager from '../utils/websocket';
+import { useGame } from '../contexts/GameContext';
 import config from '../config';
 
 const GameBoard = ({ isAdmin = false }) => {
   const navigate = useNavigate();
+  const { gameId } = useGame();
   const [pack, setPack] = useState(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const [selectedQuestions, setSelectedQuestions] = useState(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(() => {
-    const savedRoundIndex = localStorage.getItem('currentRoundIndex');
+    const savedRoundIndex = localStorage.getItem(`currentRoundIndex-${gameId}`);
     return savedRoundIndex ? parseInt(savedRoundIndex) : 0;
   });
   const [loading, setLoading] = useState(true);
@@ -21,18 +23,18 @@ const GameBoard = ({ isAdmin = false }) => {
   const [downloadProgress, setDownloadProgress] = useState(null);
 
   useEffect(() => {
-    const savedQuestions = localStorage.getItem('selectedQuestions');
+    const savedQuestions = localStorage.getItem(`selectedQuestions-${gameId}`);
     if (savedQuestions) {
       const parsedQuestions = JSON.parse(savedQuestions);
       setSelectedQuestions(new Set(parsedQuestions));
     }
-  }, []);
+  }, [gameId]);
 
   useEffect(() => {
     if (selectedQuestions.size > 0) {
-      localStorage.setItem('selectedQuestions', JSON.stringify([...selectedQuestions]));
+      localStorage.setItem(`selectedQuestions-${gameId}`, JSON.stringify([...selectedQuestions]));
     }
-  }, [selectedQuestions]);
+  }, [selectedQuestions, gameId]);
 
   const loadPack = async () => {
     try {
@@ -41,12 +43,12 @@ const GameBoard = ({ isAdmin = false }) => {
       // If the server rotated the cache key (new pack uploaded / cache
       // cleared), the cached pack and answered questions were just wiped -
       // drop them from state too so we fall through to a fresh fetch
-      const cacheChanged = await checkCacheVersion();
+      const cacheChanged = await checkCacheVersion(gameId);
       if (cacheChanged) {
         setSelectedQuestions(new Set());
-        localStorage.removeItem('selectedQuestions');
+        localStorage.removeItem(`selectedQuestions-${gameId}`);
       }
-      const cachedPack = await indexedDBService.getPack('current');
+      const cachedPack = await indexedDBService.getPack(`pack-${gameId}`);
 
       if (cachedPack) {
         setPack(cachedPack);
@@ -54,10 +56,10 @@ const GameBoard = ({ isAdmin = false }) => {
         return;
       }
 
-      const response = await fetch(`${config.apiUrl}/api/pack`);
+      const response = await fetch(`${config.apiUrl}/api/games/${gameId}/pack`);
       if (!response.body || !window.ReadableStream) {
         const data = await response.json();
-        await indexedDBService.savePack({ id: 'current', ...data });
+        await indexedDBService.savePack({ id: `pack-${gameId}`, ...data });
         setPack(data);
         setLoading(false);
         return;
@@ -88,7 +90,7 @@ const GameBoard = ({ isAdmin = false }) => {
       }
       const text = new TextDecoder('utf-8').decode(allChunks);
       const data = JSON.parse(text);
-      await indexedDBService.savePack({ id: 'current', ...data });
+      await indexedDBService.savePack({ id: `pack-${gameId}`, ...data });
       setPack(data);
     } catch (error) {
       console.error('Error loading pack:', error);
@@ -100,12 +102,9 @@ const GameBoard = ({ isAdmin = false }) => {
 
   useEffect(() => {
     loadPack();
-    if (wsManager.ws && wsManager.ws.readyState === WebSocket.OPEN) {
-      wsManager.ws.send(JSON.stringify({
-        type: 'request_selected_questions'
-      }));
-    }
-  }, []);
+    wsManager.sendRequestSelectedQuestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId]);
 
   useEffect(() => {
     const findQuestionById = (questionId) => {
@@ -125,35 +124,35 @@ const GameBoard = ({ isAdmin = false }) => {
         const { questionId } = data.data;
         setSelectedQuestionId(questionId);
         if (isAdmin) {
-          navigate(`/admin/question/${questionId}`);
+          navigate(`/game/${gameId}/question/${questionId}`);
         } else {
           // Cat-in-the-bag: everyone joins the selection screen right away,
           // without waiting for the admin to reveal the question
           const q = findQuestionById(questionId);
           if (q && q.type === 'secret') {
-            navigate(`/question/${questionId}`);
+            navigate(`/game/${gameId}/question/${questionId}`);
           }
         }
       } else if (data.type === 'question_reveal') {
         const { questionId } = data.data;
-        navigate(`/question/${questionId}`);
+        navigate(`/game/${gameId}/question/${questionId}`);
       } else if (data.type === 'round_change') {
         const { roundIndex } = data.data;
         setCurrentRoundIndex(roundIndex);
-        localStorage.setItem('currentRoundIndex', roundIndex.toString());
+        localStorage.setItem(`currentRoundIndex-${gameId}`, roundIndex.toString());
       }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [navigate, isAdmin, pack]);
+  }, [navigate, isAdmin, pack, gameId]);
 
   const handleQuestionClick = (question) => {
     const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
 
     if (!isAdmin) {
-      const greenFramedUsers = JSON.parse(localStorage.getItem('greenFramedUsers') || '[]');
+      const greenFramedUsers = JSON.parse(localStorage.getItem(`greenFramedUsers-${gameId}`) || '[]');
 
       if (!greenFramedUsers.includes(currentUser.id)) {
         console.log('Only users with green frame can select questions');
@@ -169,7 +168,7 @@ const GameBoard = ({ isAdmin = false }) => {
     wsManager.sendQuestionSelect(question.id, isAdmin ? 'admin' : 'user', isAdmin ? null : (currentUser.id || null));
 
     if (isAdmin) {
-      navigate(`/admin/question/${question.id}`);
+      navigate(`/game/${gameId}/question/${question.id}`);
     }
   };
 
@@ -177,7 +176,7 @@ const GameBoard = ({ isAdmin = false }) => {
     if (currentRoundIndex < pack.rounds.length - 1) {
       const newIndex = currentRoundIndex + 1;
       setCurrentRoundIndex(newIndex);
-      localStorage.setItem('currentRoundIndex', newIndex.toString());
+      localStorage.setItem(`currentRoundIndex-${gameId}`, newIndex.toString());
       if (isAdmin) {
         wsManager.sendRoundChange(newIndex);
       }
@@ -188,7 +187,7 @@ const GameBoard = ({ isAdmin = false }) => {
     if (currentRoundIndex > 0) {
       const newIndex = currentRoundIndex - 1;
       setCurrentRoundIndex(newIndex);
-      localStorage.setItem('currentRoundIndex', newIndex.toString());
+      localStorage.setItem(`currentRoundIndex-${gameId}`, newIndex.toString());
       if (isAdmin) {
         wsManager.sendRoundChange(newIndex);
       }
