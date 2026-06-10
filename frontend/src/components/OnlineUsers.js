@@ -76,14 +76,16 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
     });
   }
 
-  // Choice: exact-match correctness, plus the fastest correct player (takes the move)
+  // Choice: exact-match correctness, plus the fastest correct player (takes the move).
+  // Choice picks arrive unmasked in real time, so this works before the reveal
+  // for the admin; players only have masked values until then.
   const choiceCorrectKey = isChoiceQuestion
     ? (question.options || []).map((o, i) => (o.correct ? i : -1)).filter(i => i >= 0).join(',')
     : '';
   const isCorrectChoicePicks = (value) =>
     Array.isArray(value) && [...value].sort((a, b) => a - b).join(',') === choiceCorrectKey;
   let fastestCorrectChoiceId = null;
-  if (isChoiceQuestion && answersRevealed) {
+  if (isChoiceQuestion) {
     let bestTime = Infinity;
     Object.entries(numberAnswers).forEach(([userId, value]) => {
       if (!isCorrectChoicePicks(value)) return;
@@ -179,9 +181,12 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               ? userTime !== null
               : isCloseEnoughQuestion
                 ? answersRevealed
-                : (isChoiceQuestion || isTextQuestion)
-                  ? (answersRevealed && numberAnswers[user.id] !== undefined)
-                  : position === 0
+                : isChoiceQuestion
+                  // Choice results are live: award as soon as the player answers
+                  ? numberAnswers[user.id] !== undefined
+                  : isTextQuestion
+                    ? (answersRevealed && numberAnswers[user.id] !== undefined)
+                    : position === 0
         );
         const submittedAnswer = numberAnswers[user.id];
         const answerBadge = isCloseEnoughQuestion && submittedAnswer !== undefined
@@ -195,7 +200,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
         const isFirstPlace = isFindACat
           ? position === 0
           : isChoiceQuestion
-            ? (answersRevealed && user.id === fastestCorrectChoiceId)
+            ? user.id === fastestCorrectChoiceId
             : isTextQuestion
               ? (answersRevealed && position === 0)
               : false;
@@ -426,7 +431,8 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   alignItems: 'center',
                   padding: '4px 8px',
                   marginTop: '4px',
-                  borderRadius: '8px'
+                  borderRadius: '8px',
+                  whiteSpace: 'nowrap'
                 }}>
                   {!isFindACat && (
                     <>
@@ -531,10 +537,11 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                 </div>
               )}
 
-              {/* Choice picks / text answers shown under the player once revealed.
-                  Choice correctness colors appear for the admin right away and for
-                  players only after the admin shows the response. */}
-              {(isChoiceQuestion || isTextQuestion) && answersRevealed
+              {/* Choice picks / text answers shown under the player once revealed —
+                  for the admin, choice picks appear in real time. Correctness colors
+                  appear for the admin right away and for players only after the
+                  admin shows the response. */}
+              {(isChoiceQuestion || isTextQuestion) && (answersRevealed || (isAdmin && isChoiceQuestion))
                 && submittedAnswer !== undefined && submittedAnswer !== true && (
                 <div className="glass-panel" style={{
                   marginTop: '4px',

@@ -154,8 +154,15 @@ class WebSocketManager {
               const answers = this.questionAnswers.get(questionId);
               if (!answers.has(userId)) {
                 answers.set(userId, value);
-                // Others only learn that the player answered, not the answer itself
-                this.broadcastToAll({ type: 'number_answer_submitted', data: { questionId, userId } });
+                // Choice picks go out unmasked so the admin sees results in
+                // real time; for other types clients only learn that the
+                // player answered, not the answer itself
+                const isChoice = typeof this.getQuestionType === 'function'
+                  && this.getQuestionType(questionId) === 'choice';
+                this.broadcastToAll({
+                  type: 'number_answer_submitted',
+                  data: isChoice ? { questionId, userId, value } : { questionId, userId }
+                });
               }
             }
           } else if (data.type === 'reveal_number_answers') {

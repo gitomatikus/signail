@@ -90,6 +90,25 @@ const stripMediaControls = (html) => {
   return result;
 };
 
+// Players get audio with controls stripped, so audio-only content renders as
+// nothing visible — detect that case to avoid showing an empty question card
+const isAudioOnlyContent = (html) => {
+  if (typeof html !== 'string' || !html.includes('<audio')) {
+    return false;
+  }
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('audio').forEach((el) => el.remove());
+  if (doc.body.querySelector('img, video')) {
+    return false;
+  }
+  return !(doc.body.textContent || '').trim();
+};
+
+// Question types where every player answers independently and several can
+// score: one player's answer (or the admin scoring it) must not stop
+// question media for everyone else
+const MULTI_WINNER_TYPES = ['close-enough', 'choice', 'text-answer', 'find-a-cat'];
+
 // Audio/video that belongs to the question content itself (not avatars etc.)
 const getQuestionMedia = () =>
   Array.from(document.querySelectorAll('.question-content audio, .question-content video'));
@@ -344,10 +363,13 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           });
         }
       } else if (data.type === 'number_answer_submitted' && data.data.questionId === parseInt(questionId)) {
-        // Mark that the player answered without exposing their number
+        // Mark that the player answered; choice picks arrive unmasked so the
+        // admin can show results in real time (other types send no value)
         if (data.data.userId !== currentUserId) {
           setNumberAnswers(prev => (
-            prev[data.data.userId] === undefined ? { ...prev, [data.data.userId]: true } : prev
+            prev[data.data.userId] === undefined
+              ? { ...prev, [data.data.userId]: data.data.value !== undefined ? data.data.value : true }
+              : prev
           ));
         }
       } else if (data.type === 'number_answers' && data.data.questionId === parseInt(questionId)) {
@@ -361,16 +383,19 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         if (question?.type === 'progressive-reveal') {
           setTimer(0);
         }
-        // A correct answer stops question media for everyone; the admin can
-        // still resume playback manually afterwards
-        adminPausedMediaRef.current = true;
-        autoPausedMediaRef.current.clear();
-        getQuestionMedia().forEach((el) => {
-          if (!el.paused) {
-            suppressMediaEvents(el);
-            el.pause();
-          }
-        });
+        // A correct answer stops question media for everyone (the admin can
+        // still resume playback manually) — except in multi-winner types,
+        // where other players may still be answering
+        if (!MULTI_WINNER_TYPES.includes(question?.type)) {
+          adminPausedMediaRef.current = true;
+          autoPausedMediaRef.current.clear();
+          getQuestionMedia().forEach((el) => {
+            if (!el.paused) {
+              suppressMediaEvents(el);
+              el.pause();
+            }
+          });
+        }
       } else if (data.type === 'media_control' && data.data.questionId === parseInt(questionId)) {
         // The admin is the playback authority; the admin client ignores the
         // echo of its own commands
@@ -467,6 +492,11 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   // playback continues (unless the admin paused it or the answer was correct).
   // Content-index deps make sure media that appears mid-buzz is paused too.
   useEffect(() => {
+    // Multi-winner types have no buzz race: a recorded answer time there
+    // only marks a submission and must not pause media for everyone
+    if (MULTI_WINNER_TYPES.includes(question?.type)) {
+      return;
+    }
     const buzzPending = Object.keys(userTimes).some(uid => !redJudgedUsers.has(uid));
     if (buzzPending) {
       getQuestionMedia().forEach((el) => {
@@ -487,7 +517,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
       }
       autoPausedMediaRef.current.clear();
     }
-  }, [userTimes, redJudgedUsers, currentRuleIndex, currentAfterRoundIndex, showAfterRound]);
+  }, [userTimes, redJudgedUsers, currentRuleIndex, currentAfterRoundIndex, showAfterRound, question]);
 
   // The admin's native controls drive playback for everyone: relay every
   // user-initiated play/pause/seek on question media to all clients
@@ -651,6 +681,12 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
 
   const handleShowAfterRound = () => {
     if (isAdmin && question) {
+      // For choice the admin already sees picks live, so there is no separate
+      // "Show Result" step: revealing the response also publishes everyone's
+      // picks to the players and stops further submissions
+      if (question.type === 'choice' && !answersRevealed) {
+        wsManager.sendRevealNumberAnswers(parseInt(questionId));
+      }
       wsManager.sendResponseReveal(question.id);
       setIsResponseRevealed(true);
       setShowAfterRound(true);
@@ -1638,17 +1674,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
                 ))}
               </div>
             )}
-            <div style={cardStyle}>
-              {afterRoundRules[lastRuleIndex].type === 'embedded' ? (
-                <div
-                  className="question-content"
-                  style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
-                  dangerouslySetInnerHTML={{ __html: renderHtmlContent(afterRoundRules[lastRuleIndex].content) }}
-                />
-              ) : (
-                renderRule(afterRoundRules[lastRuleIndex])
-              )}
-            </div>
+            {renderRuleCard(afterRoundRules[lastRuleIndex])}
           </div>
         );
       }
@@ -1657,22 +1683,38 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
     const rules = question.rules || [];
     if (rules.length > 0) {
       const lastRuleIndex = Math.min(currentRuleIndex, rules.length - 1);
-      return (
-        <div style={cardStyle}>
-          {rules[lastRuleIndex].type === 'embedded' ? (
-            <div
-              className="question-content"
-              style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
-              dangerouslySetInnerHTML={{ __html: renderHtmlContent(rules[lastRuleIndex].content) }}
-            />
-          ) : (
-            renderRule(rules[lastRuleIndex])
-          )}
-        </div>
-      );
+      return renderRuleCard(rules[lastRuleIndex]);
     }
 
     return null;
+  };
+
+  // A single rule inside the question card. Audio-only content has nothing to
+  // show players (controls are stripped), so keep the audio mounted (hidden)
+  // for playback but skip the empty card entirely.
+  const renderRuleCard = (rule) => {
+    if (rule.type === 'embedded') {
+      const html = renderHtmlContent(rule.content);
+      if (!isAdmin && isAudioOnlyContent(html)) {
+        return (
+          <div
+            className="question-content"
+            style={{ display: 'none' }}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        );
+      }
+      return (
+        <div style={cardStyle}>
+          <div
+            className="question-content"
+            style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </div>
+      );
+    }
+    return <div style={cardStyle}>{renderRule(rule)}</div>;
   };
 
   return (
@@ -1805,12 +1847,15 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           <span role="img" aria-label="volume">🔊</span>
           <input
             type="range"
+            className="volume-slider"
             min="0"
             max="1"
             step="0.01"
             value={mediaVolume}
             onChange={handleVolumeChange}
-            style={{ width: '180px', cursor: 'pointer' }}
+            style={{
+              background: `linear-gradient(to right, var(--primary) ${mediaVolume * 100}%, rgba(255, 255, 255, 0.2) ${mediaVolume * 100}%)`
+            }}
           />
           <span style={{ minWidth: '3em', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
             {Math.round(mediaVolume * 100)}%
@@ -1851,7 +1896,8 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
             Show Answer
           </button>
         )}
-        {isAdmin && ['close-enough', 'choice', 'text-answer'].includes(question.type) && isQuestionRevealed && !answersRevealed && (
+        {/* Choice has no "Show Result": the admin sees picks in real time */}
+        {isAdmin && ['close-enough', 'text-answer'].includes(question.type) && isQuestionRevealed && !answersRevealed && (
           <button
             onClick={() => wsManager.sendRevealNumberAnswers(parseInt(questionId))}
             className="btn-primary"
@@ -1861,9 +1907,11 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           </button>
         )}
         {isAdmin && isAnswerRevealed && !isResponseRevealed && (
-          (question.type === 'close-enough' || question.type === 'choice')
+          question.type === 'close-enough'
             ? answersRevealed // submissions first, then the correct answer
-            : question.after_round && question.after_round.length > 0
+            : question.type === 'choice'
+              ? true // reveals picks and the correct options in one step
+              : question.after_round && question.after_round.length > 0
         ) && (
           <button
             onClick={handleShowAfterRound}

@@ -13,8 +13,35 @@ const server = http.createServer(app);
 // Store uploaded pack in memory
 let uploadedPack = null;
 
+// Look up a question's type in the active pack (uploaded or default).
+// Needed to decide whether submitted answers may go out unmasked.
+let defaultPackCache = null;
+const getQuestionType = (questionId) => {
+  let pack = uploadedPack;
+  if (!pack) {
+    if (!defaultPackCache) {
+      try {
+        defaultPackCache = JSON.parse(fs.readFileSync(path.join(__dirname, 'pack1.json'), 'utf8'));
+      } catch (e) {
+        return null;
+      }
+    }
+    pack = defaultPackCache;
+  }
+  for (const round of pack.rounds || []) {
+    for (const theme of round.themes || []) {
+      const q = (theme.questions || []).find(q => q.id === questionId);
+      if (q) {
+        return q.type || null;
+      }
+    }
+  }
+  return null;
+};
+
 // Initialize WebSocket
 wsManager.initialize(server);
+wsManager.getQuestionType = getQuestionType;
 
 // CORS: allow any origin (reflect request origin) and handle preflight globally
 const corsHandler = cors({
@@ -224,9 +251,12 @@ app.get('/api/questions/:questionId/answers', (req, res) => {
   const questionId = parseInt(req.params.questionId);
   const requesterId = req.query.userId;
   const info = wsManager.getNumberAnswersInfo(questionId);
+  // Choice picks are not masked: the admin shows them in real time
+  // (the player UI still hides other players' picks until the reveal)
+  const isChoice = getQuestionType(questionId) === 'choice';
   const answers = {};
   for (const [userId, value] of info.answers) {
-    answers[userId] = info.revealed || userId === requesterId ? value : true;
+    answers[userId] = info.revealed || isChoice || userId === requesterId ? value : true;
   }
   res.json({
     status: 'success',
