@@ -115,6 +115,23 @@ const setupEventListeners = () => {
   );
 };
 
+// Current remembered volume (for UI controls like the player volume slider)
+export const getVolume = () => getRememberedVolume();
+
+// Set the volume for every media element on the page and remember it.
+// Used by the player-side slider: players have no native media controls,
+// so this is their only way to adjust loudness.
+export const setGlobalVolume = (value) => {
+  const clamped = Math.min(1, Math.max(0, value));
+  setRememberedVolume(clamped);
+  document.querySelectorAll('video, audio').forEach((el) => {
+    el.__programmaticChange = true;
+    el.volume = clamped;
+    el.__programmaticChange = false;
+    el.__volumeInitialized = true;
+  });
+};
+
 // Main entry point to initialize the volume manager
 export const initVolumeManager = () => {
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {

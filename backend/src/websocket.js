@@ -216,6 +216,15 @@ class WebSocketManager {
           } else if (data.type === 'round_change') {
             // Broadcast round change to all clients
             this.broadcastRoundChange(data.data);
+          } else if (data.type === 'media_control') {
+            // Admin drives question audio/video for everyone: relay play/pause/seek
+            const { questionId, action, time, mediaIndex, src } = data.data || {};
+            if (questionId !== undefined && ['play', 'pause', 'seek'].includes(action)) {
+              this.broadcastToAll({
+                type: 'media_control',
+                data: { questionId, action, time, mediaIndex, src }
+              });
+            }
           }
         } catch (error) {
           console.error('Error processing message:', error);

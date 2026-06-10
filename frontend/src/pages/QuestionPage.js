@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { indexedDBService } from '../services/indexedDB';
 import { checkCacheVersion } from '../services/cacheVersion';
@@ -8,6 +8,7 @@ import ProgressiveImage from '../components/ProgressiveImage';
 import ImageLightbox from '../components/ImageLightbox';
 import Settings from '../components/Settings';
 import config from '../config';
+import { getVolume, setGlobalVolume } from '../utils/volumeManager';
 
 // Sanitize HTML content to allow only safe tags and attributes
 const sanitizeHtml = (html) => {
@@ -68,6 +69,36 @@ const sanitizeHtml = (html) => {
   return sanitized.innerHTML;
 };
 
+// Players must not be able to pause/play/seek question media — only the admin
+// controls playback. Strip native controls and block pointer interaction;
+// loudness is adjusted with the page-level volume slider instead.
+const strippedMediaCache = new Map();
+const stripMediaControls = (html) => {
+  if (typeof html !== 'string' || (!html.includes('<audio') && !html.includes('<video'))) {
+    return html;
+  }
+  if (strippedMediaCache.has(html)) {
+    return strippedMediaCache.get(html);
+  }
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('audio, video').forEach((el) => {
+    el.removeAttribute('controls');
+    el.style.pointerEvents = 'none';
+  });
+  const result = doc.body.innerHTML;
+  strippedMediaCache.set(html, result);
+  return result;
+};
+
+// Audio/video that belongs to the question content itself (not avatars etc.)
+const getQuestionMedia = () =>
+  Array.from(document.querySelectorAll('.question-content audio, .question-content video'));
+
+// Programmatic play/pause (buzz auto-pause, applying admin commands) must not
+// be re-broadcast as if the admin clicked the controls
+const suppressMediaEvents = (el) => { el.__suppressMediaUntil = Date.now() + 400; };
+const isMediaEventSuppressed = (el) => !!el.__suppressMediaUntil && Date.now() < el.__suppressMediaUntil;
+
 const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] }) => {
   const { questionId } = useParams();
   const navigate = useNavigate();
@@ -103,9 +134,16 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   const [pastedImage, setPastedImage] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [redJudgedUsers, setRedJudgedUsers] = useState(new Set());
+  const [mediaVolume, setMediaVolume] = useState(() => getVolume());
   // Grants already applied; a grant must never be applied twice even if the
   // same broadcast is somehow delivered more than once
   const processedGrantIds = useRef(new Set());
+  // True while media is stopped on the admin's command (or after a correct
+  // answer): the buzz-resolved auto-resume must not override it
+  const adminPausedMediaRef = useRef(false);
+  // Media we auto-paused because a buzz is pending; resumed once every buzz
+  // is judged wrong
+  const autoPausedMediaRef = useRef(new Set());
 
   useEffect(() => {
     const loadQuestion = async () => {
@@ -120,6 +158,8 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         setTextAnswerInput('');
         setPastedImage(null);
         setRedJudgedUsers(new Set());
+        adminPausedMediaRef.current = false;
+        autoPausedMediaRef.current.clear();
         // Stale cache (new pack uploaded / cache cleared): this question may
         // no longer exist, so go back to the board and load everything fresh
         const cacheChanged = await checkCacheVersion();
@@ -229,6 +269,37 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   }, [questionId, navigate, isAdmin]);
 
   useEffect(() => {
+    // Apply an admin playback command to the matching media element.
+    // Match by index first (same content => same DOM order), fall back to
+    // src in case admin and player views differ
+    const applyMediaControl = ({ action, time, mediaIndex, src }) => {
+      const media = getQuestionMedia();
+      let el = media[mediaIndex];
+      const srcOf = (m) => m.currentSrc || m.src || '';
+      if (src && (!el || srcOf(el) !== src)) {
+        el = media.find(m => srcOf(m) === src) || el;
+      }
+      if (!el) return;
+      suppressMediaEvents(el);
+      if (action === 'play') {
+        adminPausedMediaRef.current = false;
+        autoPausedMediaRef.current.delete(el);
+        if (typeof time === 'number' && Math.abs(el.currentTime - time) > 0.75) {
+          el.currentTime = time;
+        }
+        el.play().catch(() => {});
+      } else if (action === 'pause') {
+        adminPausedMediaRef.current = true;
+        autoPausedMediaRef.current.delete(el);
+        el.pause();
+        if (typeof time === 'number') {
+          el.currentTime = time;
+        }
+      } else if (action === 'seek' && typeof time === 'number') {
+        el.currentTime = time;
+      }
+    };
+
     const unsubscribe = wsManager.subscribe((data) => {
       if (data.type === 'question_reveal' && data.data.questionId === parseInt(questionId)) {
         setIsQuestionRevealed(true);
@@ -290,6 +361,22 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         if (question?.type === 'progressive-reveal') {
           setTimer(0);
         }
+        // A correct answer stops question media for everyone; the admin can
+        // still resume playback manually afterwards
+        adminPausedMediaRef.current = true;
+        autoPausedMediaRef.current.clear();
+        getQuestionMedia().forEach((el) => {
+          if (!el.paused) {
+            suppressMediaEvents(el);
+            el.pause();
+          }
+        });
+      } else if (data.type === 'media_control' && data.data.questionId === parseInt(questionId)) {
+        // The admin is the playback authority; the admin client ignores the
+        // echo of its own commands
+        if (!isAdmin) {
+          applyMediaControl(data.data);
+        }
       } else if (data.type === 'clear_question_times') {
         setUserTimes({});
         setElapsedTime(null);
@@ -305,6 +392,8 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         setTextAnswerInput('');
         setPastedImage(null);
         setRedJudgedUsers(new Set());
+        adminPausedMediaRef.current = false;
+        autoPausedMediaRef.current.clear();
       }
     });
     return () => {
@@ -372,6 +461,77 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
       return () => clearInterval(interval);
     }
   }, [isQuestionRevealed, isReadOnly, question, secretTargetId, userTimes, redJudgedUsers]);
+
+  // Question audio/video follows the reveal-image rule: while any buzz awaits
+  // the admin's verdict, everything pauses; once every buzz is judged wrong,
+  // playback continues (unless the admin paused it or the answer was correct).
+  // Content-index deps make sure media that appears mid-buzz is paused too.
+  useEffect(() => {
+    const buzzPending = Object.keys(userTimes).some(uid => !redJudgedUsers.has(uid));
+    if (buzzPending) {
+      getQuestionMedia().forEach((el) => {
+        if ((!el.paused || el.autoplay) && !el.ended) {
+          suppressMediaEvents(el);
+          el.pause();
+          autoPausedMediaRef.current.add(el);
+        }
+      });
+    } else {
+      if (!adminPausedMediaRef.current) {
+        autoPausedMediaRef.current.forEach((el) => {
+          if (el.isConnected && el.paused && !el.ended) {
+            suppressMediaEvents(el);
+            el.play().catch(() => {});
+          }
+        });
+      }
+      autoPausedMediaRef.current.clear();
+    }
+  }, [userTimes, redJudgedUsers, currentRuleIndex, currentAfterRoundIndex, showAfterRound]);
+
+  // The admin's native controls drive playback for everyone: relay every
+  // user-initiated play/pause/seek on question media to all clients
+  useEffect(() => {
+    if (!isAdmin) return;
+    const handleMediaEvent = (event) => {
+      const el = event.target;
+      if (!el || (el.tagName !== 'VIDEO' && el.tagName !== 'AUDIO')) return;
+      if (!el.closest || !el.closest('.question-content')) return;
+      if (isMediaEventSuppressed(el)) return;
+      if (event.type === 'pause' && el.ended) return; // ran out, not an admin pause
+      const action = event.type === 'seeked' ? 'seek' : event.type;
+      if (action === 'play') adminPausedMediaRef.current = false;
+      if (action === 'pause') adminPausedMediaRef.current = true;
+      wsManager.sendMediaControl(parseInt(questionId), {
+        action,
+        time: el.currentTime,
+        mediaIndex: getQuestionMedia().indexOf(el),
+        src: el.currentSrc || el.src || ''
+      });
+    };
+    const events = ['play', 'pause', 'seeked'];
+    events.forEach(type => document.addEventListener(type, handleMediaEvent, true));
+    return () => events.forEach(type => document.removeEventListener(type, handleMediaEvent, true));
+  }, [isAdmin, questionId]);
+
+  // Whether any of this question's content embeds audio/video — if so,
+  // players get a volume slider (their only media control)
+  const questionHasMedia = useMemo(() => {
+    if (!question) return false;
+    const chunks = [
+      ...(question.rules || []).map(r => r.content),
+      ...(question.after_round || []).map(r => r.content),
+      ...(question.options || []).map(o => o.content)
+    ];
+    return chunks.some(c => typeof c === 'string' && (c.includes('<audio') || c.includes('<video')));
+  }, [question]);
+
+  const handleVolumeChange = (event) => {
+    const value = parseFloat(event.target.value);
+    if (!Number.isFinite(value)) return;
+    setMediaVolume(value);
+    setGlobalVolume(value);
+  };
 
   // Helper to calculate total duration from question rules
   const getInitialTimerValue = (question) => {
@@ -592,13 +752,16 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
     boxShadow: '0 4px 12px var(--primary-glow)'
   };
 
+  // The admin keeps native media controls; players get media stripped of them
+  const renderHtmlContent = (content) => (isAdmin ? content : stripMediaControls(content));
+
   const renderRule = (rule) => {
     if (rule.type === 'embedded') {
       return (
         <div
           className="question-content"
           style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
-          dangerouslySetInnerHTML={{ __html: rule.content }}
+          dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
         />
       );
     } else if (rule.type === 'app') {
@@ -840,7 +1003,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
                   <div
                     className="question-content"
                     style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
-                    dangerouslySetInnerHTML={{ __html: rule.content }}
+                    dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
                   />
                 ) : (
                   renderRule(rule)
@@ -1159,7 +1322,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
                 <div
                   className="question-content"
                   style={{ color: '#e0e0e0', fontSize: '1.05rem', flex: 1, minWidth: 0 }}
-                  dangerouslySetInnerHTML={{ __html: option.content }}
+                  dangerouslySetInnerHTML={{ __html: renderHtmlContent(option.content) }}
                 />
                 {isSelected && (
                   <div style={{ color: 'var(--primary)', fontWeight: '800', fontSize: '1.2rem', flexShrink: 0 }}>✓</div>
@@ -1420,7 +1583,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
                   <div
                     className="question-content"
                     style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
-                    dangerouslySetInnerHTML={{ __html: rule.content }}
+                    dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
                   />
                 ) : (
                   renderRule(rule)
@@ -1470,7 +1633,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
                     key={index}
                     className="question-content"
                     style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap', marginBottom: '8px' }}
-                    dangerouslySetInnerHTML={{ __html: rule.content }}
+                    dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
                   />
                 ))}
               </div>
@@ -1480,7 +1643,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
                 <div
                   className="question-content"
                   style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
-                  dangerouslySetInnerHTML={{ __html: afterRoundRules[lastRuleIndex].content }}
+                  dangerouslySetInnerHTML={{ __html: renderHtmlContent(afterRoundRules[lastRuleIndex].content) }}
                 />
               ) : (
                 renderRule(afterRoundRules[lastRuleIndex])
@@ -1500,7 +1663,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
             <div
               className="question-content"
               style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
-              dangerouslySetInnerHTML={{ __html: rules[lastRuleIndex].content }}
+              dangerouslySetInnerHTML={{ __html: renderHtmlContent(rules[lastRuleIndex].content) }}
             />
           ) : (
             renderRule(rules[lastRuleIndex])
@@ -1626,6 +1789,34 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           )}
         </div>
       </div>
+      {/* Players have no native media controls, so give them a volume slider */}
+      {!isAdmin && questionHasMedia && (
+        <div className="glass-panel" style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+          padding: '0.5rem 1.25rem',
+          borderRadius: '12px',
+          border: '1px solid var(--glass-border)',
+          marginBottom: '1rem',
+          color: 'var(--text-secondary)',
+          fontWeight: '600'
+        }}>
+          <span role="img" aria-label="volume">🔊</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={mediaVolume}
+            onChange={handleVolumeChange}
+            style={{ width: '180px', cursor: 'pointer' }}
+          />
+          <span style={{ minWidth: '3em', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+            {Math.round(mediaVolume * 100)}%
+          </span>
+        </div>
+      )}
       {/* Main board: rules grid */}
       <div style={{
         display: 'flex',

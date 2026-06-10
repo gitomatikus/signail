@@ -221,6 +221,15 @@ class WebSocketManager {
     }
   }
 
+  sendMediaControl(questionId, control) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'media_control',
+        data: { questionId, ...control }
+      }));
+    }
+  }
+
   sendRoundChange(roundIndex) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({
