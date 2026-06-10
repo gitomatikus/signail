@@ -1,14 +1,22 @@
 const WebSocket = require('ws');
+const crypto = require('crypto');
 const config = require('./config');
 
 class WebSocketManager {
   constructor() {
     this.wss = null;
+    this.cacheKey = crypto.randomUUID(); // Rotated on pack upload / clear cache; clients drop local caches when it changes
     this.onlineUsers = new Map(); // Map of user data by WebSocket connection
     this.persistentUsers = new Map(); // Map of user data by userId
     this.userScores = new Map(); // Map of score by userId (persisted across reloads/disconnections)
     this.selectedQuestions = new Set(); // Track selected questions
+    this.revealedQuestions = new Set(); // Track questions revealed by the admin
     this.questionTimes = new Map(); // Map of question ID to user times
+    this.questionClicks = new Map(); // Map of question ID to Map of userId -> clicks left (find-a-cat)
+    this.questionAnswers = new Map(); // Map of question ID to Map of userId -> submitted number (close-enough)
+    this.revealedAnswers = new Set(); // Close-enough questions whose numbers were revealed
+    this.questionSelectors = new Map(); // Map of question ID to userId who selected it
+    this.secretAssignments = new Map(); // Map of question ID to { targetUserId, selectorUserId }
     this.lastGreenFrameUser = null; // Track the last user with green frame
   }
 
@@ -22,6 +30,12 @@ class WebSocketManager {
       ws.send(JSON.stringify({
         type: 'selected_questions_update',
         data: Array.from(this.selectedQuestions)
+      }));
+      // Give every client the current cache key on connect so it can
+      // compare against the one saved in localStorage
+      ws.send(JSON.stringify({
+        type: 'cache_key_update',
+        data: { cacheKey: this.cacheKey }
       }));
 
       ws.on('message', (message) => {
@@ -57,7 +71,14 @@ class WebSocketManager {
             // Broadcast updated user list to all clients
             this.broadcastOnlineUsers();
           } else if (data.type === 'question_select') {
-            const { questionId } = data.data;
+            const { questionId, userId } = data.data;
+            // Remember who selected the question (needed for cat-in-the-bag).
+            // Fall back to the green-frame player: they own the move even when
+            // the admin clicks the question on their behalf.
+            const selectorId = userId || this.lastGreenFrameUser;
+            if (selectorId) {
+              this.questionSelectors.set(questionId, selectorId);
+            }
             // Add question to selected questions set
             this.selectedQuestions.add(questionId);
             // Broadcast question selection to all clients
@@ -65,6 +86,8 @@ class WebSocketManager {
             // Broadcast updated selected questions to all clients
             this.broadcastSelectedQuestions();
           } else if (data.type === 'question_reveal') {
+            // Remember the reveal so refreshing clients can restore it
+            this.revealedQuestions.add(data.data.questionId);
             // Broadcast question reveal to all clients
             this.broadcastQuestionReveal(data.data);
           } else if (data.type === 'answer_reveal') {
@@ -94,6 +117,69 @@ class WebSocketManager {
             console.log('Admin clicked green number for user ID:', data.data.userId);
             // Broadcast the event to all clients
             this.broadcastAdminClickedGreenNumber(data.data);
+          } else if (data.type === 'cat_clicks') {
+            // Player reports their remaining clicks for a find-a-cat question
+            const { questionId, userId, clicksLeft } = data.data;
+            if (userId && Number.isFinite(Number(clicksLeft))) {
+              if (!this.questionClicks.has(questionId)) {
+                this.questionClicks.set(questionId, new Map());
+              }
+              this.questionClicks.get(questionId).set(userId, Number(clicksLeft));
+              this.broadcastToAll({ type: 'cat_clicks', data: { questionId, userId, clicksLeft: Number(clicksLeft) } });
+            }
+          } else if (data.type === 'cat_clicks_grant') {
+            // Admin grants extra clicks to a player. Each grant carries a unique
+            // id so clients can never apply the same grant twice.
+            const { questionId, userId, amount } = data.data;
+            const numericAmount = Number(amount);
+            if (userId && Number.isFinite(numericAmount) && numericAmount > 0) {
+              const clicks = this.questionClicks.get(questionId);
+              if (clicks && clicks.has(userId)) {
+                clicks.set(userId, clicks.get(userId) + numericAmount);
+              }
+              this.broadcastToAll({
+                type: 'cat_clicks_grant',
+                data: { questionId, userId, amount: numericAmount, grantId: crypto.randomUUID() }
+              });
+            }
+          } else if (data.type === 'number_answer') {
+            // Player submits an answer: a number (close-enough), an array of
+            // option indices (choice) or a text/pasted-image string (text-answer).
+            // One submission per user; nothing accepted after the reveal.
+            const { questionId, userId, value } = data.data;
+            if (userId && this.isValidAnswerValue(value) && !this.revealedAnswers.has(questionId)) {
+              if (!this.questionAnswers.has(questionId)) {
+                this.questionAnswers.set(questionId, new Map());
+              }
+              const answers = this.questionAnswers.get(questionId);
+              if (!answers.has(userId)) {
+                answers.set(userId, value);
+                // Others only learn that the player answered, not the answer itself
+                this.broadcastToAll({ type: 'number_answer_submitted', data: { questionId, userId } });
+              }
+            }
+          } else if (data.type === 'reveal_number_answers') {
+            // Admin ends the submission window: stop accepting and show all numbers
+            const { questionId } = data.data;
+            if (!this.revealedAnswers.has(questionId)) {
+              this.revealedAnswers.add(questionId);
+              const answers = this.questionAnswers.get(questionId) || new Map();
+              this.broadcastToAll({
+                type: 'number_answers',
+                data: { questionId, answers: Object.fromEntries(answers) }
+              });
+            }
+          } else if (data.type === 'secret_assign') {
+            const { questionId, targetUserId, selectorUserId } = data.data;
+            // First assignment wins; ignore duplicates/races
+            if (!this.secretAssignments.has(questionId) && targetUserId) {
+              this.secretAssignments.set(questionId, { targetUserId, selectorUserId: selectorUserId || null });
+              this.broadcastSecretAssign({
+                questionId,
+                targetUserId,
+                selectorUserId: selectorUserId || null
+              });
+            }
           } else if (data.type === 'request_selected_questions') {
             // Send current selected questions to the requesting client
             ws.send(JSON.stringify({
@@ -101,19 +187,17 @@ class WebSocketManager {
               data: Array.from(this.selectedQuestions)
             }));
           } else if (data.type === 'clear_cache') {
-            // Clear selected questions
-            this.selectedQuestions.clear();
-            // Clear all question times
-            this.clearAllQuestionTimes();
+            // Clear all per-question state
+            this.resetQuestionState();
             // Reset all user scores
             this.persistentUsers.forEach(userData => {
               userData.score = 0;
             });
             this.userScores.clear(); // Clear all saved scores
-            // Broadcast updated selected questions to all clients
-            this.broadcastSelectedQuestions();
             // Broadcast updated user list to all clients
             this.broadcastOnlineUsers();
+            // Rotate the cache key so every client drops its local cache
+            this.regenerateCacheKey();
           } else if (data.type === 'update_score') {
             const { userId, score } = data.data;
             const userData = this.persistentUsers.get(userId);
@@ -312,13 +396,103 @@ class WebSocketManager {
     });
   }
 
+  broadcastToAll(payload) {
+    const message = JSON.stringify(payload);
+
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+
+  broadcastSecretAssign(data) {
+    const message = JSON.stringify({
+      type: 'secret_assign',
+      data: data
+    });
+
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+
   getOnlineUsers() {
     return Array.from(this.persistentUsers.values());
+  }
+
+  getCacheKey() {
+    return this.cacheKey;
+  }
+
+  // Generate a fresh cache key and tell every connected client about it,
+  // so they invalidate their local caches immediately
+  regenerateCacheKey() {
+    this.cacheKey = crypto.randomUUID();
+    this.broadcastToAll({
+      type: 'cache_key_update',
+      data: { cacheKey: this.cacheKey }
+    });
+    return this.cacheKey;
+  }
+
+  // Clear all per-question state (selections, reveals, times, clicks, answers).
+  // User scores are handled separately - a new pack shouldn't necessarily wipe them.
+  resetQuestionState() {
+    this.selectedQuestions.clear();
+    this.revealedQuestions.clear();
+    this.clearAllQuestionTimes();
+    this.questionSelectors.clear();
+    this.secretAssignments.clear();
+    this.questionClicks.clear();
+    this.questionAnswers.clear();
+    this.revealedAnswers.clear();
+    this.broadcastSelectedQuestions();
+  }
+
+  // Get cat-in-the-bag state for a specific question (selector + assignment + reveal)
+  getSecretInfo(questionId) {
+    return {
+      selectorId: this.questionSelectors.get(questionId) || null,
+      assignment: this.secretAssignments.get(questionId) || null,
+      revealed: this.revealedQuestions.has(questionId)
+    };
   }
 
   // Add method to get times for a specific question
   getQuestionTimes(questionId) {
     return this.questionTimes.get(questionId) || new Map();
+  }
+
+  // Get remaining find-a-cat clicks for a specific question
+  getQuestionClicks(questionId) {
+    return this.questionClicks.get(questionId) || new Map();
+  }
+
+  // Accepted submission shapes: finite number (close-enough), non-empty
+  // array of option indices (choice), non-empty string up to ~8MB so a
+  // pasted screenshot data-URL fits (text-answer)
+  isValidAnswerValue(value) {
+    if (typeof value === 'number') {
+      return Number.isFinite(value);
+    }
+    if (typeof value === 'string') {
+      return value.length > 0 && value.length <= 8000000;
+    }
+    if (Array.isArray(value)) {
+      return value.length > 0 && value.length <= 100 && value.every(v => Number.isFinite(Number(v)));
+    }
+    return false;
+  }
+
+  // Get close-enough submissions for a specific question
+  getNumberAnswersInfo(questionId) {
+    return {
+      revealed: this.revealedAnswers.has(questionId),
+      answers: this.questionAnswers.get(questionId) || new Map()
+    };
   }
 
   // Add method to clear times for a specific question

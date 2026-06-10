@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { indexedDBService } from '../services/indexedDB';
+import { checkCacheVersion } from '../services/cacheVersion';
 import wsManager from '../utils/websocket';
 import OnlineUsers from '../components/OnlineUsers';
+import ProgressiveImage from '../components/ProgressiveImage';
+import ImageLightbox from '../components/ImageLightbox';
 import Settings from '../components/Settings';
 import config from '../config';
 
@@ -89,12 +92,41 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   const [hasRecordedTime, setHasRecordedTime] = useState(false);
   const [userTimes, setUserTimes] = useState({});
   const [clickedIndices, setClickedIndices] = useState(new Set());
+  const [secretSelectorId, setSecretSelectorId] = useState(null);
+  const [secretTargetId, setSecretTargetId] = useState(null);
+  const [clicksLeftMap, setClicksLeftMap] = useState({});
+  const [numberAnswers, setNumberAnswers] = useState({});
+  const [answersRevealed, setAnswersRevealed] = useState(false);
+  const [answerInput, setAnswerInput] = useState('');
+  const [selectedOptions, setSelectedOptions] = useState(new Set());
+  const [textAnswerInput, setTextAnswerInput] = useState('');
+  const [pastedImage, setPastedImage] = useState(null);
+  const [lightboxImage, setLightboxImage] = useState(null);
+  const [redJudgedUsers, setRedJudgedUsers] = useState(new Set());
+  // Grants already applied; a grant must never be applied twice even if the
+  // same broadcast is somehow delivered more than once
+  const processedGrantIds = useRef(new Set());
 
   useEffect(() => {
     const loadQuestion = async () => {
       try {
         setLoading(true);
         setThemeName('');
+        setClicksLeftMap({}); // Click budgets are per-question; drop stale entries
+        setNumberAnswers({});
+        setAnswersRevealed(false);
+        setAnswerInput('');
+        setSelectedOptions(new Set());
+        setTextAnswerInput('');
+        setPastedImage(null);
+        setRedJudgedUsers(new Set());
+        // Stale cache (new pack uploaded / cache cleared): this question may
+        // no longer exist, so go back to the board and load everything fresh
+        const cacheChanged = await checkCacheVersion();
+        if (cacheChanged) {
+          navigate(isAdmin ? '/admin' : '/');
+          return;
+        }
         const pack = await indexedDBService.getPack('current');
         if (!pack) {
           throw new Error('Pack not found');
@@ -126,6 +158,55 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         setCurrentRoundIndex(foundRoundIndex);
         setThemeName(foundThemeName);
         localStorage.setItem('currentRoundIndex', foundRoundIndex.toString());
+
+        // For cat-in-the-bag, restore who selected it and who answers it (survives refresh).
+        // Must happen before the times fetch: assigning the target resets userTimes.
+        if (foundQuestion.type === 'secret') {
+          try {
+            const response = await fetch(`${config.apiUrl}/api/questions/${questionId}/secret`);
+            const result = await response.json();
+            if (result.status === 'success') {
+              setSecretSelectorId(result.data.selectorId || null);
+              setSecretTargetId(result.data.assignment?.targetUserId || null);
+              if (result.data.revealed) {
+                setIsQuestionRevealed(true);
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching secret question info:', error);
+          }
+        }
+
+        // For submission-based types (close-enough numbers, choice picks, text
+        // answers), restore submissions (masked until reveal; own value included)
+        if (['close-enough', 'choice', 'text-answer'].includes(foundQuestion.type)) {
+          try {
+            const storedUser = localStorage.getItem('user');
+            const myId = storedUser ? JSON.parse(storedUser).id : null;
+            const query = myId ? `?userId=${encodeURIComponent(myId)}` : '';
+            const response = await fetch(`${config.apiUrl}/api/questions/${questionId}/answers${query}`);
+            const result = await response.json();
+            if (result.status === 'success') {
+              setNumberAnswers(result.data.answers || {});
+              setAnswersRevealed(!!result.data.revealed);
+            }
+          } catch (error) {
+            console.error('Error fetching question answers:', error);
+          }
+        }
+
+        // For find-a-cat with a click limit, restore remaining clicks (survives refresh)
+        if (foundQuestion.type === 'find-a-cat' && foundQuestion.max_clicks > 0) {
+          try {
+            const response = await fetch(`${config.apiUrl}/api/questions/${questionId}/clicks`);
+            const result = await response.json();
+            if (result.status === 'success') {
+              setClicksLeftMap(result.data);
+            }
+          } catch (error) {
+            console.error('Error fetching question clicks:', error);
+          }
+        }
 
         // Fetch existing times for this question
         try {
@@ -165,20 +246,77 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           ...prev,
           [data.data.userId]: data.data.elapsedTime
         }));
+      } else if (data.type === 'secret_assign' && data.data.questionId === parseInt(questionId)) {
+        setSecretTargetId(data.data.targetUserId);
+        if (data.data.selectorUserId) {
+          setSecretSelectorId(data.data.selectorUserId);
+        }
+      } else if (data.type === 'cat_clicks' && data.data.questionId === parseInt(questionId)) {
+        // Each client is authoritative for its own clicks; ignore the echo of our own reports
+        if (data.data.userId !== currentUserId) {
+          setClicksLeftMap(prev => ({ ...prev, [data.data.userId]: data.data.clicksLeft }));
+        }
+      } else if (data.type === 'cat_clicks_grant' && data.data.questionId === parseInt(questionId)) {
+        const { grantId } = data.data;
+        const alreadyApplied = grantId !== undefined && processedGrantIds.current.has(grantId);
+        if (!alreadyApplied) {
+          if (grantId !== undefined) {
+            processedGrantIds.current.add(grantId);
+          }
+          setClicksLeftMap(prev => {
+            // No entry yet means the player hasn't clicked: their budget is the full max_clicks
+            const base = prev[data.data.userId] ?? (question && question.max_clicks > 0 ? question.max_clicks : null);
+            if (base === null) {
+              return prev;
+            }
+            return { ...prev, [data.data.userId]: base + data.data.amount };
+          });
+        }
+      } else if (data.type === 'number_answer_submitted' && data.data.questionId === parseInt(questionId)) {
+        // Mark that the player answered without exposing their number
+        if (data.data.userId !== currentUserId) {
+          setNumberAnswers(prev => (
+            prev[data.data.userId] === undefined ? { ...prev, [data.data.userId]: true } : prev
+          ));
+        }
+      } else if (data.type === 'number_answers' && data.data.questionId === parseInt(questionId)) {
+        setNumberAnswers(prev => ({ ...prev, ...data.data.answers }));
+        setAnswersRevealed(true);
+      } else if (data.type === 'admin_clicked_red_number') {
+        // Progressive reveal: a judged-wrong buzz no longer pauses the reveal
+        setRedJudgedUsers(prev => new Set([...prev, data.data.userId]));
+      } else if (data.type === 'admin_clicked_green_number') {
+        // Progressive reveal: a correct answer uncovers the image completely
+        if (question?.type === 'progressive-reveal') {
+          setTimer(0);
+        }
       } else if (data.type === 'clear_question_times') {
         setUserTimes({});
         setElapsedTime(null);
         setHasRecordedTime(false);
         setClickedIndices(new Set());
+        setSecretSelectorId(null);
+        setSecretTargetId(null);
+        setClicksLeftMap({});
+        setNumberAnswers({});
+        setAnswersRevealed(false);
+        setAnswerInput('');
+        setSelectedOptions(new Set());
+        setTextAnswerInput('');
+        setPastedImage(null);
+        setRedJudgedUsers(new Set());
       }
     });
     return () => {
       unsubscribe();
     };
-  }, [questionId, navigate, isAdmin]);
+  }, [questionId, navigate, isAdmin, question, currentUserId]);
 
   useEffect(() => {
     if (!question) return;
+    // For cat-in-the-bag, rules don't advance until a player is chosen
+    // and (for players) the admin has shown the question
+    if (question.type === 'secret' && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) return;
 
     if (showAfterRound) {
       const afterRoundRules = question.after_round || [];
@@ -207,9 +345,19 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
 
       return () => clearTimeout(timer);
     }
-  }, [question, currentRuleIndex, currentAfterRoundIndex, showAfterRound]);
+  }, [question, currentRuleIndex, currentAfterRoundIndex, showAfterRound, secretTargetId, isAdmin, isQuestionRevealed]);
 
   useEffect(() => {
+    // For cat-in-the-bag, the countdown waits until a player is chosen
+    // and (for players) the admin has shown the question
+    if (question?.type === 'secret' && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
+      return;
+    }
+    // Progressive reveal: pause while any buzz awaits the admin's verdict
+    if (question?.type === 'progressive-reveal'
+      && Object.keys(userTimes).some(uid => !redJudgedUsers.has(uid))) {
+      return;
+    }
     // Start timer immediately for user page, or when question is revealed for admin page
     if (isReadOnly || isQuestionRevealed) {
       const interval = setInterval(() => {
@@ -223,12 +371,18 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
 
       return () => clearInterval(interval);
     }
-  }, [isQuestionRevealed, isReadOnly]);
+  }, [isQuestionRevealed, isReadOnly, question, secretTargetId, userTimes, redJudgedUsers]);
 
   // Helper to calculate total duration from question rules
   const getInitialTimerValue = (question) => {
     if (!question) return 15;
     if (question.type === 'find-a-cat') {
+      return question.duration || 60;
+    }
+    if (question.type === 'close-enough' && question.duration) {
+      return question.duration;
+    }
+    if (question.type === 'progressive-reveal') {
       return question.duration || 60;
     }
     if (!question.rules || question.rules.length === 0) return 15;
@@ -256,8 +410,15 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
   // Add keyboard event listener for space and right arrow
   useEffect(() => {
     const handleKeyPress = (event) => {
-      if (question?.type === 'find-a-cat') {
-        return; // Disable spacebar/ArrowRight answer submission for find-a-cat
+      if (['find-a-cat', 'close-enough', 'choice', 'text-answer'].includes(question?.type)) {
+        return; // These types answer by clicking/typing, not by racing on the spacebar
+      }
+      if (question?.type === 'secret') {
+        // Only the chosen player can answer a cat-in-the-bag question,
+        // and only after the admin has shown the question
+        if (!secretTargetId || (!isAdmin && (currentUserId !== secretTargetId || !isQuestionRevealed))) {
+          return;
+        }
       }
       if ((event.code === 'Space' || event.code === 'ArrowRight') &&
         ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) &&
@@ -278,10 +439,14 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isQuestionRevealed, isAnswerRevealed, startTime, question, isAdmin, hasRecordedTime, questionId, currentUserId, userTimes]);
+  }, [isQuestionRevealed, isAnswerRevealed, startTime, question, isAdmin, hasRecordedTime, questionId, currentUserId, userTimes, secretTargetId]);
 
   // Start timer when question is revealed or when non-admin user sees the question
+  // For cat-in-the-bag, wait until a player is chosen and the admin shows the question
   useEffect(() => {
+    if (question?.type === 'secret' && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
+      return;
+    }
     if ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) {
       console.log('Starting timer at:', new Date().toISOString());
       setStartTime(Date.now());
@@ -290,7 +455,7 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
       setUserTimes({}); // Reset all user times when starting new question
       setClickedIndices(new Set()); // Reset clicked indices for new question!
     }
-  }, [isQuestionRevealed, isAnswerRevealed, isAdmin]);
+  }, [isQuestionRevealed, isAnswerRevealed, isAdmin, secretTargetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync clickedIndices when page is loaded/refreshed and user has already recorded time
   useEffect(() => {
@@ -448,11 +613,29 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
 
 
 
-  const handleAreaClick = (index) => {
+  // Find-a-cat click budget: every click (hit or miss) consumes one click
+  const hasClickLimit = question?.type === 'find-a-cat' && Number(question?.max_clicks) > 0;
+  const myClicksLeft = hasClickLimit ? (clicksLeftMap[currentUserId] ?? question.max_clicks) : Infinity;
+  const isOutOfClicks = hasClickLimit && !isAdmin && myClicksLeft <= 0;
+
+  const consumeClick = () => {
+    if (!hasClickLimit || isAdmin || !currentUserId) {
+      return;
+    }
+    const newLeft = Math.max(0, myClicksLeft - 1);
+    setClicksLeftMap(prev => ({ ...prev, [currentUserId]: newLeft }));
+    wsManager.sendCatClicks(parseInt(questionId), currentUserId, newLeft);
+  };
+
+  const handleAreaClick = (e, index) => {
+    e.stopPropagation(); // Don't let the container's miss handler count this click too
     if (isAnswerRevealed || hasRecordedTime || (currentUserId && userTimes[currentUserId])) {
       return;
     }
     if (clickedIndices.has(index)) {
+      return;
+    }
+    if (isOutOfClicks) {
       return;
     }
 
@@ -464,6 +647,8 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
       // Admin doesn't submit time
       return;
     }
+
+    consumeClick();
 
     const totalAreas = question.map ? question.map.length : 0;
     const remaining = totalAreas - newClicked.size;
@@ -481,9 +666,23 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
     }
   };
 
+  const handleMissClick = () => {
+    if (!hasClickLimit || isAdmin) {
+      return;
+    }
+    if (isAnswerRevealed || hasRecordedTime || (currentUserId && userTimes[currentUserId])) {
+      return;
+    }
+    if (myClicksLeft <= 0) {
+      return;
+    }
+    consumeClick();
+  };
+
   const renderFindACatContent = () => {
     const totalAreas = question.map ? question.map.length : 0;
     const remainingCount = totalAreas - clickedIndices.size;
+    const hasFailed = isOutOfClicks && remainingCount > 0;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '1.5rem' }}>
@@ -494,28 +693,43 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           fontWeight: '700',
           color: 'var(--text-primary)',
           textAlign: 'center',
-          border: '1px solid var(--glass-border)',
+          border: hasFailed ? '1px solid #ef4444' : '1px solid var(--glass-border)',
           width: '100%',
           maxWidth: '800px',
-          boxShadow: 'var(--glass-shadow)',
+          boxShadow: hasFailed ? '0 0 20px rgba(239, 68, 68, 0.4)' : 'var(--glass-shadow)',
           textShadow: '0 2px 4px rgba(0,0,0,0.3)'
         }}>
-          {remainingCount > 0 
-            ? `Знайдіть і клікніть на всіх ${question.name || ''}. Залишилось всього ${remainingCount}`
-            : `Ви знайшли всіх ${question.name || ''}!`}
+          {hasFailed ? (
+            <span style={{ color: '#ef4444' }}>Кліки закінчилися! Зачекайте на рішення ведучого.</span>
+          ) : remainingCount > 0 ? (
+            `Знайдіть і клікніть на всіх ${question.name || ''}. Залишилось всього ${remainingCount}`
+          ) : (
+            `Ви знайшли всіх ${question.name || ''}!`
+          )}
+          {hasClickLimit && !isAdmin && !hasFailed && remainingCount > 0 && (
+            <div style={{
+              fontSize: '1.1rem',
+              marginTop: '0.5rem',
+              color: myClicksLeft <= 2 ? '#ef4444' : 'var(--text-secondary)'
+            }}>
+              🖱 Залишилось кліків: {myClicksLeft}
+            </div>
+          )}
         </div>
 
-        {/* Image Container with map areas */}
-        <div style={{
-          position: 'relative',
-          display: 'inline-block',
-          width: '100%',
-          maxWidth: '800px',
-          borderRadius: '16px',
-          overflow: 'hidden',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-          border: '1px solid var(--glass-border)'
-        }}>
+        {/* Image Container with map areas; container clicks are misses that consume the budget */}
+        <div
+          onClick={handleMissClick}
+          style={{
+            position: 'relative',
+            display: 'inline-block',
+            width: '100%',
+            maxWidth: '800px',
+            borderRadius: '16px',
+            overflow: 'hidden',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+            border: '1px solid var(--glass-border)'
+          }}>
           <img 
             src={question.image} 
             alt={question.name} 
@@ -591,15 +805,15 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
               boxShadow,
               borderRadius: '8px',
               transition: 'background-color 0.2s, border 0.2s, box-shadow 0.2s',
-              // Disable clicks if already clicked, answer revealed, or current user has recorded time (unless admin, who can click for demo, but only if not revealed yet)
-              pointerEvents: isClicked || isAnswerRevealed || (!isAdmin && hasRecordedTime) ? 'none' : 'auto'
+              // Disable clicks if already clicked, answer revealed, out of clicks, or current user has recorded time (unless admin, who can click for demo, but only if not revealed yet)
+              pointerEvents: isClicked || isAnswerRevealed || (!isAdmin && hasRecordedTime) || isOutOfClicks ? 'none' : 'auto'
             };
 
             return (
-              <div 
-                key={idx} 
-                style={areaStyle} 
-                onClick={() => handleAreaClick(idx)}
+              <div
+                key={idx}
+                style={areaStyle}
+                onClick={(e) => handleAreaClick(e, idx)}
                 title={isAdmin && isAnswerRevealed ? `Area ${idx + 1}` : ''}
               />
             );
@@ -628,11 +842,609 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
     );
   };
 
+  const handleSecretAssign = (targetUserId) => {
+    if (secretTargetId) {
+      return;
+    }
+    wsManager.sendSecretAssign(parseInt(questionId), targetUserId, secretSelectorId);
+  };
+
+  const renderSecretContent = () => {
+    const targetUser = onlineUsers.find(u => u.id === secretTargetId);
+    const selectorUser = onlineUsers.find(u => u.id === secretSelectorId);
+    // The selector picks who answers; admin can always assign as a host override
+    const canAssign = isAdmin || (currentUserId && currentUserId === secretSelectorId);
+
+    if (!secretTargetId) {
+      const pendingPanel = (
+        <div style={cardStyle}>
+          <div style={{ fontSize: '4rem', marginBottom: '0.5rem' }}>🐱</div>
+          <div style={{ fontSize: '2rem', fontWeight: '800', color: '#ffd600', marginBottom: '1rem', textShadow: '0 0 20px rgba(255, 214, 0, 0.4)' }}>
+            Кіт у мішку!
+          </div>
+          <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+            {canAssign
+              ? 'Оберіть гравця, який відповідатиме:'
+              : selectorUser
+                ? `${selectorUser.name} обирає, хто відповідатиме...`
+                : 'Очікуємо вибору, хто відповідатиме...'}
+          </div>
+          {/* Everyone sees the candidates; only the selector and admin can click */}
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {onlineUsers.filter(u => u.id !== secretSelectorId).map(u => (
+              <div
+                key={u.id}
+                onClick={canAssign ? () => handleSecretAssign(u.id) : undefined}
+                style={{
+                  cursor: canAssign ? 'pointer' : 'default',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.75rem',
+                  borderRadius: '12px',
+                  border: '1px solid var(--glass-border)',
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  transition: 'all 0.2s',
+                  width: '110px'
+                }}
+                onMouseEnter={canAssign ? e => {
+                  e.currentTarget.style.border = '1px solid var(--primary)';
+                  e.currentTarget.style.boxShadow = '0 0 16px var(--primary-glow)';
+                } : undefined}
+                onMouseLeave={canAssign ? e => {
+                  e.currentTarget.style.border = '1px solid var(--glass-border)';
+                  e.currentTarget.style.boxShadow = 'none';
+                } : undefined}
+              >
+                {u.imageUrl && u.imageUrl.toLowerCase().endsWith('.mp4') ? (
+                  <video
+                    src={u.imageUrl}
+                    style={{ width: '64px', height: '64px', borderRadius: '16px', objectFit: 'cover' }}
+                    autoPlay loop muted playsInline
+                  />
+                ) : (
+                  <img
+                    src={u.imageUrl}
+                    alt={u.name}
+                    style={{ width: '64px', height: '64px', borderRadius: '16px', objectFit: 'cover' }}
+                  />
+                )}
+                <span style={{ fontSize: '1rem', fontWeight: '600', textAlign: 'center', wordBreak: 'break-word' }}>
+                  {u.name}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
+      // Admin still sees the question below the picker; players only see the panel
+      if (isAdmin) {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {pendingPanel}
+            {renderNormalContent()}
+          </div>
+        );
+      }
+      return pendingPanel;
+    }
+
+    // Player chosen: admins see the question right away, players wait
+    // until the admin presses "Show Question"
+    const showQuestionContent = isAdmin || isQuestionRevealed;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{
+          ...themeHeaderStyle,
+          color: '#ffd600',
+          textShadow: '0 0 20px rgba(255, 214, 0, 0.4)'
+        }}>
+          🐱 Кіт у мішку — відповідає {targetUser ? targetUser.name : '...'}
+        </div>
+        {showQuestionContent ? (
+          renderNormalContent()
+        ) : (
+          <div style={cardStyle}>
+            <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)' }}>
+              Очікуємо, поки ведучий покаже питання...
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const handleSubmitNumberAnswer = () => {
+    const value = parseFloat(answerInput);
+    if (!Number.isFinite(value) || !currentUserId) {
+      return;
+    }
+    if (answersRevealed || timer <= 0 || numberAnswers[currentUserId] !== undefined) {
+      return;
+    }
+    setNumberAnswers(prev => ({ ...prev, [currentUserId]: value }));
+    wsManager.sendNumberAnswer(parseInt(questionId), currentUserId, value);
+  };
+
+  const renderCloseEnoughContent = () => {
+    const myAnswer = currentUserId ? numberAnswers[currentUserId] : undefined;
+    const hasSubmitted = myAnswer !== undefined;
+    const acceptingAnswers = !answersRevealed && timer > 0;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {renderNormalContent()}
+
+        {/* The correct answer stays hidden until the admin presses "Show Response",
+            so the numbers can be revealed without spoiling a reusable question */}
+        {isResponseRevealed && question.answer !== undefined && (
+          <div style={{
+            ...themeHeaderStyle,
+            color: '#4ade80',
+            textShadow: '0 0 20px rgba(74, 222, 128, 0.4)'
+          }}>
+            Правильна відповідь: {question.answer}
+          </div>
+        )}
+
+        {isAdmin && !isResponseRevealed && question.answer !== undefined && (
+          <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
+            Відповідь (бачить лише ведучий): <b style={{ color: '#4ade80' }}>{question.answer}</b>
+          </div>
+        )}
+
+        {!isAdmin && (
+          <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+            {hasSubmitted ? (
+              <div style={{ fontSize: '1.3rem' }}>
+                Ваша відповідь: <b style={{ color: 'var(--accent)' }}>{myAnswer === true ? '✓' : myAnswer}</b>
+              </div>
+            ) : acceptingAnswers ? (
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <input
+                  type="number"
+                  value={answerInput}
+                  onChange={(e) => setAnswerInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitNumberAnswer(); }}
+                  placeholder="Ваше число"
+                  style={{
+                    fontSize: '1.25rem',
+                    padding: '0.6rem 1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--glass-border)',
+                    background: 'rgba(15, 23, 42, 0.6)',
+                    color: 'var(--text-primary)',
+                    width: '200px',
+                    textAlign: 'center'
+                  }}
+                />
+                <button
+                  onClick={handleSubmitNumberAnswer}
+                  className="btn-primary"
+                  style={{ ...buttonStyle, opacity: Number.isFinite(parseFloat(answerInput)) ? 1 : 0.5 }}
+                  disabled={!Number.isFinite(parseFloat(answerInput))}
+                >
+                  Відповісти
+                </button>
+              </div>
+            ) : (
+              <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)' }}>
+                Час вийшов — відповіді більше не приймаються
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Record the moment a player locked in their answer (same as a spacebar press)
+  const recordAnswerTime = () => {
+    if (hasRecordedTime || (currentUserId && userTimes[currentUserId]) || !startTime) {
+      return;
+    }
+    const timeTaken = (Date.now() - startTime) / 1000;
+    setElapsedTime(timeTaken);
+    setHasRecordedTime(true);
+    wsManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
+  };
+
+  const handleToggleOption = (idx) => {
+    if (answersRevealed || (currentUserId && numberAnswers[currentUserId] !== undefined)) {
+      return;
+    }
+    setSelectedOptions(prev => {
+      const next = new Set(prev);
+      if (question.multiple) {
+        if (next.has(idx)) {
+          next.delete(idx);
+        } else {
+          next.add(idx);
+        }
+      } else {
+        next.clear();
+        next.add(idx);
+      }
+      return next;
+    });
+  };
+
+  const handleConfirmChoice = () => {
+    if (!currentUserId || selectedOptions.size === 0) {
+      return;
+    }
+    if (answersRevealed || numberAnswers[currentUserId] !== undefined) {
+      return;
+    }
+    const picks = [...selectedOptions].sort((a, b) => a - b);
+    setNumberAnswers(prev => ({ ...prev, [currentUserId]: picks }));
+    wsManager.sendNumberAnswer(parseInt(questionId), currentUserId, picks);
+    recordAnswerTime();
+  };
+
+  const renderChoiceContent = () => {
+    const myPicks = currentUserId ? numberAnswers[currentUserId] : undefined;
+    const hasSubmitted = myPicks !== undefined;
+    const showCorrect = isAdmin || isResponseRevealed;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {renderNormalContent()}
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+          gap: '1rem'
+        }}>
+          {(question.options || []).map((option, idx) => {
+            const isSelected = hasSubmitted
+              ? (Array.isArray(myPicks) && myPicks.includes(idx))
+              : selectedOptions.has(idx);
+            const highlightCorrect = showCorrect && option.correct;
+
+            return (
+              <div
+                key={idx}
+                onClick={() => !isAdmin && handleToggleOption(idx)}
+                style={{
+                  ...cardStyle,
+                  minHeight: 'auto',
+                  padding: '1rem',
+                  flexDirection: 'row',
+                  gap: '0.75rem',
+                  alignItems: 'flex-start',
+                  textAlign: 'left',
+                  cursor: !isAdmin && !hasSubmitted && !answersRevealed ? 'pointer' : 'default',
+                  border: highlightCorrect
+                    ? '2px solid #4ade80'
+                    : isSelected
+                      ? '2px solid var(--primary)'
+                      : '1px solid var(--glass-border)',
+                  boxShadow: highlightCorrect
+                    ? '0 0 16px rgba(74, 222, 128, 0.4)'
+                    : isSelected
+                      ? '0 0 16px var(--primary-glow)'
+                      : 'var(--glass-shadow)'
+                }}
+              >
+                <div style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  background: highlightCorrect ? '#4ade80' : isSelected ? 'var(--primary)' : 'rgba(15, 23, 42, 0.8)',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: '700',
+                  fontSize: '0.95rem'
+                }}>
+                  {idx + 1}
+                </div>
+                <div
+                  className="question-content"
+                  style={{ color: '#e0e0e0', fontSize: '1.05rem', flex: 1, minWidth: 0 }}
+                  dangerouslySetInnerHTML={{ __html: option.content }}
+                />
+                {isSelected && (
+                  <div style={{ color: 'var(--primary)', fontWeight: '800', fontSize: '1.2rem', flexShrink: 0 }}>✓</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {!isAdmin && !hasSubmitted && !answersRevealed && (
+          <button
+            onClick={handleConfirmChoice}
+            className="btn-primary"
+            style={{
+              ...buttonStyle,
+              alignSelf: 'center',
+              opacity: selectedOptions.size > 0 ? 1 : 0.5
+            }}
+            disabled={selectedOptions.size === 0}
+          >
+            Підтвердити відповідь
+          </button>
+        )}
+        {!isAdmin && hasSubmitted && (
+          <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
+            Відповідь прийнято ✓
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Keep pasted images well under the server's answer-size limit, otherwise
+  // the submission is rejected silently and only its author would see it
+  const MAX_ANSWER_IMAGE_CHARS = 2000000;
+
+  const downscaleImage = (dataUrl, maxDimension, quality) => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDimension / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
+  const compressPastedImage = async (dataUrl) => {
+    if (dataUrl.length <= MAX_ANSWER_IMAGE_CHARS) {
+      return dataUrl;
+    }
+    let result = await downscaleImage(dataUrl, 1280, 0.8);
+    let maxDimension = 1280;
+    // Extreme sources: keep shrinking until the answer fits
+    while (result.length > MAX_ANSWER_IMAGE_CHARS && maxDimension > 320) {
+      maxDimension = Math.round(maxDimension / 2);
+      result = await downscaleImage(dataUrl, maxDimension, 0.7);
+    }
+    return result;
+  };
+
+  const handleTextPaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const blob = items[i].getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            if (event.target?.result) {
+              const compressed = await compressPastedImage(event.target.result);
+              setPastedImage(compressed);
+            }
+          };
+          reader.readAsDataURL(blob);
+          e.preventDefault();
+        }
+      }
+    }
+  };
+
+  const handleSubmitTextAnswer = () => {
+    if (!currentUserId) {
+      return;
+    }
+    if (answersRevealed || numberAnswers[currentUserId] !== undefined) {
+      return;
+    }
+    const value = pastedImage || textAnswerInput.trim();
+    if (!value) {
+      return;
+    }
+    setNumberAnswers(prev => ({ ...prev, [currentUserId]: value }));
+    wsManager.sendNumberAnswer(parseInt(questionId), currentUserId, value);
+    recordAnswerTime();
+  };
+
+  const renderTextAnswerContent = () => {
+    const myAnswer = currentUserId ? numberAnswers[currentUserId] : undefined;
+    const hasSubmitted = myAnswer !== undefined;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {renderNormalContent()}
+
+        {!isAdmin && (
+          <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+            {hasSubmitted ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>Ваша відповідь:</div>
+                {typeof myAnswer === 'string' && myAnswer.startsWith('data:image') ? (
+                  <img
+                    src={myAnswer}
+                    alt="answer"
+                    title="Клікніть, щоб переглянути у повному розмірі"
+                    onClick={() => setLightboxImage(myAnswer)}
+                    style={{ maxWidth: '300px', maxHeight: '200px', borderRadius: '8px', cursor: 'zoom-in' }}
+                  />
+                ) : (
+                  <div style={{ fontSize: '1.2rem', color: 'var(--accent)', fontWeight: '700', wordBreak: 'break-word' }}>
+                    {myAnswer === true ? '✓' : myAnswer}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', alignItems: 'center' }}>
+                {pastedImage ? (
+                  <div style={{ position: 'relative' }}>
+                    <img
+                      src={pastedImage}
+                      alt="pasted"
+                      title="Клікніть, щоб переглянути у повному розмірі"
+                      onClick={() => setLightboxImage(pastedImage)}
+                      style={{ maxWidth: '300px', maxHeight: '200px', borderRadius: '8px', cursor: 'zoom-in' }}
+                    />
+                    <button
+                      onClick={() => setPastedImage(null)}
+                      style={{
+                        position: 'absolute',
+                        top: '-10px',
+                        right: '-10px',
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        background: '#ef4444',
+                        color: '#fff',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : (
+                  <textarea
+                    value={textAnswerInput}
+                    onChange={(e) => setTextAnswerInput(e.target.value)}
+                    onPaste={handleTextPaste}
+                    placeholder="Введіть відповідь або вставте зображення (Ctrl+V)..."
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      maxWidth: '600px',
+                      fontSize: '1.1rem',
+                      padding: '0.75rem 1rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--glass-border)',
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      color: 'var(--text-primary)',
+                      resize: 'vertical',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                )}
+                <button
+                  onClick={handleSubmitTextAnswer}
+                  className="btn-primary"
+                  style={{
+                    ...buttonStyle,
+                    opacity: (pastedImage || textAnswerInput.trim()) ? 1 : 0.5
+                  }}
+                  disabled={!pastedImage && !textAnswerInput.trim()}
+                >
+                  Відповісти
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Maps elapsed-time fraction to reveal fraction.
+  // slow-start keeps the image hidden longer; fast-start uncovers a lot early.
+  const applyRevealCurve = (progress, curve) => {
+    if (curve === 'slow-start') return progress * progress;
+    if (curve === 'fast-start') return Math.sqrt(progress);
+    return progress;
+  };
+
+  const renderProgressiveRevealContent = () => {
+    const revealDuration = question.duration || 60;
+    const rawProgress = revealDuration > 0 ? Math.max(0, Math.min(1, 1 - timer / revealDuration)) : 1;
+    const progress = applyRevealCurve(rawProgress, question.curve);
+    const buzzPending = Object.keys(userTimes).some(uid => !redJudgedUsers.has(uid));
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '1.5rem' }}>
+        <div className="glass-panel" style={{
+          padding: '1rem 2rem',
+          fontSize: '1.3rem',
+          fontWeight: '700',
+          color: buzzPending ? '#fbbf24' : 'var(--text-primary)',
+          textAlign: 'center',
+          border: buzzPending ? '1px solid #fbbf24' : '1px solid var(--glass-border)',
+          width: '100%',
+          maxWidth: '800px',
+          boxShadow: buzzPending ? '0 0 20px rgba(251, 191, 36, 0.4)' : 'var(--glass-shadow)'
+        }}>
+          {progress >= 1
+            ? 'Зображення повністю відкрито!'
+            : buzzPending
+              ? '⏸ Розкриття призупинено — хтось відповідає!'
+              : 'Натисніть ПРОБІЛ, щоб відповісти — розкриття зупиниться'}
+        </div>
+
+        <div style={{
+          width: '100%',
+          maxWidth: '800px',
+          borderRadius: '16px',
+          overflow: 'hidden',
+          border: '1px solid var(--glass-border)',
+          boxShadow: '0 12px 40px rgba(0,0,0,0.6)'
+        }}>
+          <ProgressiveImage
+            src={question.image}
+            effect={question.effect || 'blur'}
+            progress={progress}
+          />
+        </div>
+
+        {showAfterRound && question.after_round && question.after_round.length > 0 && (
+          <div style={{ ...cardStyle, width: '100%', maxWidth: '800px', minHeight: 'auto', padding: '1.5rem' }}>
+            {question.after_round.map((rule, index) => (
+              <div key={index} style={{ width: '100%' }}>
+                {rule.type === 'embedded' ? (
+                  <div
+                    className="question-content"
+                    style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
+                    dangerouslySetInnerHTML={{ __html: rule.content }}
+                  />
+                ) : (
+                  renderRule(rule)
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderContent = () => {
     if (question.type === 'find-a-cat') {
       return renderFindACatContent();
     }
+    if (question.type === 'secret') {
+      return renderSecretContent();
+    }
+    if (question.type === 'close-enough') {
+      return renderCloseEnoughContent();
+    }
+    if (question.type === 'choice') {
+      return renderChoiceContent();
+    }
+    if (question.type === 'text-answer') {
+      return renderTextAnswerContent();
+    }
+    if (question.type === 'progressive-reveal') {
+      return renderProgressiveRevealContent();
+    }
+    return renderNormalContent();
+  };
 
+  const renderNormalContent = () => {
     if (showAfterRound) {
       const afterRoundRules = question.after_round || [];
       if (afterRoundRules.length > 0) {
@@ -741,14 +1553,38 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           </h1>
         </div>
       </div>
-      {/* Timer centered above the question block */}
+      {/* Theme (left) — timer (always centered) — price (right) */}
       <div style={{
         width: '100%',
-        display: 'flex',
-        justifyContent: 'center',
+        maxWidth: 1200,
+        display: 'grid',
+        gridTemplateColumns: '1fr auto 1fr',
         alignItems: 'center',
-        marginBottom: '1rem'
+        gap: '1rem',
+        marginBottom: '1rem',
+        padding: '0 1rem',
+        boxSizing: 'border-box'
       }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', minWidth: 0 }}>
+          {themeName && (
+            <div className="glass-panel" style={{
+              padding: '0.5rem 1.25rem',
+              borderRadius: '12px',
+              color: 'var(--text-primary)',
+              fontWeight: '700',
+              fontSize: '1.1rem',
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              border: '1px solid var(--glass-border)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              textShadow: '0 0 20px var(--primary-glow)'
+            }}>
+              {themeName}
+            </div>
+          )}
+        </div>
         <div className="glass-panel" style={{
           fontSize: '2.5rem',
           color: 'var(--text-primary)',
@@ -762,6 +1598,22 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         }}>
           {timer}
         </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-start', minWidth: 0 }}>
+          {question.price?.text && (
+            <div className="glass-panel" style={{
+              padding: '0.5rem 1.25rem',
+              borderRadius: '12px',
+              color: 'var(--accent)',
+              fontWeight: '800',
+              fontSize: '1.25rem',
+              border: '1px solid var(--glass-border)',
+              whiteSpace: 'nowrap',
+              textShadow: '0 0 10px var(--accent-glow)'
+            }}>
+              {question.price.text}
+            </div>
+          )}
+        </div>
       </div>
       {/* Main board: rules grid */}
       <div style={{
@@ -774,9 +1626,6 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
         margin: '0 auto 20px auto'
       }}>
         <div style={boardGridStyle}>
-          {themeName && (
-            <div style={themeHeaderStyle}>{themeName}</div>
-          )}
           {renderContent()}
         </div>
       </div>
@@ -800,7 +1649,20 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
             Show Answer
           </button>
         )}
-        {isAdmin && isAnswerRevealed && !isResponseRevealed && question.after_round && question.after_round.length > 0 && (
+        {isAdmin && ['close-enough', 'choice', 'text-answer'].includes(question.type) && isQuestionRevealed && !answersRevealed && (
+          <button
+            onClick={() => wsManager.sendRevealNumberAnswers(parseInt(questionId))}
+            className="btn-primary"
+            style={buttonStyle}
+          >
+            Show Result
+          </button>
+        )}
+        {isAdmin && isAnswerRevealed && !isResponseRevealed && (
+          (question.type === 'close-enough' || question.type === 'choice')
+            ? answersRevealed // submissions first, then the correct answer
+            : question.after_round && question.after_round.length > 0
+        ) && (
           <button
             onClick={handleShowAfterRound}
             className="btn-primary"
@@ -832,9 +1694,15 @@ const QuestionPage = ({ isAdmin = false, isReadOnly = false, onlineUsers = [] })
           userTimes={userTimes}
           isAdmin={isAdmin}
           question={question}
+          secretTargetId={question?.type === 'secret' ? secretTargetId : null}
+          clicksLeftMap={clicksLeftMap}
+          numberAnswers={numberAnswers}
+          answersRevealed={answersRevealed}
+          responseRevealed={isResponseRevealed}
         />
       </div>
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} isAdmin={isAdmin} />}
+      <ImageLightbox src={lightboxImage} onClose={() => setLightboxImage(null)} />
     </div>
   );
 };

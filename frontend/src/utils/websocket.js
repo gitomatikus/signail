@@ -5,27 +5,47 @@ class WebSocketManager {
     this.ws = null;
     this.subscribers = new Set();
     this.selectedQuestions = new Set();
+    this.reconnectTimer = null;
+    this.intentionalClose = false;
   }
 
   connect() {
-    this.ws = new WebSocket(config.wsUrl);
+    // Never open a second socket: a duplicate connection means every
+    // broadcast is delivered (and applied) twice
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.intentionalClose = false;
 
-    this.ws.onopen = () => {
+    const socket = new WebSocket(config.wsUrl);
+    this.ws = socket;
+
+    socket.onopen = () => {
       console.log('WebSocket connected');
     };
 
-    this.ws.onmessage = (event) => {
+    socket.onmessage = (event) => {
+      if (this.ws !== socket) {
+        return; // stale socket that was replaced - ignore its messages
+      }
       const data = JSON.parse(event.data);
       this.notifySubscribers(data);
     };
 
-    this.ws.onclose = () => {
+    socket.onclose = () => {
       console.log('WebSocket disconnected');
+      if (this.ws !== socket || this.intentionalClose) {
+        return; // replaced or deliberately closed - no auto-reconnect
+      }
       // Attempt to reconnect after 5 seconds
-      setTimeout(() => this.connect(), 5000);
+      this.reconnectTimer = setTimeout(() => this.connect(), 5000);
     };
 
-    this.ws.onerror = (error) => {
+    socket.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
   }
@@ -48,11 +68,56 @@ class WebSocketManager {
     }
   }
 
-  sendQuestionSelect(questionId, userType) {
+  sendQuestionSelect(questionId, userType, userId = null) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({
         type: 'question_select',
-        data: { questionId, userType }
+        data: { questionId, userType, userId }
+      }));
+    }
+  }
+
+  sendCatClicks(questionId, userId, clicksLeft) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'cat_clicks',
+        data: { questionId, userId, clicksLeft }
+      }));
+    }
+  }
+
+  sendCatClicksGrant(questionId, userId, amount = 1) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'cat_clicks_grant',
+        data: { questionId, userId, amount }
+      }));
+    }
+  }
+
+  sendNumberAnswer(questionId, userId, value) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'number_answer',
+        data: { questionId, userId, value }
+      }));
+    }
+  }
+
+  sendRevealNumberAnswers(questionId) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'reveal_number_answers',
+        data: { questionId }
+      }));
+    }
+  }
+
+  sendSecretAssign(questionId, targetUserId, selectorUserId = null) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'secret_assign',
+        data: { questionId, targetUserId, selectorUserId }
       }));
     }
   }
@@ -168,6 +233,11 @@ class WebSocketManager {
   }
 
   disconnect() {
+    this.intentionalClose = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws) {
       this.ws.close();
     }

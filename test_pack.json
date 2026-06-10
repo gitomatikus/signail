@@ -47,7 +47,173 @@
                   "top": "23.1438127090301%"
                 }
               ],
-              "duration": 60
+              "duration": 60,
+              "max_clicks": 6,
+              "first_place_bonus": 50
+            }
+          ]
+        },
+        {
+          "name": "Cat in the Bag",
+          "description": "Secret question - the selector picks who answers!",
+          "ordered": true,
+          "questions": [
+            {
+              "id": 9998,
+              "price": {
+                "text": "200",
+                "correct": 200,
+                "incorrect": -100,
+                "random_range": "null"
+              },
+              "type": "secret",
+              "rules": [
+                {
+                  "type": "embedded",
+                  "content": "<p>Скільки лап у двох котів?</p>",
+                  "duration": 30
+                }
+              ],
+              "after_round": [
+                {
+                  "type": "embedded",
+                  "content": "<p>Вісім!</p>",
+                  "duration": 15
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Close Enough",
+          "description": "Guess the number - closest wins!",
+          "ordered": true,
+          "questions": [
+            {
+              "id": 9997,
+              "price": {
+                "text": "300",
+                "correct": 300,
+                "incorrect": -150,
+                "random_range": "null"
+              },
+              "type": "close-enough",
+              "answer": 38.5,
+              "duration": 30,
+              "perfect_bonus": 100,
+              "rules": [
+                {
+                  "type": "embedded",
+                  "content": "<p>Яка нормальна температура тіла кота у градусах Цельсія?</p>",
+                  "duration": 30
+                }
+              ],
+              "after_round": [
+                {
+                  "type": "embedded",
+                  "content": "<p>У котів нормальна температура 38-39 °C — вища, ніж у людей!</p>",
+                  "duration": 15
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Choice",
+          "description": "Pick the correct option(s)!",
+          "ordered": true,
+          "questions": [
+            {
+              "id": 9996,
+              "price": {
+                "text": "200",
+                "correct": 200,
+                "incorrect": -100,
+                "random_range": "null"
+              },
+              "type": "choice",
+              "multiple": false,
+              "first_place_bonus": 50,
+              "options": [
+                { "content": "<p>Мейн-кун</p>", "correct": false },
+                { "content": "<p>Сінгапура</p>", "correct": true },
+                { "content": "<p>Сфінкс</p>", "correct": false },
+                { "content": "<p>Бенгальська</p>", "correct": false }
+              ],
+              "rules": [
+                {
+                  "type": "embedded",
+                  "content": "<p>Яка порода котів вважається найменшою у світі?</p>",
+                  "duration": 30
+                }
+              ],
+              "after_round": [
+                {
+                  "type": "embedded",
+                  "content": "<p>Сінгапура — дорослі коти важать близько 2 кг!</p>",
+                  "duration": 15
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Text Answer",
+          "description": "Type or paste your answer!",
+          "ordered": true,
+          "questions": [
+            {
+              "id": 9995,
+              "price": {
+                "text": "200",
+                "correct": 200,
+                "incorrect": -100,
+                "random_range": "null"
+              },
+              "type": "text-answer",
+              "first_place_bonus": 50,
+              "rules": [
+                {
+                  "type": "embedded",
+                  "content": "<p>Як звали кота з мультфільму «Шрек»?</p>",
+                  "duration": 30
+                }
+              ],
+              "after_round": [
+                {
+                  "type": "embedded",
+                  "content": "<p>Кіт у чоботях!</p>",
+                  "duration": 15
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Progressive Reveal",
+          "description": "Buzz in as soon as you recognize the image!",
+          "ordered": true,
+          "questions": [
+            {
+              "id": 9994,
+              "price": {
+                "text": "400",
+                "correct": 400,
+                "incorrect": -200,
+                "random_range": "null"
+              },
+              "type": "progressive-reveal",
+              "image": "https://i.ibb.co/hJYzGbD2/image-2026-05-21-173054687.png",
+              "duration": 45,
+              "effect": "pixelate",
+              "curve": "slow-start",
+              "after_round": [
+                {
+                  "type": "embedded",
+                  "content": "<p>Це була картинка з котиками!</p>",
+                  "duration": 15
+                }
+              ]
             }
           ]
         }

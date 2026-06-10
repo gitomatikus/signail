@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import wsManager from '../utils/websocket';
 import { useLocation } from 'react-router-dom';
+import ImageLightbox from './ImageLightbox';
 
-const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question }) => {
+const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, secretTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false }) => {
   const location = useLocation();
   const isQuestionPage = location.pathname.includes('/question/');
 
   const [updatedUsers, setUpdatedUsers] = useState(new Set());
   const [penalizedUsers, setPenalizedUsers] = useState(new Set());
   const [greenFrameUsers, setGreenFrameUsers] = useState(new Set());
+  const [lightboxSrc, setLightboxSrc] = useState(null);
 
   useEffect(() => {
     const storedGreenFramedUsers = JSON.parse(localStorage.getItem('greenFramedUsers') || '[]');
@@ -53,8 +55,52 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
 
   const correctValue = question?.price?.correct ?? 0;
   const incorrectValue = question?.price?.incorrect ?? 0;
+  const hasClickLimit = question?.type === 'find-a-cat' && Number(question?.max_clicks) > 0;
+  const isCloseEnoughQuestion = question?.type === 'close-enough';
+  const isChoiceQuestion = question?.type === 'choice';
+  const isTextQuestion = question?.type === 'text-answer';
 
-  const handleScoreClick = (userId, currentScore, value) => {
+  // Close-enough: once numbers are revealed, find who came closest to the answer
+  let closestIds = [];
+  if (isCloseEnoughQuestion && answersRevealed && typeof question?.answer === 'number') {
+    let bestDistance = Infinity;
+    Object.entries(numberAnswers).forEach(([userId, value]) => {
+      if (typeof value !== 'number') return;
+      const distance = Math.abs(value - question.answer);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        closestIds = [userId];
+      } else if (distance === bestDistance) {
+        closestIds.push(userId);
+      }
+    });
+  }
+
+  // Choice: exact-match correctness, plus the fastest correct player (takes the move)
+  const choiceCorrectKey = isChoiceQuestion
+    ? (question.options || []).map((o, i) => (o.correct ? i : -1)).filter(i => i >= 0).join(',')
+    : '';
+  const isCorrectChoicePicks = (value) =>
+    Array.isArray(value) && [...value].sort((a, b) => a - b).join(',') === choiceCorrectKey;
+  let fastestCorrectChoiceId = null;
+  if (isChoiceQuestion && answersRevealed) {
+    let bestTime = Infinity;
+    Object.entries(numberAnswers).forEach(([userId, value]) => {
+      if (!isCorrectChoicePicks(value)) return;
+      const time = userTimes[userId];
+      if (typeof time === 'number' && time < bestTime) {
+        bestTime = time;
+        fastestCorrectChoiceId = userId;
+      }
+    });
+  }
+
+  const handleGrantClick = (userId) => {
+    if (!isAdmin || !question) return;
+    wsManager.sendCatClicksGrant(question.id, userId, 1);
+  };
+
+  const handleScoreClick = (userId, currentScore, value, grantsMove = true) => {
     if (!isAdmin) return;
 
     const newScore = currentScore + value;
@@ -68,10 +114,12 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
 
     if (value > 0) {
       setUpdatedUsers(prev => new Set([...prev, userId]));
-      wsManager.ws.send(JSON.stringify({
-        type: 'admin_clicked_green_number',
-        data: { userId }
-      }));
+      if (grantsMove) {
+        wsManager.ws.send(JSON.stringify({
+          type: 'admin_clicked_green_number',
+          data: { userId }
+        }));
+      }
     } else {
       setPenalizedUsers(prev => new Set([...prev, userId]));
       wsManager.ws.send(JSON.stringify({
@@ -92,6 +140,23 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
       alignItems: 'flex-start',
       padding: '1rem'
     }}>
+      <style>{`
+        @keyframes rainbowShift {
+          0% { background-position: 0% 50%, 0% 50%; }
+          100% { background-position: 0% 50%, 200% 50%; }
+        }
+        .rainbow-frame {
+          border: 3px solid transparent;
+          background-image:
+            linear-gradient(var(--bg-dark), var(--bg-dark)),
+            linear-gradient(90deg, #ff0040, #ff8c00, #ffd700, #00e676, #00b0ff, #d500f9, #ff0040);
+          background-origin: border-box;
+          background-clip: padding-box, border-box;
+          background-size: auto, 200% 100%;
+          animation: rainbowShift 2s linear infinite;
+          box-shadow: 0 0 25px rgba(213, 0, 249, 0.6);
+        }
+      `}</style>
       {users.map(user => {
         const userTime = userTimes[user.id] ?? (user.id === currentUserId ? elapsedTime : null);
         const isTopThree = topThreeTimes.includes(user.id);
@@ -101,6 +166,50 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
         const isUpdated = updatedUsers.has(user.id);
         const isPenalized = penalizedUsers.has(user.id);
         const hasGreenFrame = greenFrameUsers.has(user.id);
+        const clicksLeft = hasClickLimit ? (clicksLeftMap[user.id] ?? question.max_clicks) : null;
+        const hasFailedClicks = hasClickLimit && clicksLeft <= 0 && userTime === null;
+        const isFindACat = question?.type === 'find-a-cat';
+        // Who gets award buttons: the chosen player for cat-in-the-bag,
+        // every finisher for find-a-cat, every user once close-enough numbers
+        // are revealed, every answerer for choice/text, the fastest player otherwise
+        const showAwardRow = isAdmin && !isUpdated && !isPenalized && (
+          secretTargetId
+            ? user.id === secretTargetId
+            : isFindACat
+              ? userTime !== null
+              : isCloseEnoughQuestion
+                ? answersRevealed
+                : (isChoiceQuestion || isTextQuestion)
+                  ? (answersRevealed && numberAnswers[user.id] !== undefined)
+                  : position === 0
+        );
+        const submittedAnswer = numberAnswers[user.id];
+        const answerBadge = isCloseEnoughQuestion && submittedAnswer !== undefined
+          ? (typeof submittedAnswer === 'number' ? submittedAnswer : '✓')
+          : null;
+        // Exact close-enough guess: rainbow frame + optional bonus points
+        const isPerfectGuess = isCloseEnoughQuestion && answersRevealed
+          && typeof question?.answer === 'number' && submittedAnswer === question.answer;
+        // First-place bonus for multi-winner types: the fastest find-a-cat solver,
+        // the fastest correct choice answer, the fastest (non-penalized) text answerer
+        const isFirstPlace = isFindACat
+          ? position === 0
+          : isChoiceQuestion
+            ? (answersRevealed && user.id === fastestCorrectChoiceId)
+            : isTextQuestion
+              ? (answersRevealed && position === 0)
+              : false;
+        const firstPlaceBonus = isFirstPlace ? (Number(question?.first_place_bonus) || 0) : 0;
+        const perfectBonus = isPerfectGuess ? (Number(question?.perfect_bonus) || 0) : 0;
+        const awardValue = correctValue + firstPlaceBonus + perfectBonus;
+        // Who takes the move (green frame) when awarded points
+        const grantsMove = isFindACat
+          ? position === 0
+          : isCloseEnoughQuestion
+            ? closestIds.includes(user.id)
+            : isChoiceQuestion
+              ? user.id === fastestCorrectChoiceId
+              : true;
 
         const getFrameStyle = () => {
           if (hasGreenFrame) {
@@ -114,6 +223,30 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             return {
               border: '3px solid #ef4444',
               boxShadow: '0 0 20px rgba(239, 68, 68, 0.6)'
+            };
+          }
+
+          // Player ran out of find-a-cat clicks without finding everything
+          if (hasFailedClicks) {
+            return {
+              border: '3px solid #ef4444',
+              boxShadow: '0 0 20px rgba(239, 68, 68, 0.6)'
+            };
+          }
+
+          // Highlight the player chosen to answer a cat-in-the-bag question
+          if (secretTargetId && user.id === secretTargetId) {
+            return {
+              border: '3px solid #ffd600',
+              boxShadow: '0 0 25px rgba(255, 214, 0, 0.6)'
+            };
+          }
+
+          // Close-enough winner: the number closest to the correct answer
+          if (isCloseEnoughQuestion && answersRevealed && closestIds.includes(user.id)) {
+            return {
+              border: '3px solid #fbbf24',
+              boxShadow: '0 0 25px rgba(251, 191, 36, 0.6)'
             };
           }
 
@@ -185,16 +318,42 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               </div>
             )}
 
-            <div style={{
-              width: '110px',
-              height: '110px',
-              borderRadius: '24px',
-              overflow: 'hidden',
-              marginBottom: '1rem',
-              background: 'var(--bg-dark)',
-              transition: 'all 0.3s ease',
-              ...getFrameStyle()
-            }}>
+            {/* Close-enough: a checkmark while numbers are hidden, the number once revealed */}
+            {answerBadge !== null && (
+              <div style={{
+                position: 'absolute',
+                top: -20,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                background: isPerfectGuess
+                  ? 'linear-gradient(90deg, #ff0040, #ff8c00, #ffd700, #00e676, #00b0ff, #d500f9)'
+                  : answersRevealed && closestIds.includes(user.id) ? '#fbbf24' : 'var(--primary)',
+                color: '#fff',
+                padding: '4px 12px',
+                borderRadius: '9999px',
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                zIndex: 10,
+                whiteSpace: 'nowrap',
+                textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+                boxShadow: '0 4px 12px var(--primary-glow)'
+              }}>
+                {answerBadge}
+              </div>
+            )}
+
+            <div
+              className={isPerfectGuess ? 'rainbow-frame' : undefined}
+              style={{
+                width: '110px',
+                height: '110px',
+                borderRadius: '24px',
+                overflow: 'hidden',
+                marginBottom: '1rem',
+                transition: 'all 0.3s ease',
+                // The rainbow frame paints its own background and border
+                ...(isPerfectGuess ? {} : { background: 'var(--bg-dark)', ...getFrameStyle() })
+              }}>
               {user.imageUrl.toLowerCase().endsWith('.mp4') ? (
                 <video
                   src={user.imageUrl}
@@ -259,7 +418,8 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                 {previousScore}
               </span>
 
-              {isAdmin && position === 0 && !isUpdated && !isPenalized && (
+              {/* Award buttons: chosen player for cat-in-the-bag, every finisher for find-a-cat (only +X), fastest player otherwise */}
+              {showAwardRow && (
                 <div className="glass-panel" style={{
                   display: 'flex',
                   gap: '8px',
@@ -268,23 +428,34 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   marginTop: '4px',
                   borderRadius: '8px'
                 }}>
+                  {!isFindACat && (
+                    <>
+                      <span
+                        onClick={() => handleScoreClick(user.id, previousScore, incorrectValue)}
+                        style={{
+                          fontWeight: 'bold',
+                          fontSize: '1rem',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          transition: 'opacity 0.2s'
+                        }}
+                        onMouseEnter={e => e.target.style.opacity = '0.8'}
+                        onMouseLeave={e => e.target.style.opacity = '1'}
+                      >
+                        {incorrectValue}
+                      </span>
+                      <span style={{ color: 'var(--text-muted)' }}>/</span>
+                    </>
+                  )}
                   <span
-                    onClick={() => handleScoreClick(user.id, previousScore, incorrectValue)}
-                    style={{
-                      fontWeight: 'bold',
-                      fontSize: '1rem',
-                      color: '#ef4444',
-                      cursor: 'pointer',
-                      transition: 'opacity 0.2s'
-                    }}
-                    onMouseEnter={e => e.target.style.opacity = '0.8'}
-                    onMouseLeave={e => e.target.style.opacity = '1'}
-                  >
-                    {incorrectValue}
-                  </span>
-                  <span style={{ color: 'var(--text-muted)' }}>/</span>
-                  <span
-                    onClick={() => handleScoreClick(user.id, previousScore, correctValue)}
+                    onClick={() => handleScoreClick(user.id, previousScore, awardValue, grantsMove)}
+                    title={
+                      firstPlaceBonus > 0
+                        ? `${correctValue} + бонус за 1 місце ${firstPlaceBonus}`
+                        : perfectBonus > 0
+                          ? `${correctValue} + бонус за точну відповідь ${perfectBonus}`
+                          : ''
+                    }
                     style={{
                       fontWeight: 'bold',
                       fontSize: '1rem',
@@ -295,14 +466,121 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                     onMouseEnter={e => e.target.style.opacity = '0.8'}
                     onMouseLeave={e => e.target.style.opacity = '1'}
                   >
-                    {correctValue}
+                    {isFindACat
+                      ? `+${awardValue}${firstPlaceBonus > 0 ? ' 🥇' : ''}`
+                      : perfectBonus > 0
+                        ? `+${awardValue} 🎯`
+                        : firstPlaceBonus > 0
+                          ? `+${awardValue} 🥇`
+                          : correctValue}
                   </span>
+                </div>
+              )}
+
+              {/* Find-a-cat click budget: counter, penalty button for a failed player, admin click grant */}
+              {hasClickLimit && (
+                <div className="glass-panel" style={{
+                  display: 'flex',
+                  gap: '8px',
+                  alignItems: 'center',
+                  padding: '4px 8px',
+                  marginTop: '4px',
+                  borderRadius: '8px'
+                }}>
+                  <span style={{
+                    fontWeight: 'bold',
+                    fontSize: '0.95rem',
+                    color: clicksLeft <= 0 ? '#ef4444' : 'var(--text-secondary)'
+                  }}>
+                    🖱 {clicksLeft}
+                  </span>
+                  {isAdmin && hasFailedClicks && !isPenalized && !isUpdated && (
+                    <span
+                      onClick={() => handleScoreClick(user.id, previousScore, incorrectValue)}
+                      style={{
+                        fontWeight: 'bold',
+                        fontSize: '1rem',
+                        color: '#ef4444',
+                        cursor: 'pointer',
+                        transition: 'opacity 0.2s'
+                      }}
+                      onMouseEnter={e => e.target.style.opacity = '0.8'}
+                      onMouseLeave={e => e.target.style.opacity = '1'}
+                    >
+                      {incorrectValue}
+                    </span>
+                  )}
+                  {isAdmin && (
+                    <span
+                      onClick={() => handleGrantClick(user.id)}
+                      title="Додати 1 клік"
+                      style={{
+                        fontWeight: 'bold',
+                        fontSize: '0.95rem',
+                        color: '#4ade80',
+                        cursor: 'pointer',
+                        transition: 'opacity 0.2s',
+                        whiteSpace: 'nowrap'
+                      }}
+                      onMouseEnter={e => e.target.style.opacity = '0.8'}
+                      onMouseLeave={e => e.target.style.opacity = '1'}
+                    >
+                      +1 клік
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Choice picks / text answers shown under the player once revealed.
+                  Choice correctness colors appear for the admin right away and for
+                  players only after the admin shows the response. */}
+              {(isChoiceQuestion || isTextQuestion) && answersRevealed
+                && submittedAnswer !== undefined && submittedAnswer !== true && (
+                <div className="glass-panel" style={{
+                  marginTop: '4px',
+                  padding: '6px 10px',
+                  borderRadius: '8px',
+                  maxWidth: '140px',
+                  border: isChoiceQuestion && (isAdmin || responseRevealed)
+                    ? (isCorrectChoicePicks(submittedAnswer) ? '1px solid #4ade80' : '1px solid #ef4444')
+                    : '1px solid var(--glass-border)'
+                }}>
+                  {isChoiceQuestion ? (
+                    <span style={{
+                      fontWeight: '700',
+                      fontSize: '1rem',
+                      color: (isAdmin || responseRevealed)
+                        ? (isCorrectChoicePicks(submittedAnswer) ? '#4ade80' : '#ef4444')
+                        : 'var(--accent)'
+                    }}>
+                      {Array.isArray(submittedAnswer) ? submittedAnswer.map(i => i + 1).join(', ') : ''}
+                    </span>
+                  ) : typeof submittedAnswer === 'string' && submittedAnswer.startsWith('data:image') ? (
+                    <img
+                      src={submittedAnswer}
+                      alt="answer"
+                      title="Клікніть, щоб переглянути у повному розмірі"
+                      onClick={() => setLightboxSrc(submittedAnswer)}
+                      style={{ maxWidth: '120px', maxHeight: '90px', borderRadius: '6px', display: 'block', cursor: 'zoom-in' }}
+                    />
+                  ) : (
+                    <div style={{
+                      fontSize: '0.9rem',
+                      color: 'var(--text-primary)',
+                      wordBreak: 'break-word',
+                      maxHeight: '80px',
+                      overflowY: 'auto'
+                    }}>
+                      {submittedAnswer}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
         );
       })}
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 };

@@ -137,6 +137,15 @@ app.get('/api/data', (req, res) => {
     });
 });
 
+// Current cache key. Clients compare it with the one saved in localStorage
+// and drop their local caches (pack, answered questions) when it changed.
+app.get('/api/cache-key', (req, res) => {
+    res.json({
+        status: 'success',
+        data: { cacheKey: wsManager.getCacheKey() }
+    });
+});
+
 // Serve pack.json
 app.get('/api/pack', (req, res) => {
     // If there's an uploaded pack, serve it
@@ -168,10 +177,16 @@ app.post('/api/pack/upload', express.json(), (req, res) => {
 
         // Store the pack in memory
         uploadedPack = req.body;
-        
+
+        // A new pack invalidates all per-question state and every
+        // client's cached pack, so rotate the cache key
+        wsManager.resetQuestionState();
+        const cacheKey = wsManager.regenerateCacheKey();
+
         res.json({
             status: 'success',
-            message: 'Pack uploaded successfully'
+            message: 'Pack uploaded successfully',
+            cacheKey
         });
     } catch (error) {
         res.status(500).json({
@@ -189,6 +204,45 @@ app.get('/api/questions/:questionId/times', (req, res) => {
   res.json({
     status: 'success',
     data: Object.fromEntries(times)
+  });
+});
+
+// Get remaining find-a-cat clicks per user for a specific question
+app.get('/api/questions/:questionId/clicks', (req, res) => {
+  const questionId = parseInt(req.params.questionId);
+  const clicks = wsManager.getQuestionClicks(questionId);
+  res.json({
+    status: 'success',
+    data: Object.fromEntries(clicks)
+  });
+});
+
+// Get close-enough submissions for a specific question.
+// Before the reveal, other players' numbers are masked as `true`;
+// pass ?userId= to still get your own submitted value back after a refresh.
+app.get('/api/questions/:questionId/answers', (req, res) => {
+  const questionId = parseInt(req.params.questionId);
+  const requesterId = req.query.userId;
+  const info = wsManager.getNumberAnswersInfo(questionId);
+  const answers = {};
+  for (const [userId, value] of info.answers) {
+    answers[userId] = info.revealed || userId === requesterId ? value : true;
+  }
+  res.json({
+    status: 'success',
+    data: {
+      revealed: info.revealed,
+      answers
+    }
+  });
+});
+
+// Get cat-in-the-bag state for a specific question (who selected it, who answers it)
+app.get('/api/questions/:questionId/secret', (req, res) => {
+  const questionId = parseInt(req.params.questionId);
+  res.json({
+    status: 'success',
+    data: wsManager.getSecretInfo(questionId)
   });
 });
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Settings from './Settings';
 import { indexedDBService } from '../services/indexedDB';
+import { checkCacheVersion } from '../services/cacheVersion';
 import wsManager from '../utils/websocket';
 import config from '../config';
 
@@ -37,6 +38,14 @@ const GameBoard = ({ isAdmin = false }) => {
     try {
       setLoading(true);
       setDownloadProgress(null);
+      // If the server rotated the cache key (new pack uploaded / cache
+      // cleared), the cached pack and answered questions were just wiped -
+      // drop them from state too so we fall through to a fresh fetch
+      const cacheChanged = await checkCacheVersion();
+      if (cacheChanged) {
+        setSelectedQuestions(new Set());
+        localStorage.removeItem('selectedQuestions');
+      }
       const cachedPack = await indexedDBService.getPack('current');
 
       if (cachedPack) {
@@ -99,6 +108,16 @@ const GameBoard = ({ isAdmin = false }) => {
   }, []);
 
   useEffect(() => {
+    const findQuestionById = (questionId) => {
+      for (const round of pack?.rounds || []) {
+        for (const theme of round.themes) {
+          const q = theme.questions.find(q => q.id === questionId);
+          if (q) return q;
+        }
+      }
+      return null;
+    };
+
     const unsubscribe = wsManager.subscribe((data) => {
       if (data.type === 'selected_questions_update') {
         setSelectedQuestions(new Set(data.data));
@@ -107,6 +126,13 @@ const GameBoard = ({ isAdmin = false }) => {
         setSelectedQuestionId(questionId);
         if (isAdmin) {
           navigate(`/admin/question/${questionId}`);
+        } else {
+          // Cat-in-the-bag: everyone joins the selection screen right away,
+          // without waiting for the admin to reveal the question
+          const q = findQuestionById(questionId);
+          if (q && q.type === 'secret') {
+            navigate(`/question/${questionId}`);
+          }
         }
       } else if (data.type === 'question_reveal') {
         const { questionId } = data.data;
@@ -121,12 +147,13 @@ const GameBoard = ({ isAdmin = false }) => {
     return () => {
       unsubscribe();
     };
-  }, [navigate, isAdmin]);
+  }, [navigate, isAdmin, pack]);
 
   const handleQuestionClick = (question) => {
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+
     if (!isAdmin) {
       const greenFramedUsers = JSON.parse(localStorage.getItem('greenFramedUsers') || '[]');
-      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
 
       if (!greenFramedUsers.includes(currentUser.id)) {
         console.log('Only users with green frame can select questions');
@@ -139,7 +166,7 @@ const GameBoard = ({ isAdmin = false }) => {
     }
 
     setSelectedQuestionId(question.id);
-    wsManager.sendQuestionSelect(question.id, isAdmin ? 'admin' : 'user');
+    wsManager.sendQuestionSelect(question.id, isAdmin ? 'admin' : 'user', isAdmin ? null : (currentUser.id || null));
 
     if (isAdmin) {
       navigate(`/admin/question/${question.id}`);

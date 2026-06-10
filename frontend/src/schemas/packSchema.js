@@ -30,6 +30,14 @@
  * @property {string} [name] - Target name for find-a-cat
  * @property {Object[]} [map] - Map areas for find-a-cat
  * @property {number} [duration] - Optional duration for the question
+ * @property {number} [max_clicks] - Find-a-cat click budget (hits and misses); 0/absent = unlimited
+ * @property {number} [first_place_bonus] - Find-a-cat extra points for the fastest solver, on top of the normal award
+ * @property {number} [answer] - Close-enough numeric correct answer; the closest submitted number wins
+ * @property {number} [perfect_bonus] - Close-enough extra points for guessing the exact answer
+ * @property {boolean} [multiple] - Choice: whether several options can be correct
+ * @property {Object[]} [options] - Choice options: { content: html, correct: boolean }
+ * @property {string} [effect] - Progressive-reveal hiding effect: blur | pixelate | zoom
+ * @property {string} [curve] - Progressive-reveal speed curve: linear | slow-start | fast-start
  */
 
 /**
@@ -55,7 +63,11 @@ const QuestionType = {
     Normal: 'normal',
     Secret: 'secret',
     Empty: 'empty',
-    FindACat: 'find-a-cat'
+    FindACat: 'find-a-cat',
+    CloseEnough: 'close-enough',
+    Choice: 'choice',
+    TextAnswer: 'text-answer',
+    ProgressiveReveal: 'progressive-reveal'
 };
 
 /**

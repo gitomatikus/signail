@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import LoginPage from './LoginPage';
 import wsManager from '../utils/websocket';
+import { applyCacheKey } from '../services/cacheVersion';
 import config from '../config';
 
 const AuthWrapper = ({ children, isAdmin = false }) => {
@@ -32,7 +33,17 @@ const AuthWrapper = ({ children, isAdmin = false }) => {
 
     // Subscribe to WebSocket events
     const unsubscribe = wsManager.subscribe((data) => {
-      if (data.type === 'online_users') {
+      if (data.type === 'cache_key_update' && data.data?.cacheKey) {
+        // Server rotated the cache key (new pack uploaded / cache cleared).
+        // Drop local caches and reload from the board so everyone picks up
+        // the fresh pack and reset question state. The upload page is left
+        // alone so the admin sees the upload result.
+        applyCacheKey(data.data.cacheKey).then((changed) => {
+          if (changed && window.location.pathname !== '/admin/pack') {
+            window.location.href = isAdmin ? '/admin' : '/';
+          }
+        });
+      } else if (data.type === 'online_users') {
         setOnlineUsers(data.data);
 
         // Sync local user score with the server score broadcast
