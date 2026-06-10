@@ -15,7 +15,9 @@ class WebSocketManager {
     this.wss = new WebSocket.Server({ server, path: config.wsPath });
 
     this.wss.on('connection', (ws, req) => {
-      const url = new URL(req.url, 'http://localhost');
+      // The base is a throwaway placeholder needed only so URL() can parse
+      // the query string of the relative req.url - it is never requested.
+      const url = new URL(req.url, 'http://placeholder.invalid');
       const gameId = url.searchParams.get('gameId');
       const hostToken = url.searchParams.get('hostToken');
       const password = url.searchParams.get('password');

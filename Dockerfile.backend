@@ -8,11 +8,11 @@ RUN npm install
 
 COPY . .
 
-ENV NODE_ENV=development
-ENV PORT=8000
-ENV WS_PATH=/ws
-ENV CORS_ORIGIN=*
+# Runtime config (PORT, WS_PATH, CORS_ORIGIN, NODE_ENV) is supplied via
+# docker-compose environment from the root .env file.
+ARG BACKEND_PORT=8000
+ENV PORT=${BACKEND_PORT}
 
-EXPOSE 8000
+EXPOSE ${BACKEND_PORT}
 
-CMD ["npm", "run", "dev"] 
+CMD ["npm", "run", "dev"]

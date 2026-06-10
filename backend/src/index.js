@@ -12,9 +12,9 @@ const server = http.createServer(app);
 const gameManager = new GameManager();
 wsManager.initialize(server, gameManager);
 
-// CORS: allow any origin (reflect request origin) and handle preflight globally
+// CORS: origins come from CORS_ORIGIN in .env ("*" reflects any origin)
 const corsHandler = cors({
-  origin: true,
+  origin: config.allowAllOrigins ? true : config.corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Host-Token']

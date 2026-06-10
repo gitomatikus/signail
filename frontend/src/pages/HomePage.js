@@ -122,6 +122,21 @@ const HomePage = ({ user }) => {
           + Create Game
         </button>
 
+        <a
+          href={config.packEditorUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            alignSelf: 'center',
+            color: 'var(--text-secondary)',
+            fontSize: '0.95rem',
+            textDecoration: 'none',
+            borderBottom: '1px dashed var(--glass-border)'
+          }}
+        >
+          ✏️ Need a pack? Open the pack editor ↗
+        </a>
+
         {error && (
           <div style={{
             padding: '0.75rem',

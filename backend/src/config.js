@@ -1,11 +1,16 @@
 require('dotenv').config();
 
+// "*" allows every origin; otherwise a comma-separated list of allowed origins
+const corsOrigin = process.env.CORS_ORIGIN || '*';
+const allowAllOrigins = corsOrigin === '*';
+
 const config = {
   port: process.env.PORT || 8000,
   wsPath: process.env.WS_PATH || '/ws',
-  // Force-enable CORS for every origin (HTTP + WebSocket)
-  corsOrigins: ['*'],
-  allowAllOrigins: true
+  allowAllOrigins,
+  corsOrigins: allowAllOrigins
+    ? ['*']
+    : corsOrigin.split(',').map((origin) => origin.trim()).filter(Boolean)
 };
 
 module.exports = config;

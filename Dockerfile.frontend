@@ -8,16 +8,16 @@ RUN npm install
 
 COPY . .
 
-ENV PORT=3001
+# API/WS URLs and ports (REACT_APP_*) are supplied via docker-compose
+# environment from the root .env file - nothing is hardcoded here.
+ARG FRONTEND_PORT=3001
+ENV PORT=${FRONTEND_PORT}
 ENV HOST=0.0.0.0
 ENV WDS_SOCKET_PORT=0
-ENV NODE_ENV=production
 ENV CHOKIDAR_USEPOLLING=false
 ENV FAST_REFRESH=false
 ENV WATCHPACK_POLLING=false
-ENV REACT_APP_WS_URL=ws://localhost:8000/ws
-ENV REACT_APP_API_URL=http://localhost:8000
 
-EXPOSE 3001
+EXPOSE ${FRONTEND_PORT}
 
-CMD ["npm", "run", "start"] 
+CMD ["npm", "run", "start"]

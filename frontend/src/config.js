@@ -27,9 +27,13 @@ const wsUrl =
   process.env.REACT_APP_WS_URL ||
   buildUrl(wsProtocol, defaultHostname, wsPort, wsPath);
 
+const packEditorUrl =
+  process.env.REACT_APP_PACK_EDITOR_URL || 'https://packer.critfail.art';
+
 const config = {
   wsUrl,
-  apiUrl
+  apiUrl,
+  packEditorUrl
 };
 
 export default config; 
