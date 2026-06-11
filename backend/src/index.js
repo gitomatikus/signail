@@ -18,7 +18,7 @@ const corsHandler = cors({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Host-Token'],
-  exposedHeaders: ['Content-Length']
+  exposedHeaders: ['Content-Length', 'X-Pack-Size']
 });
 
 app.use(corsHandler);
@@ -177,6 +177,9 @@ app.get('/api/games/:gameId/pack', (req, res) => {
     }
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Length', stat.size);
+    res.setHeader('X-Pack-Size', stat.size);
+    res.setHeader('Cache-Control', 'no-transform');
+    res.setHeader('X-Accel-Buffering', 'no');
     const stream = fs.createReadStream(game.packPath);
     stream.on('error', () => res.destroy());
     stream.pipe(res);

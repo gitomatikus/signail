@@ -29,9 +29,13 @@ export const GameProvider = ({ user, children }) => {
   const isHost = !!hostToken;
 
   const userRef = useRef(user);
+  const gameInfoRef = useRef(gameInfo);
   useEffect(() => {
     userRef.current = user;
   }, [user]);
+  useEffect(() => {
+    gameInfoRef.current = gameInfo;
+  }, [gameInfo]);
 
   const loadPack = useCallback(async (info) => {
     try {
@@ -49,6 +53,7 @@ export const GameProvider = ({ user, children }) => {
         return;
       }
 
+      setDownloadProgress(0);
       const response = await fetch(`${config.apiUrl}/api/games/${gameId}/pack`);
       if (!response.ok) {
         throw new Error('Failed to fetch pack');
@@ -60,20 +65,22 @@ export const GameProvider = ({ user, children }) => {
         setPackLoading(false);
         return;
       }
-      const contentLength = response.headers.get('Content-Length') || response.headers.get('content-length');
-      const total = (contentLength ? parseInt(contentLength, 10) : null) || (info && info.packSize) || (gameInfo && gameInfo.packSize) || null;
+      const contentLength = response.headers.get('X-Pack-Size') || response.headers.get('Content-Length');
+      const headerTotal = Number.parseInt(contentLength, 10);
+      const total = (Number.isFinite(headerTotal) && headerTotal > 0 ? headerTotal : null)
+        || info?.packSize
+        || gameInfoRef.current?.packSize
+        || null;
       let loaded = 0;
       let chunks = [];
       const reader = response.body.getReader();
-      let progress = 0;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value);
-        loaded += value.length;
+        loaded += value.byteLength;
         if (total) {
-          progress = Math.round((loaded / total) * 100);
-          setDownloadProgress(progress);
+          setDownloadProgress(Math.min(100, Math.round((loaded / total) * 100)));
         } else {
           setDownloadProgress(-1);
         }
@@ -94,7 +101,7 @@ export const GameProvider = ({ user, children }) => {
       setPackLoading(false);
       setDownloadProgress(null);
     }
-  }, [gameId, gameInfo]);
+  }, [gameId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +116,7 @@ export const GameProvider = ({ user, children }) => {
         }
         const result = await response.json();
         if (cancelled || result.status !== 'success') return;
+        gameInfoRef.current = result.data;
         setGameInfo(result.data);
 
         wsManager.connect({
@@ -131,6 +139,7 @@ export const GameProvider = ({ user, children }) => {
           wsManager.sendUserLogin(userRef.current);
         }
       } else if (data.type === 'game_info') {
+        gameInfoRef.current = data.data;
         setGameInfo(data.data);
       } else if (data.type === 'game_started') {
         setGameInfo(prev => (prev ? { ...prev, status: 'started' } : prev));
