@@ -65,7 +65,7 @@ const Lobby = () => {
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
             {t('lobby.title')}
           </div>
-          <h1 className="text-gradient" style={{ fontSize: '2.5rem', fontWeight: 800, margin: '0.25rem 0 0' }}>
+          <h1 style={{ fontSize: '2.5rem', fontWeight: 800, margin: '0.25rem 0 0' }}>
             {gameInfo.packName}
           </h1>
           <div style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
@@ -102,9 +102,8 @@ const Lobby = () => {
                   style={{
                     width: `${downloadProgress > -1 ? downloadProgress : 0}%`,
                     height: '100%',
-                    background: 'linear-gradient(90deg, var(--primary), var(--accent))',
-                    transition: 'width 0.3s ease',
-                    boxShadow: '0 0 10px var(--primary-glow)'
+                    background: 'var(--fill-hover)',
+                    transition: 'width 0.3s ease'
                   }}
                 />
               </div>

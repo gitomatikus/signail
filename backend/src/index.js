@@ -104,7 +104,7 @@ app.post('/api/games/:gameId/pack', (req, res) => {
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/', (req, res) => {
-  res.json({ message: 'Signail game server is running' });
+  res.json({ message: 'Jeoparty game server is running' });
 });
 
 // ----- Game list / lifecycle -----

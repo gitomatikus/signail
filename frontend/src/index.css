@@ -40,24 +40,30 @@
 
 :root {
     /* Core Colors */
-    --bg-dark: #0f172a;
-    --bg-darker: #020617;
-    --primary: #6366f1;
-    --primary-glow: rgba(99, 102, 241, 0.5);
-    --secondary: #ec4899;
-    --secondary-glow: rgba(236, 72, 153, 0.5);
-    --accent: #22d3ee;
-    --accent-glow: rgba(34, 211, 238, 0.5);
+    --bg-dark: #10131b;
+    --bg-darker: #0a0c11;
+    --primary: #3c54b4;
+    --primary-hover: #3354dd;
+    --primary-glow: rgba(62, 99, 245, 0.3);
+    /* Main game blue for filled surfaces (buttons, board cells, progress
+       bars). Translucent so large areas sit softly on the dark background;
+       the vivid --primary stays for text accents, borders and focus rings */
+    --fill: rgba(67, 95, 203, 0.46);
+    --fill-hover: rgba(67, 95, 203, 0.68);
+    --secondary: #7c5cff;
+    --secondary-glow: rgba(124, 92, 255, 0.3);
+    --accent: #8ba3ff;
+    --accent-glow: rgba(139, 163, 255, 0.3);
 
     /* Text Colors */
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --text-primary: #f4f6fb;
+    --text-secondary: #98a0b3;
+    --text-muted: #636b7e;
 
-    /* Glassmorphism */
-    --glass-bg: rgba(30, 41, 59, 0.7);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    /* Surfaces (legacy "glass" names; flat cards now) */
+    --glass-bg: #12151e;
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 
     /* Spacing */
     --spacing-xs: 0.25rem;
@@ -78,17 +84,6 @@ body,
     padding: 0;
     min-height: 100vh;
     background-color: var(--bg-darker);
-    background-image:
-        radial-gradient(
-            circle at 10% 20%,
-            rgba(99, 102, 241, 0.15) 0%,
-            transparent 20%
-        ),
-        radial-gradient(
-            circle at 90% 80%,
-            rgba(236, 72, 153, 0.15) 0%,
-            transparent 20%
-        );
     color: var(--text-primary);
     font-family: "Fixel Text", sans-serif;
     font-weight: 500;
@@ -122,41 +117,41 @@ body,
 /* Utility Classes */
 .glass-panel {
     background: var(--glass-bg);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
     border-radius: 16px;
 }
 
-.text-gradient {
-    background: linear-gradient(135deg, var(--primary), var(--accent));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+.brand-logo {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--text-primary);
+}
+
+.brand-logo span {
+    color: var(--primary);
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    background: var(--fill);
     color: white;
     border: none;
     padding: 12px 24px;
-    border-radius: 12px;
+    border-radius: 10px;
     font-weight: 600;
     cursor: pointer;
-    transition: var(--transition-normal);
-    box-shadow: 0 4px 15px var(--primary-glow);
+    transition: background var(--transition-fast);
 }
 
 .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px var(--primary-glow);
+    background: var(--fill-hover);
 }
 
 .btn-primary:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
-    transform: none;
 }
 
 /* Input Fields */
@@ -168,9 +163,9 @@ input,
 textarea {
     width: 100%;
     padding: 12px 16px;
-    background: rgba(15, 23, 42, 0.5);
+    background: var(--bg-darker);
     border: 1px solid var(--glass-border);
-    border-radius: 12px;
+    border-radius: 10px;
     color: var(--text-primary);
     font-family: inherit;
     font-size: 1rem;
@@ -185,8 +180,7 @@ input[type="number"]:focus,
 input:focus,
 textarea:focus {
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    background: rgba(15, 23, 42, 0.7);
+    box-shadow: 0 0 0 3px rgba(62, 99, 245, 0.15);
 }
 
 input::placeholder,
@@ -221,7 +215,6 @@ input[type="range"].volume-slider::-webkit-slider-thumb {
     border-radius: 50%;
     background: var(--text-primary);
     border: none;
-    box-shadow: 0 0 8px var(--primary-glow);
 }
 
 input[type="range"].volume-slider::-moz-range-thumb {
@@ -230,7 +223,6 @@ input[type="range"].volume-slider::-moz-range-thumb {
     border-radius: 50%;
     background: var(--text-primary);
     border: none;
-    box-shadow: 0 0 8px var(--primary-glow);
 }
 
 input[type="range"].volume-slider::-moz-range-track {

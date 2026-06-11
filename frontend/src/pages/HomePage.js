@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import config from '../config';
 import { getHostToken, removeHostToken, saveGamePassword } from '../services/gameAuth';
 import { useTranslation } from '../i18n/LanguageContext';
+import Logo from '../components/Logo';
 
 const Avatar = ({ src, alt, size = 40 }) => {
   const style = {
@@ -113,7 +114,7 @@ const HomePage = ({ user, onRequestLogin }) => {
     }}>
       <div style={{ width: '100%', maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         <div style={{ textAlign: 'center' }}>
-          <h1 className="text-gradient" style={{ fontSize: '3.5rem', fontWeight: 800, margin: 0 }}>SignAil</h1>
+          <Logo />
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>{t('home.tagline')}</p>
         </div>
 

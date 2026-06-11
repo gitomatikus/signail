@@ -7,6 +7,7 @@ import OnlineUsers from '../components/OnlineUsers';
 import ProgressiveImage from '../components/ProgressiveImage';
 import ImageLightbox from '../components/ImageLightbox';
 import Settings from '../components/Settings';
+import Logo from '../components/Logo';
 import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
 import { useGame } from '../contexts/GameContext';
@@ -765,8 +766,24 @@ const QuestionPage = () => {
     justifyContent: 'center',
     minHeight: '200px',
     background: 'var(--glass-bg)',
-    backdropFilter: 'blur(10px)',
     boxShadow: 'var(--glass-shadow)',
+    position: 'relative',
+  };
+  // Small pill pinned to the card's top-left corner ("Запитання" / "Відповідь")
+  const cardBadgeStyle = {
+    position: 'absolute',
+    top: '0.75rem',
+    left: '0.75rem',
+    fontSize: '0.7rem',
+    fontWeight: '600',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--accent)',
+    background: 'rgba(62, 99, 245, 0.12)',
+    border: '1px solid rgba(62, 99, 245, 0.35)',
+    padding: '0.2rem 0.6rem',
+    borderRadius: '999px',
+    userSelect: 'none'
   };
   const themeHeaderStyle = {
     color: 'var(--text-primary)',
@@ -776,25 +793,23 @@ const QuestionPage = () => {
     borderRadius: '12px',
     margin: '0',
     padding: '1rem',
-    background: 'rgba(15, 23, 42, 0.6)',
+    background: 'var(--bg-dark)',
     border: '1px solid var(--glass-border)',
     letterSpacing: '0.05em',
     textTransform: 'uppercase',
-    userSelect: 'none',
-    textShadow: '0 0 20px var(--primary-glow)'
+    userSelect: 'none'
   };
 
   const buttonStyle = {
     padding: '0.75rem 1.5rem',
-    background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+    background: 'var(--fill)',
     color: '#fff',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    borderRadius: '8px',
+    border: 'none',
+    borderRadius: '10px',
     cursor: 'pointer',
     fontSize: '1rem',
     fontWeight: '600',
-    transition: 'all 0.2s',
-    boxShadow: '0 4px 12px var(--primary-glow)'
+    transition: 'background 0.2s'
   };
 
   // The admin keeps native media controls; players get media stripped of them
@@ -1103,7 +1118,7 @@ const QuestionPage = () => {
                   padding: '0.75rem',
                   borderRadius: '12px',
                   border: '1px solid var(--glass-border)',
-                  background: 'rgba(15, 23, 42, 0.6)',
+                  background: 'var(--bg-dark)',
                   transition: 'all 0.2s',
                   width: '110px'
                 }}
@@ -1234,7 +1249,7 @@ const QuestionPage = () => {
                     padding: '0.6rem 1rem',
                     borderRadius: '8px',
                     border: '1px solid var(--glass-border)',
-                    background: 'rgba(15, 23, 42, 0.6)',
+                    background: 'var(--bg-darker)',
                     color: 'var(--text-primary)',
                     width: '200px',
                     textAlign: 'center'
@@ -1354,7 +1369,7 @@ const QuestionPage = () => {
                   height: '28px',
                   borderRadius: '50%',
                   flexShrink: 0,
-                  background: highlightCorrect ? '#4ade80' : isSelected ? 'var(--primary)' : 'rgba(15, 23, 42, 0.8)',
+                  background: highlightCorrect ? '#4ade80' : isSelected ? 'var(--primary)' : 'var(--bg-dark)',
                   color: '#fff',
                   display: 'flex',
                   alignItems: 'center',
@@ -1545,7 +1560,7 @@ const QuestionPage = () => {
                       padding: '0.75rem 1rem',
                       borderRadius: '8px',
                       border: '1px solid var(--glass-border)',
-                      background: 'rgba(15, 23, 42, 0.6)',
+                      background: 'var(--bg-darker)',
                       color: 'var(--text-primary)',
                       resize: 'vertical',
                       fontFamily: 'inherit'
@@ -1672,7 +1687,7 @@ const QuestionPage = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {isAdmin && isQuestionRevealed && (
               <div style={cardStyle}>
-                <div style={{ color: '#ffd600', fontSize: '1.5rem', marginBottom: '16px' }}>{t('question.questionLabel')}</div>
+                <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
                 {question.rules.map((rule, index) => (
                   <div
                     key={index}
@@ -1683,7 +1698,7 @@ const QuestionPage = () => {
                 ))}
               </div>
             )}
-            {renderRuleCard(afterRoundRules[lastRuleIndex])}
+            {renderRuleCard(afterRoundRules[lastRuleIndex], t('question.answerLabel'))}
           </div>
         );
       }
@@ -1692,7 +1707,7 @@ const QuestionPage = () => {
     const rules = question.rules || [];
     if (rules.length > 0) {
       const lastRuleIndex = Math.min(currentRuleIndex, rules.length - 1);
-      return renderRuleCard(rules[lastRuleIndex]);
+      return renderRuleCard(rules[lastRuleIndex], t('question.questionLabel'));
     }
 
     return null;
@@ -1701,7 +1716,8 @@ const QuestionPage = () => {
   // A single rule inside the question card. Audio-only content has nothing to
   // show players (controls are stripped), so keep the audio mounted (hidden)
   // for playback but skip the empty card entirely.
-  const renderRuleCard = (rule) => {
+  const renderRuleCard = (rule, badge) => {
+    const badgeEl = badge ? <div style={cardBadgeStyle}>{badge}</div> : null;
     if (rule.type === 'embedded') {
       const html = renderHtmlContent(rule.content);
       if (!isAdmin && isAudioOnlyContent(html)) {
@@ -1715,6 +1731,7 @@ const QuestionPage = () => {
       }
       return (
         <div style={cardStyle}>
+          {badgeEl}
           <div
             className="question-content"
             style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
@@ -1723,12 +1740,12 @@ const QuestionPage = () => {
         </div>
       );
     }
-    return <div style={cardStyle}>{renderRule(rule)}</div>;
+    return <div style={cardStyle}>{badgeEl}{renderRule(rule)}</div>;
   };
 
   return (
     <div style={pageStyle}>
-      {/* Header: Settings button and SignAil */}
+      {/* Header: Settings button and the Jeoparty logo */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -1767,15 +1784,7 @@ const QuestionPage = () => {
           justifyContent: 'center',
           alignItems: 'center',
         }}>
-          <h1 className="text-gradient" style={{
-            fontSize: '3.5rem',
-            fontWeight: '800',
-            letterSpacing: '-0.02em',
-            margin: 0,
-            lineHeight: 1
-          }}>
-            SignAil
-          </h1>
+          <Logo />
         </div>
       </div>
       {/* Theme (left) — timer (always centered) — price (right) */}
@@ -1936,8 +1945,7 @@ const QuestionPage = () => {
             className="btn-primary"
             style={{
               ...buttonStyle,
-              background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-              boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)'
+              background: '#dc2626'
             }}
           >
             {t('question.backToGame')}

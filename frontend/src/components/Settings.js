@@ -130,7 +130,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
         }}
         onClick={e => e.stopPropagation()}
       >
-        <h2 className="text-gradient" style={{
+        <h2 style={{
           marginTop: 0,
           marginBottom: '1.5rem',
           fontSize: '2rem',
@@ -159,8 +159,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
               disabled={isClearingCache}
               className="btn-primary"
               style={{
-                background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-                boxShadow: '0 0 15px rgba(239, 68, 68, 0.4)',
+                background: '#dc2626',
                 width: '100%'
               }}
             >
@@ -173,8 +172,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
             disabled={isClearingPack}
             className="btn-primary"
             style={{
-              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-              boxShadow: '0 0 15px rgba(245, 158, 11, 0.4)',
+              background: '#d97706',
               width: '100%'
             }}
           >
@@ -258,8 +256,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
               onClick={handleExitAndDelete}
               className="btn-primary"
               style={{
-                background: 'linear-gradient(135deg, #ef4444, #991b1b)',
-                boxShadow: '0 0 15px rgba(239, 68, 68, 0.4)',
+                background: '#b91c1c',
                 width: '100%'
               }}
             >

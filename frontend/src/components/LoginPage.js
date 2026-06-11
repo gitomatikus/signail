@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
+import Logo from './Logo';
 
 // Standalone full-screen login by default; pass onClose to render it as a
 // dismissable overlay on top of the current page (backdrop click / × close).
@@ -99,7 +100,7 @@ const LoginPage = ({ onLogin, onClose }) => {
         )}
         <LanguageSwitcher style={{ position: 'absolute', top: '1rem', right: '1rem' }} />
         <div style={{ textAlign: 'center' }}>
-          <h1 className="text-gradient" style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>Signail</h1>
+          <Logo fontSize="2.5rem" style={{ marginBottom: '0.5rem' }} />
           <p style={{ color: 'var(--text-secondary)' }}>{t('login.tagline')}</p>
         </div>
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Settings from './Settings';
+import Logo from './Logo';
 import wsManager from '../utils/websocket';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -170,9 +171,8 @@ const GameBoard = ({ isAdmin = false }) => {
                 style={{
                   width: `${downloadProgress > -1 ? downloadProgress : 0}%`,
                   height: '100%',
-                  background: 'linear-gradient(90deg, var(--primary), var(--accent))',
-                  transition: 'width 0.3s ease',
-                  boxShadow: '0 0 10px var(--primary-glow)'
+                  background: 'var(--fill-hover)',
+                  transition: 'width 0.3s ease'
                 }}
               />
             </div>
@@ -221,15 +221,7 @@ const GameBoard = ({ isAdmin = false }) => {
         </button>
 
         <div style={{ textAlign: 'center' }}>
-          <h1 className="text-gradient" style={{
-            fontSize: '3.5rem',
-            fontWeight: '800',
-            letterSpacing: '-0.02em',
-            margin: 0,
-            lineHeight: 1
-          }}>
-            SignAil
-          </h1>
+          <Logo />
         </div>
       </div>
 
@@ -262,8 +254,7 @@ const GameBoard = ({ isAdmin = false }) => {
           margin: 0,
           color: 'var(--text-primary)',
           fontSize: '2rem',
-          fontWeight: '600',
-          textShadow: '0 0 20px rgba(99, 102, 241, 0.3)'
+          fontWeight: '600'
         }}>
           {round.name}
         </h2>
@@ -298,7 +289,7 @@ const GameBoard = ({ isAdmin = false }) => {
       }}>
         {themes.map((theme, rowIdx) => [
           <div key={`theme-${rowIdx}`} style={{
-            background: 'rgba(15, 23, 42, 0.6)',
+            background: 'var(--bg-dark)',
             color: 'var(--text-primary)',
             fontWeight: '500',
             fontSize: '1.1rem',
@@ -328,8 +319,8 @@ const GameBoard = ({ isAdmin = false }) => {
                 key={`q-${rowIdx}-${colIdx}`}
                 style={{
                   background: isAnswered
-                    ? 'rgba(15, 23, 42, 0.4)'
-                    : 'linear-gradient(135deg, var(--primary), var(--secondary))',
+                    ? 'var(--bg-dark)'
+                    : isHovered && !isDisabled ? 'var(--fill-hover)' : 'var(--fill)',
                   color: isAnswered ? 'var(--text-muted)' : '#fff',
                   fontWeight: '700',
                   fontSize: '2rem',
@@ -339,12 +330,8 @@ const GameBoard = ({ isAdmin = false }) => {
                   justifyContent: 'center',
                   cursor: isDisabled ? 'default' : 'pointer',
                   opacity: isDisabled ? (isAnswered ? 0.5 : 0.3) : 1,
-                  transform: isHovered && !isDisabled ? 'translateY(-4px)' : 'none',
-                  boxShadow: isHovered && !isDisabled ? '0 10px 25px -5px var(--primary-glow)' : 'none',
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  position: 'relative',
-                  overflow: 'hidden'
+                  transition: 'background var(--transition-fast), opacity var(--transition-fast)',
+                  border: '1px solid transparent'
                 }}
                 onClick={() => {
                   if (!isDisabled) {
@@ -360,20 +347,6 @@ const GameBoard = ({ isAdmin = false }) => {
                 onMouseEnter={() => !isDisabled && setHovered(h => ({ ...h, [`${rowIdx}-${colIdx}`]: true }))}
                 onMouseLeave={() => !isDisabled && setHovered(h => ({ ...h, [`${rowIdx}-${colIdx}`]: false }))}
               >
-                {/* Shine effect */}
-                {!isDisabled && isHovered && (
-                  <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    background: 'linear-gradient(45deg, transparent 40%, rgba(255,255,255,0.2) 50%, transparent 60%)',
-                    transform: 'translateX(-100%)',
-                    animation: 'shine 0.8s'
-                  }} />
-                )}
-                <style>{`@keyframes shine { 100% { transform: translateX(100%); } }`}</style>
                 {question.price?.text || ''}
               </div>
             );

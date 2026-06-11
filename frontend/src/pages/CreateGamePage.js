@@ -148,7 +148,7 @@ const CreateGamePage = ({ user }) => {
                     {t('create.back')}
                 </button>
 
-                <h1 className="text-gradient" style={{
+                <h1 style={{
                     fontSize: '3rem',
                     fontWeight: '800',
                     margin: 0,
@@ -193,7 +193,7 @@ const CreateGamePage = ({ user }) => {
                             <div style={{
                                 marginTop: '0.75rem',
                                 padding: '0.5rem 1rem',
-                                background: 'rgba(34, 211, 238, 0.1)',
+                                background: 'rgba(62, 99, 245, 0.1)',
                                 border: '1px solid var(--accent)',
                                 borderRadius: '8px',
                                 color: 'var(--accent)',
@@ -254,9 +254,8 @@ const CreateGamePage = ({ user }) => {
                                     style={{
                                         width: `${uploadProgress}%`,
                                         height: '100%',
-                                        background: 'linear-gradient(90deg, var(--primary), var(--accent))',
-                                        transition: 'width 0.3s ease',
-                                        boxShadow: '0 0 10px var(--primary-glow)'
+                                        background: 'var(--fill-hover)',
+                                        transition: 'width 0.3s ease'
                                     }}
                                 />
                             </div>
