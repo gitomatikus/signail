@@ -10,6 +10,7 @@ import Settings from '../components/Settings';
 import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
 import { useGame } from '../contexts/GameContext';
+import { useTranslation } from '../i18n/LanguageContext';
 
 // Sanitize HTML content to allow only safe tags and attributes
 const sanitizeHtml = (html) => {
@@ -122,6 +123,7 @@ const isMediaEventSuppressed = (el) => !!el.__suppressMediaUntil && Date.now() <
 const QuestionPage = () => {
   const { questionId } = useParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   // The game host is the admin of their own game; everyone else is a player
   const { gameId, isHost, onlineUsers } = useGame();
   const isAdmin = isHost;
@@ -721,7 +723,7 @@ const QuestionPage = () => {
           marginBottom: '1rem'
         }} />
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-        <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '1.25rem' }}>Loading...</div>
+        <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '1.25rem' }}>{t('common.loading')}</div>
       </div>
     );
   }
@@ -810,7 +812,7 @@ const QuestionPage = () => {
     } else if (rule.type === 'app') {
       return (
         <div style={{ color: '#e0e0e0', fontSize: '1.1rem' }}>
-          Loading app content from: {rule.path}
+          {t('question.loadingApp', { path: rule.path })}
         </div>
       );
     }
@@ -893,13 +895,13 @@ const QuestionPage = () => {
     // legacy packs only have `name` ("котиків") and keep the old wording
     const taskTemplate = question.task
       ? question.task
-      : `Знайдіть і клікніть на всіх ${question.name || ''}. Залишилось всього %left%`;
+      : t('question.findTaskLegacy', { name: question.name || '' });
     const renderTaskText = (left) => taskTemplate
       .replace(/%total%/g, String(totalAreas))
       .replace(/%left%/g, String(left));
     const successText = question.task
-      ? 'Ви знайшли всіх!'
-      : `Ви знайшли всіх ${question.name || ''}!`;
+      ? t('question.foundAll')
+      : t('question.foundAllLegacy', { name: question.name || '' });
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '1.5rem' }}>
@@ -917,7 +919,7 @@ const QuestionPage = () => {
           textShadow: '0 2px 4px rgba(0,0,0,0.3)'
         }}>
           {hasFailed ? (
-            <span style={{ color: '#ef4444' }}>Кліки закінчилися! Зачекайте на рішення ведучого.</span>
+            <span style={{ color: '#ef4444' }}>{t('question.outOfClicks')}</span>
           ) : remainingCount > 0 ? (
             renderTaskText(remainingCount)
           ) : (
@@ -929,7 +931,7 @@ const QuestionPage = () => {
               marginTop: '0.5rem',
               color: myClicksLeft <= 2 ? '#ef4444' : 'var(--text-secondary)'
             }}>
-              🖱 Залишилось кліків: {myClicksLeft}
+              {t('question.clicksLeft', { count: myClicksLeft })}
             </div>
           )}
         </div>
@@ -1031,7 +1033,7 @@ const QuestionPage = () => {
                 key={idx}
                 style={areaStyle}
                 onClick={(e) => handleAreaClick(e, idx)}
-                title={isAdmin && isAnswerRevealed ? `Area ${idx + 1}` : ''}
+                title={isAdmin && isAnswerRevealed ? t('question.area', { n: idx + 1 }) : ''}
               />
             );
           })}
@@ -1077,14 +1079,14 @@ const QuestionPage = () => {
         <div style={cardStyle}>
           <div style={{ fontSize: '4rem', marginBottom: '0.5rem' }}>🐱</div>
           <div style={{ fontSize: '2rem', fontWeight: '800', color: '#ffd600', marginBottom: '1rem', textShadow: '0 0 20px rgba(255, 214, 0, 0.4)' }}>
-            Кіт у мішку!
+            {t('question.secretTitle')}
           </div>
           <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
             {canAssign
-              ? 'Оберіть гравця, який відповідатиме:'
+              ? t('question.choosePlayer')
               : selectorUser
-                ? `${selectorUser.name} обирає, хто відповідатиме...`
-                : 'Очікуємо вибору, хто відповідатиме...'}
+                ? t('question.selectorChoosing', { name: selectorUser.name })
+                : t('question.waitingChoice')}
           </div>
           {/* Everyone sees the candidates; only the selector and admin can click */}
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -1159,14 +1161,14 @@ const QuestionPage = () => {
           color: '#ffd600',
           textShadow: '0 0 20px rgba(255, 214, 0, 0.4)'
         }}>
-          🐱 Кіт у мішку — відповідає {targetUser ? targetUser.name : '...'}
+          {t('question.secretAnswering', { name: targetUser ? targetUser.name : '...' })}
         </div>
         {showQuestionContent ? (
           renderNormalContent()
         ) : (
           <div style={cardStyle}>
             <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)' }}>
-              Очікуємо, поки ведучий покаже питання...
+              {t('question.waitingReveal')}
             </div>
           </div>
         )}
@@ -1203,13 +1205,13 @@ const QuestionPage = () => {
             color: '#4ade80',
             textShadow: '0 0 20px rgba(74, 222, 128, 0.4)'
           }}>
-            Правильна відповідь: {question.answer}
+            {t('question.correctAnswer')} {question.answer}
           </div>
         )}
 
         {isAdmin && !isResponseRevealed && question.answer !== undefined && (
           <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
-            Відповідь (бачить лише ведучий): <b style={{ color: '#4ade80' }}>{question.answer}</b>
+            {t('question.answerHostOnly')} <b style={{ color: '#4ade80' }}>{question.answer}</b>
           </div>
         )}
 
@@ -1217,7 +1219,7 @@ const QuestionPage = () => {
           <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
             {hasSubmitted ? (
               <div style={{ fontSize: '1.3rem' }}>
-                Ваша відповідь: <b style={{ color: 'var(--accent)' }}>{myAnswer === true ? '✓' : myAnswer}</b>
+                {t('question.yourAnswer')} <b style={{ color: 'var(--accent)' }}>{myAnswer === true ? '✓' : myAnswer}</b>
               </div>
             ) : acceptingAnswers ? (
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -1226,7 +1228,7 @@ const QuestionPage = () => {
                   value={answerInput}
                   onChange={(e) => setAnswerInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitNumberAnswer(); }}
-                  placeholder="Ваше число"
+                  placeholder={t('question.yourNumber')}
                   style={{
                     fontSize: '1.25rem',
                     padding: '0.6rem 1rem',
@@ -1244,12 +1246,12 @@ const QuestionPage = () => {
                   style={{ ...buttonStyle, opacity: Number.isFinite(parseFloat(answerInput)) ? 1 : 0.5 }}
                   disabled={!Number.isFinite(parseFloat(answerInput))}
                 >
-                  Відповісти
+                  {t('question.submitAnswer')}
                 </button>
               </div>
             ) : (
               <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)' }}>
-                Час вийшов — відповіді більше не приймаються
+                {t('question.timeUp')}
               </div>
             )}
           </div>
@@ -1386,12 +1388,12 @@ const QuestionPage = () => {
             }}
             disabled={selectedOptions.size === 0}
           >
-            Підтвердити відповідь
+            {t('question.confirmAnswer')}
           </button>
         )}
         {!isAdmin && hasSubmitted && (
           <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
-            Відповідь прийнято ✓
+            {t('question.answerAccepted')}
           </div>
         )}
       </div>
@@ -1484,12 +1486,12 @@ const QuestionPage = () => {
           <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
             {hasSubmitted ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>Ваша відповідь:</div>
+                <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
                 {typeof myAnswer === 'string' && myAnswer.startsWith('data:image') ? (
                   <img
                     src={myAnswer}
                     alt="answer"
-                    title="Клікніть, щоб переглянути у повному розмірі"
+                    title={t('question.clickToEnlarge')}
                     onClick={() => setLightboxImage(myAnswer)}
                     style={{ maxWidth: '300px', maxHeight: '200px', borderRadius: '8px', cursor: 'zoom-in' }}
                   />
@@ -1506,7 +1508,7 @@ const QuestionPage = () => {
                     <img
                       src={pastedImage}
                       alt="pasted"
-                      title="Клікніть, щоб переглянути у повному розмірі"
+                      title={t('question.clickToEnlarge')}
                       onClick={() => setLightboxImage(pastedImage)}
                       style={{ maxWidth: '300px', maxHeight: '200px', borderRadius: '8px', cursor: 'zoom-in' }}
                     />
@@ -1534,7 +1536,7 @@ const QuestionPage = () => {
                     value={textAnswerInput}
                     onChange={(e) => setTextAnswerInput(e.target.value)}
                     onPaste={handleTextPaste}
-                    placeholder="Введіть відповідь або вставте зображення (Ctrl+V)..."
+                    placeholder={t('question.textPlaceholder')}
                     rows={3}
                     style={{
                       width: '100%',
@@ -1559,7 +1561,7 @@ const QuestionPage = () => {
                   }}
                   disabled={!pastedImage && !textAnswerInput.trim()}
                 >
-                  Відповісти
+                  {t('question.submitAnswer')}
                 </button>
               </div>
             )}
@@ -1597,10 +1599,10 @@ const QuestionPage = () => {
           boxShadow: buzzPending ? '0 0 20px rgba(251, 191, 36, 0.4)' : 'var(--glass-shadow)'
         }}>
           {progress >= 1
-            ? 'Зображення повністю відкрито!'
+            ? t('question.fullyRevealed')
             : buzzPending
-              ? '⏸ Розкриття призупинено — хтось відповідає!'
-              : 'Натисніть ПРОБІЛ, щоб відповісти — розкриття зупиниться'}
+              ? t('question.revealPaused')
+              : t('question.pressSpace')}
         </div>
 
         <div style={{
@@ -1670,7 +1672,7 @@ const QuestionPage = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {isAdmin && isQuestionRevealed && (
               <div style={cardStyle}>
-                <div style={{ color: '#ffd600', fontSize: '1.5rem', marginBottom: '16px' }}>Question:</div>
+                <div style={{ color: '#ffd600', fontSize: '1.5rem', marginBottom: '16px' }}>{t('question.questionLabel')}</div>
                 {question.rules.map((rule, index) => (
                   <div
                     key={index}
@@ -1757,7 +1759,7 @@ const QuestionPage = () => {
           onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
           onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
         >
-          <span>⚙️</span> Settings
+          <span>⚙️</span> {t('common.settings')}
         </button>
         <div style={{
           flex: 1,
@@ -1891,7 +1893,7 @@ const QuestionPage = () => {
             className="btn-primary"
             style={buttonStyle}
           >
-            Show Question
+            {t('question.showQuestion')}
           </button>
         )}
         {isAdmin && isQuestionRevealed && !isAnswerRevealed && (
@@ -1900,7 +1902,7 @@ const QuestionPage = () => {
             className="btn-primary"
             style={buttonStyle}
           >
-            Show Answer
+            {t('question.showAnswer')}
           </button>
         )}
         {/* Choice has no "Show Result": the admin sees picks in real time */}
@@ -1910,7 +1912,7 @@ const QuestionPage = () => {
             className="btn-primary"
             style={buttonStyle}
           >
-            Show Result
+            {t('question.showResult')}
           </button>
         )}
         {isAdmin && isAnswerRevealed && !isResponseRevealed && (
@@ -1925,7 +1927,7 @@ const QuestionPage = () => {
             className="btn-primary"
             style={buttonStyle}
           >
-            Show Response
+            {t('question.showResponse')}
           </button>
         )}
         {isAdmin && (
@@ -1938,7 +1940,7 @@ const QuestionPage = () => {
               boxShadow: '0 4px 12px rgba(239, 68, 68, 0.4)'
             }}
           >
-            Back to Game
+            {t('question.backToGame')}
           </button>
         )}
       </div>

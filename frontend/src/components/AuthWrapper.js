@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import LoginPage from './LoginPage';
+import LanguageSwitcher from './LanguageSwitcher';
+import { useTranslation } from '../i18n/LanguageContext';
 
 // Makes sure a user profile (name + avatar) exists before rendering the page.
 // The profile is global: the same identity is used to browse, host and join
 // games. Game-room connections are handled by GameProvider, not here.
 const AuthWrapper = ({ children, showHeader = true }) => {
+  const { t } = useTranslation();
   const [user, setUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('user'));
@@ -40,6 +43,7 @@ const AuthWrapper = ({ children, showHeader = true }) => {
           gap: '1rem',
           zIndex: 1000
         }}>
+          <LanguageSwitcher />
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {user.imageUrl.toLowerCase().endsWith('.mp4') ? (
               <video
@@ -80,7 +84,7 @@ const AuthWrapper = ({ children, showHeader = true }) => {
               cursor: 'pointer'
             }}
           >
-            Logout
+            {t('common.logout')}
           </button>
         </div>
       )}

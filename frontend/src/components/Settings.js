@@ -7,13 +7,17 @@ import { useGame } from '../contexts/GameContext';
 import { isHostHidden, setHostHidden } from '../utils/hostVisibility';
 import { getHostToken, removeHostToken } from '../services/gameAuth';
 import config from '../config';
+import { useTranslation } from '../i18n/LanguageContext';
+import LanguageSwitcher from './LanguageSwitcher';
 
 const Settings = ({ onClose, isAdmin = false }) => {
   const { gameId, gameInfo } = useGame() || {};
   const navigate = useNavigate();
+  const { t, translateMessage } = useTranslation();
   const [isClearingCache, setIsClearingCache] = useState(false);
   const [isClearingPack, setIsClearingPack] = useState(false);
-  const [message, setMessage] = useState('');
+  // message: { text, isError } — text is a translation key or a server message
+  const [message, setMessage] = useState(null);
   const [hideHost, setHideHost] = useState(() => isHostHidden());
   const [passwordInput, setPasswordInput] = useState('');
   const [isSavingPassword, setIsSavingPassword] = useState(false);
@@ -21,11 +25,11 @@ const Settings = ({ onClose, isAdmin = false }) => {
   const handleClearCache = async () => {
     try {
       setIsClearingCache(true);
-      setMessage('');
+      setMessage(null);
       wsManager.sendClearCache();
-      setMessage('Cache cleared successfully!');
+      setMessage({ text: t('settings.cacheCleared'), isError: false });
     } catch (error) {
-      setMessage('Error clearing cache: ' + error.message);
+      setMessage({ text: t('settings.errorClearingCache', { message: translateMessage(error.message) }), isError: true });
     } finally {
       setIsClearingCache(false);
     }
@@ -34,11 +38,11 @@ const Settings = ({ onClose, isAdmin = false }) => {
   const handleClearPack = async () => {
     try {
       setIsClearingPack(true);
-      setMessage('');
+      setMessage(null);
       await indexedDBService.deletePack(`pack-${gameId}`);
-      setMessage('Pack cleared successfully!');
+      setMessage({ text: t('settings.packCleared'), isError: false });
     } catch (error) {
-      setMessage('Error clearing pack: ' + error.message);
+      setMessage({ text: t('settings.errorClearingPack', { message: translateMessage(error.message) }), isError: true });
     } finally {
       setIsClearingPack(false);
     }
@@ -59,7 +63,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
   const handleSavePassword = async () => {
     try {
       setIsSavingPassword(true);
-      setMessage('');
+      setMessage(null);
       const response = await fetch(`${config.apiUrl}/api/games/${gameId}/password`, {
         method: 'PATCH',
         headers: {
@@ -70,19 +74,19 @@ const Settings = ({ onClose, isAdmin = false }) => {
       });
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.message || 'Failed to update password');
+        throw new Error(result.message || t('settings.failedUpdatePassword'));
       }
-      setMessage(result.data.hasPassword ? 'Password set!' : 'Password removed!');
+      setMessage({ text: result.data.hasPassword ? t('settings.passwordSetMsg') : t('settings.passwordRemovedMsg'), isError: false });
       setPasswordInput('');
     } catch (error) {
-      setMessage('Error updating password: ' + error.message);
+      setMessage({ text: t('settings.errorUpdatingPassword', { message: translateMessage(error.message) }), isError: true });
     } finally {
       setIsSavingPassword(false);
     }
   };
 
   const handleExitAndDelete = async () => {
-    if (!window.confirm('Delete this game for everyone? This cannot be undone.')) return;
+    if (!window.confirm(t('settings.deleteEveryoneConfirm'))) return;
     try {
       const response = await fetch(`${config.apiUrl}/api/games/${gameId}`, {
         method: 'DELETE',
@@ -90,12 +94,12 @@ const Settings = ({ onClose, isAdmin = false }) => {
       });
       if (!response.ok) {
         const result = await response.json();
-        throw new Error(result.message || 'Failed to delete game');
+        throw new Error(result.message || t('settings.failedDeleteGame'));
       }
       removeHostToken(gameId);
       navigate('/');
     } catch (error) {
-      setMessage('Error deleting game: ' + error.message);
+      setMessage({ text: t('settings.errorDeletingGame', { message: translateMessage(error.message) }), isError: true });
     }
   };
 
@@ -131,9 +135,24 @@ const Settings = ({ onClose, isAdmin = false }) => {
           marginBottom: '1.5rem',
           fontSize: '2rem',
           textAlign: 'center'
-        }}>Settings</h2>
+        }}>{t('settings.title')}</h2>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            padding: '0.75rem 1rem',
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid var(--glass-border)',
+            borderRadius: '8px',
+            color: 'var(--text-primary)'
+          }}>
+            <span>{t('common.language')}</span>
+            <LanguageSwitcher />
+          </div>
+
           {isAdmin && (
             <button
               onClick={handleClearCache}
@@ -145,7 +164,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
                 width: '100%'
               }}
             >
-              {isClearingCache ? 'Clearing...' : 'Clear Cache'}
+              {isClearingCache ? t('settings.clearing') : t('settings.clearCache')}
             </button>
           )}
 
@@ -159,7 +178,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
               width: '100%'
             }}
           >
-            {isClearingPack ? 'Clearing...' : 'Clear Pack'}
+            {isClearingPack ? t('settings.clearing') : t('settings.clearPack')}
           </button>
 
           {!isAdmin && (
@@ -175,7 +194,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
               color: 'var(--text-primary)',
               cursor: 'pointer'
             }}>
-              <span>Hide host</span>
+              <span>{t('settings.hideHost')}</span>
               <input
                 type="checkbox"
                 checked={hideHost}
@@ -196,14 +215,14 @@ const Settings = ({ onClose, isAdmin = false }) => {
               borderRadius: '8px'
             }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                Game password {gameInfo?.hasPassword ? '(currently set)' : '(none)'}
+                {t('settings.gamePassword')} {gameInfo?.hasPassword ? t('settings.passwordSet') : t('settings.passwordNone')}
               </span>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
                   type="text"
                   value={passwordInput}
                   onChange={e => setPasswordInput(e.target.value)}
-                  placeholder="New password (empty = remove)"
+                  placeholder={t('settings.newPasswordPlaceholder')}
                   style={{ flex: 1 }}
                 />
                 <button
@@ -212,7 +231,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
                   className="btn-primary"
                   style={{ whiteSpace: 'nowrap' }}
                 >
-                  {isSavingPassword ? 'Saving...' : 'Save'}
+                  {isSavingPassword ? t('settings.saving') : t('settings.save')}
                 </button>
               </div>
             </div>
@@ -230,7 +249,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
                 width: '100%'
               }}
             >
-              Exit Game
+              {t('settings.exitGame')}
             </button>
           )}
 
@@ -244,7 +263,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
                 width: '100%'
               }}
             >
-              Exit & Delete Game
+              {t('settings.exitDelete')}
             </button>
           )}
 
@@ -252,13 +271,13 @@ const Settings = ({ onClose, isAdmin = false }) => {
             <div style={{
               padding: '0.75rem',
               borderRadius: '8px',
-              background: message.includes('Error') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
-              border: `1px solid ${message.includes('Error') ? '#ef4444' : '#22c55e'}`,
-              color: message.includes('Error') ? '#ef4444' : '#22c55e',
+              background: message.isError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+              border: `1px solid ${message.isError ? '#ef4444' : '#22c55e'}`,
+              color: message.isError ? '#ef4444' : '#22c55e',
               textAlign: 'center',
               fontSize: '0.9rem'
             }}>
-              {message}
+              {message.text}
             </div>
           )}
         </div>
@@ -284,7 +303,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
             e.target.style.background = 'rgba(255, 255, 255, 0.1)';
           }}
         >
-          Close
+          {t('common.close')}
         </button>
       </div>
     </div>

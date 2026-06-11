@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import { useTranslation } from '../i18n/LanguageContext';
+import LanguageSwitcher from './LanguageSwitcher';
 
 const LoginPage = ({ onLogin }) => {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [error, setError] = useState('');
@@ -15,17 +18,17 @@ const LoginPage = ({ onLogin }) => {
     setError('');
 
     if (!name.trim()) {
-      setError('Please enter your name');
+      setError('login.errorName');
       return;
     }
 
     if (!imageUrl.trim()) {
-      setError('Please enter an image URL');
+      setError('login.errorImage');
       return;
     }
 
     if (!validateImageUrl(imageUrl)) {
-      setError('Please enter a valid image URL (jpg, jpeg, png, gif, mp4, or webp)');
+      setError('login.errorImageInvalid');
       return;
     }
 
@@ -57,11 +60,13 @@ const LoginPage = ({ onLogin }) => {
         maxWidth: '420px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '1.5rem'
+        gap: '1.5rem',
+        position: 'relative'
       }}>
+        <LanguageSwitcher style={{ position: 'absolute', top: '1rem', right: '1rem' }} />
         <div style={{ textAlign: 'center' }}>
           <h1 className="text-gradient" style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>Signail</h1>
-          <p style={{ color: 'var(--text-secondary)' }}>Enter the game arena</p>
+          <p style={{ color: 'var(--text-secondary)' }}>{t('login.tagline')}</p>
         </div>
 
         {error && (
@@ -74,20 +79,20 @@ const LoginPage = ({ onLogin }) => {
             fontSize: '0.875rem',
             textAlign: 'center'
           }}>
-            {error}
+            {t(error)}
           </div>
         )}
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <div>
             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-              Player Name
+              {t('login.playerName')}
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Enter your name"
+              placeholder={t('login.namePlaceholder')}
               autoFocus
             />
           </div>
@@ -95,23 +100,23 @@ const LoginPage = ({ onLogin }) => {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <label style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                Avatar URL
+                {t('login.avatarUrl')}
               </label>
-              <a 
-                href="https://giphy.com" 
-                target="_blank" 
-                rel="noopener noreferrer" 
+              <a
+                href="https://giphy.com"
+                target="_blank"
+                rel="noopener noreferrer"
                 style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: '0.875rem' }}
               >
-                Find GIF
+                {t('login.findGif')}
               </a>
             </div>
-            
+
             <input
               type="text"
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="Paste image or GIF URL"
+              placeholder={t('login.avatarPlaceholder')}
             />
           </div>
 
@@ -149,7 +154,7 @@ const LoginPage = ({ onLogin }) => {
             className="btn-primary"
             style={{ width: '100%', marginTop: '0.5rem' }}
           >
-            Join Game
+            {t('login.join')}
           </button>
         </form>
       </div>
@@ -158,4 +163,3 @@ const LoginPage = ({ onLogin }) => {
 };
 
 export default LoginPage;
- 

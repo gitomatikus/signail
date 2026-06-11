@@ -4,6 +4,7 @@ import wsManager from '../utils/websocket';
 import { applyCacheKey } from '../services/cacheVersion';
 import { getHostToken, getGamePassword } from '../services/gameAuth';
 import config from '../config';
+import { useTranslation } from '../i18n/LanguageContext';
 
 const GameContext = createContext(null);
 
@@ -15,6 +16,7 @@ export const useGame = () => useContext(GameContext);
 export const GameProvider = ({ user, children }) => {
   const { gameId } = useParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [gameInfo, setGameInfo] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [error, setError] = useState(null);
@@ -35,7 +37,7 @@ export const GameProvider = ({ user, children }) => {
       try {
         const response = await fetch(`${config.apiUrl}/api/games/${gameId}`);
         if (response.status === 404) {
-          if (!cancelled) setError('Game not found. It may have been deleted.');
+          if (!cancelled) setError('game.notFound');
           return;
         }
         const result = await response.json();
@@ -48,7 +50,7 @@ export const GameProvider = ({ user, children }) => {
           password: getGamePassword(gameId)
         });
       } catch (e) {
-        if (!cancelled) setError('Could not reach the game server.');
+        if (!cancelled) setError('game.serverUnreachable');
       }
     };
     load();
@@ -66,11 +68,11 @@ export const GameProvider = ({ user, children }) => {
       } else if (data.type === 'online_users') {
         setOnlineUsers(data.data);
       } else if (data.type === 'game_not_found' || data.type === 'game_deleted') {
-        setError('This game no longer exists.');
+        setError('game.noLongerExists');
         setTimeout(() => navigate('/'), 1500);
       } else if (data.type === 'join_rejected') {
         sessionStorage.removeItem(`gamePassword-${gameId}`);
-        setError('Wrong game password.');
+        setError('game.wrongPassword');
         setTimeout(() => navigate('/'), 1500);
       } else if (data.type === 'cache_key_update' && data.data?.cacheKey) {
         // Server rotated the cache key (new pack uploaded / cache cleared).
@@ -105,8 +107,8 @@ export const GameProvider = ({ user, children }) => {
         height: '100vh',
         gap: '1rem'
       }}>
-        <div style={{ color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 600 }}>{error}</div>
-        <button className="btn-primary" onClick={() => navigate('/')}>Back to games</button>
+        <div style={{ color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 600 }}>{t(error)}</div>
+        <button className="btn-primary" onClick={() => navigate('/')}>{t('game.backToGames')}</button>
       </div>
     );
   }
@@ -114,7 +116,7 @@ export const GameProvider = ({ user, children }) => {
   if (!gameInfo) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <div style={{ color: 'var(--text-secondary)' }}>Connecting to game...</div>
+        <div style={{ color: 'var(--text-secondary)' }}>{t('game.connecting')}</div>
       </div>
     );
   }

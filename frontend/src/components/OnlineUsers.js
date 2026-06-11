@@ -4,9 +4,11 @@ import { useLocation } from 'react-router-dom';
 import ImageLightbox from './ImageLightbox';
 import { useGame } from '../contexts/GameContext';
 import { HIDE_HOST_KEY, HIDE_HOST_EVENT } from '../utils/hostVisibility';
+import { useTranslation } from '../i18n/LanguageContext';
 
 const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, secretTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false }) => {
   const location = useLocation();
+  const { t } = useTranslation();
   const isQuestionPage = location.pathname.includes('/question/');
   const { gameId, gameInfo } = useGame() || {};
 
@@ -450,9 +452,9 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                     onClick={() => handleScoreClick(user.id, previousScore, awardValue, grantsMove)}
                     title={
                       firstPlaceBonus > 0
-                        ? `${correctValue} + бонус за 1 місце ${firstPlaceBonus}`
+                        ? t('users.firstPlaceBonus', { value: correctValue, bonus: firstPlaceBonus })
                         : perfectBonus > 0
-                          ? `${correctValue} + бонус за точну відповідь ${perfectBonus}`
+                          ? t('users.perfectBonus', { value: correctValue, bonus: perfectBonus })
                           : ''
                     }
                     style={{
@@ -512,7 +514,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   {isAdmin && (
                     <span
                       onClick={() => handleGrantClick(user.id)}
-                      title="Додати 1 клік"
+                      title={t('users.grantClick')}
                       style={{
                         fontWeight: 'bold',
                         fontSize: '0.95rem',
@@ -524,7 +526,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                       onMouseEnter={e => e.target.style.opacity = '0.8'}
                       onMouseLeave={e => e.target.style.opacity = '1'}
                     >
-                      +1 клік
+                      {t('users.plusOneClick')}
                     </span>
                   )}
                 </div>
@@ -559,7 +561,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                     <img
                       src={submittedAnswer}
                       alt="answer"
-                      title="Клікніть, щоб переглянути у повному розмірі"
+                      title={t('question.clickToEnlarge')}
                       onClick={() => setLightboxSrc(submittedAnswer)}
                       style={{ maxWidth: '120px', maxHeight: '90px', borderRadius: '6px', display: 'block', cursor: 'zoom-in' }}
                     />
@@ -651,7 +653,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               borderRadius: '9999px',
               padding: '2px 10px'
             }}>
-              HOST
+              {t('users.host')}
             </span>
           </div>
         </div>

@@ -6,6 +6,7 @@ import GameRoomPage from './pages/GameRoomPage';
 import QuestionPage from './pages/QuestionPage';
 import AuthWrapper from './components/AuthWrapper';
 import { GameProvider } from './contexts/GameContext';
+import { LanguageProvider } from './i18n/LanguageContext';
 
 // GameProvider needs the logged-in user that AuthWrapper injects, so this
 // little bridge receives it as a prop and passes it down.
@@ -17,6 +18,7 @@ const GameRoutes = ({ user, children }) => (
 
 function App() {
   return (
+    <LanguageProvider>
     <Router>
       <Routes>
         <Route path="/" element={
@@ -46,6 +48,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
+    </LanguageProvider>
   );
 }
 

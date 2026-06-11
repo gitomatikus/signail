@@ -4,6 +4,7 @@ import { useGame } from '../contexts/GameContext';
 import GamePage from './GamePage';
 import config from '../config';
 import { getHostToken, removeHostToken } from '../services/gameAuth';
+import { useTranslation } from '../i18n/LanguageContext';
 
 const Avatar = ({ src, alt, size = 72 }) => {
   const style = {
@@ -24,10 +25,11 @@ const Avatar = ({ src, alt, size = 72 }) => {
 // joined; the host can start or delete the game.
 const Lobby = () => {
   const navigate = useNavigate();
+  const { t, tp } = useTranslation();
   const { gameId, isHost, gameInfo, onlineUsers, startGame } = useGame();
 
   const handleDelete = async () => {
-    if (!window.confirm('Delete this game?')) return;
+    if (!window.confirm(t('lobby.deleteConfirm'))) return;
     try {
       await fetch(`${config.apiUrl}/api/games/${gameId}`, {
         method: 'DELETE',
@@ -61,22 +63,22 @@ const Lobby = () => {
       }}>
         <div>
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-            Lobby
+            {t('lobby.title')}
           </div>
           <h1 className="text-gradient" style={{ fontSize: '2.5rem', fontWeight: 800, margin: '0.25rem 0 0' }}>
             {gameInfo.packName}
           </h1>
           <div style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-            hosted by <strong style={{ color: 'var(--text-primary)' }}>{gameInfo.hostName}</strong>
-            {gameInfo.packAuthor ? <> · pack by {gameInfo.packAuthor}</> : null}
+            {t('home.hostedBy')} <strong style={{ color: 'var(--text-primary)' }}>{gameInfo.hostName}</strong>
+            {gameInfo.packAuthor ? <> · {t('home.packBy')} {gameInfo.packAuthor}</> : null}
           </div>
         </div>
 
         <div>
           <div style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
             {onlineUsers.length === 0
-              ? 'No players yet - waiting for people to join...'
-              : `${onlineUsers.length} player${onlineUsers.length === 1 ? '' : 's'} joined`}
+              ? t('lobby.noPlayers')
+              : tp('lobby.playersJoined', onlineUsers.length)}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'center' }}>
             {onlineUsers.map(player => (
@@ -95,7 +97,7 @@ const Lobby = () => {
               style={{ padding: '0.75rem 3rem', fontSize: '1.1rem' }}
               onClick={startGame}
             >
-              Start Game
+              {t('lobby.start')}
             </button>
             <button
               onClick={handleDelete}
@@ -108,12 +110,12 @@ const Lobby = () => {
                 cursor: 'pointer'
               }}
             >
-              Delete Game
+              {t('lobby.deleteGame')}
             </button>
           </div>
         ) : (
           <div style={{ color: 'var(--accent)', fontWeight: 600 }}>
-            Waiting for {gameInfo.hostName} to start the game...
+            {t('lobby.waitingForHost', { name: gameInfo.hostName })}
           </div>
         )}
 
@@ -129,7 +131,7 @@ const Lobby = () => {
             cursor: 'pointer'
           }}
         >
-          Leave to game list
+          {t('lobby.leave')}
         </button>
       </div>
     </div>

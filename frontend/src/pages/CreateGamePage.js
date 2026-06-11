@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import config from '../config';
 import { saveHostToken } from '../services/gameAuth';
+import { useTranslation } from '../i18n/LanguageContext';
 
 // Creates a game: registers it (host identity + optional password), then
 // streams the selected pack file to the server. The pack file is uploaded
 // as-is - the server validates it and stores it on disk.
 const CreateGamePage = ({ user }) => {
+    const { t, translateMessage } = useTranslation();
     const [file, setFile] = useState(null);
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -21,7 +23,7 @@ const CreateGamePage = ({ user }) => {
             setError('');
             setUploadProgress(0);
         } else {
-            setError('Please select a valid JSON file');
+            setError('create.invalidJson');
             setFile(null);
             setUploadProgress(0);
         }
@@ -42,21 +44,21 @@ const CreateGamePage = ({ user }) => {
             if (xhr.status === 200) {
                 resolve();
             } else {
-                let message = 'Failed to upload pack';
+                let message = 'create.uploadFailed';
                 try {
                     message = JSON.parse(xhr.responseText).message || message;
                 } catch (e) { /* non-JSON error body */ }
                 reject(new Error(message));
             }
         };
-        xhr.onerror = () => reject(new Error('Network error occurred'));
+        xhr.onerror = () => reject(new Error('create.networkError'));
         // Send the raw file: the browser streams it, the server pipes it to disk
         xhr.send(file);
     });
 
     const handleCreate = async () => {
         if (!file) {
-            setError('Please select a pack file first');
+            setError('create.noFile');
             return;
         }
         setIsUploading(true);
@@ -76,7 +78,7 @@ const CreateGamePage = ({ user }) => {
             });
             const result = await response.json();
             if (result.status !== 'success') {
-                throw new Error(result.message || 'Failed to create game');
+                throw new Error(result.message || 'create.createFailed');
             }
             created = result.data;
             saveHostToken(created.gameId, created.hostToken);
@@ -124,7 +126,7 @@ const CreateGamePage = ({ user }) => {
                         border: '1px solid var(--glass-border)'
                     }}
                 >
-                    Back to Games
+                    {t('create.back')}
                 </button>
 
                 <h1 className="text-gradient" style={{
@@ -133,7 +135,7 @@ const CreateGamePage = ({ user }) => {
                     margin: 0,
                     textAlign: 'center'
                 }}>
-                    Create Game
+                    {t('create.title')}
                 </h1>
 
                 <div style={{
@@ -149,7 +151,7 @@ const CreateGamePage = ({ user }) => {
                             fontSize: '0.875rem',
                             fontWeight: '500'
                         }}>
-                            Select Pack File (JSON)
+                            {t('create.selectPack')}
                         </label>
                         <input
                             type="file"
@@ -178,7 +180,7 @@ const CreateGamePage = ({ user }) => {
                                 color: 'var(--accent)',
                                 fontSize: '0.875rem'
                             }}>
-                                Selected: {file.name}
+                                {t('create.selected', { name: file.name })}
                             </div>
                         )}
                     </div>
@@ -191,13 +193,13 @@ const CreateGamePage = ({ user }) => {
                             fontSize: '0.875rem',
                             fontWeight: '500'
                         }}>
-                            Password (optional - players will need it to join)
+                            {t('create.passwordLabel')}
                         </label>
                         <input
                             type="text"
                             value={password}
                             onChange={e => setPassword(e.target.value)}
-                            placeholder="Leave empty for an open game"
+                            placeholder={t('create.passwordPlaceholder')}
                             disabled={isUploading}
                         />
                     </div>
@@ -212,7 +214,7 @@ const CreateGamePage = ({ user }) => {
                             cursor: (!file || isUploading) ? 'not-allowed' : 'pointer'
                         }}
                     >
-                        {isUploading ? 'Uploading...' : 'Create Game'}
+                        {isUploading ? t('create.uploading') : t('create.title')}
                     </button>
 
                     {isUploading && (
@@ -261,7 +263,7 @@ const CreateGamePage = ({ user }) => {
                         fontSize: '0.875rem',
                         textAlign: 'center'
                     }}>
-                        {error}
+                        {translateMessage(error)}
                     </div>
                 )}
             </div>

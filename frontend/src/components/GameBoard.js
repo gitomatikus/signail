@@ -6,9 +6,11 @@ import { checkCacheVersion } from '../services/cacheVersion';
 import wsManager from '../utils/websocket';
 import { useGame } from '../contexts/GameContext';
 import config from '../config';
+import { useTranslation } from '../i18n/LanguageContext';
 
 const GameBoard = ({ isAdmin = false }) => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { gameId } = useGame();
   const [pack, setPack] = useState(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
@@ -213,12 +215,14 @@ const GameBoard = ({ isAdmin = false }) => {
         }} />
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
         <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '1.25rem' }}>
-          {downloadProgress !== null ? `Downloading Pack... ${downloadProgress > -1 ? downloadProgress + '%' : ''}` : 'Loading...'}
+          {downloadProgress !== null
+            ? t('board.downloadingPack', { progress: downloadProgress > -1 ? downloadProgress + '%' : '' })
+            : t('common.loading')}
         </div>
       </div>
     );
   }
-  if (!pack) return <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>Error loading pack</div>;
+  if (!pack) return <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>{t('board.errorLoadingPack')}</div>;
 
   const round = pack.rounds[currentRoundIndex];
   const themes = round.themes;
@@ -254,7 +258,7 @@ const GameBoard = ({ isAdmin = false }) => {
           onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
           onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
         >
-          <span>⚙️</span> Settings
+          <span>⚙️</span> {t('common.settings')}
         </button>
 
         <div style={{ textAlign: 'center' }}>

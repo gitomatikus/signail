@@ -4,15 +4,36 @@ const config = require('./config');
 
 // Routes every WebSocket connection into its game room (?gameId=...) and
 // scopes all message handling and broadcasts to that room.
+// Protocol-level ping interval. Keeps connections busy so proxies
+// (e.g. Cloudflare) don't drop them as idle, and detects dead sockets:
+// a client that misses a whole interval without ponging is terminated.
+const HEARTBEAT_INTERVAL_MS = 30000;
+
 class WebSocketManager {
   constructor() {
     this.wss = null;
     this.gameManager = null;
+    this.heartbeatTimer = null;
   }
 
   initialize(server, gameManager) {
     this.gameManager = gameManager;
     this.wss = new WebSocket.Server({ server, path: config.wsPath });
+
+    this.heartbeatTimer = setInterval(() => {
+      this.wss.clients.forEach((ws) => {
+        if (ws.isAlive === false) {
+          ws.terminate(); // close handler runs and cleans up the room
+          return;
+        }
+        ws.isAlive = false;
+        ws.ping();
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+    this.wss.on('close', () => {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    });
 
     this.wss.on('connection', (ws, req) => {
       // The base is a throwaway placeholder needed only so URL() can parse
@@ -38,6 +59,10 @@ class WebSocketManager {
 
       ws.isHost = isHost;
       ws.gameId = game.id;
+      ws.isAlive = true;
+      ws.on('pong', () => {
+        ws.isAlive = true;
+      });
       game.sockets.add(ws);
       game.emptySince = null;
       console.log(`Client connected to game ${game.id}${isHost ? ' (host)' : ''}`);

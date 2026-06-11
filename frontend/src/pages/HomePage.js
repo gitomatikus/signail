@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import config from '../config';
 import { getHostToken, removeHostToken, saveGamePassword } from '../services/gameAuth';
+import { useTranslation } from '../i18n/LanguageContext';
 
 const Avatar = ({ src, alt, size = 40 }) => {
   const style = {
@@ -22,6 +23,7 @@ const Avatar = ({ src, alt, size = 40 }) => {
 // pack name. Anyone can join; creators can delete their own games.
 const HomePage = ({ user }) => {
   const navigate = useNavigate();
+  const { t, tp, translateMessage } = useTranslation();
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -38,7 +40,7 @@ const HomePage = ({ user }) => {
         setError('');
       }
     } catch (e) {
-      setError('Could not reach the game server');
+      setError('home.serverUnreachable');
     } finally {
       setLoading(false);
     }
@@ -77,15 +79,15 @@ const HomePage = ({ user }) => {
         saveGamePassword(game.id, passwordInput);
         navigate(`/game/${game.id}`);
       } else {
-        setPasswordError('Wrong password');
+        setPasswordError('home.wrongPassword');
       }
     } catch (err) {
-      setPasswordError('Could not reach the game server');
+      setPasswordError('home.serverUnreachable');
     }
   };
 
   const handleDelete = async (game) => {
-    if (!window.confirm(`Delete game "${game.packName}"?`)) return;
+    if (!window.confirm(t('home.deleteConfirm', { name: game.packName }))) return;
     try {
       const response = await fetch(`${config.apiUrl}/api/games/${game.id}`, {
         method: 'DELETE',
@@ -96,7 +98,7 @@ const HomePage = ({ user }) => {
         fetchGames();
       }
     } catch (err) {
-      setError('Could not delete the game');
+      setError('home.couldNotDelete');
     }
   };
 
@@ -111,7 +113,7 @@ const HomePage = ({ user }) => {
       <div style={{ width: '100%', maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         <div style={{ textAlign: 'center' }}>
           <h1 className="text-gradient" style={{ fontSize: '3.5rem', fontWeight: 800, margin: 0 }}>SignAil</h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>Pick a game to join or host your own</p>
+          <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>{t('home.tagline')}</p>
         </div>
 
         <button
@@ -119,7 +121,7 @@ const HomePage = ({ user }) => {
           style={{ alignSelf: 'center', padding: '0.75rem 2.5rem', fontSize: '1.1rem' }}
           onClick={() => navigate('/create')}
         >
-          + Create Game
+          {t('home.createGame')}
         </button>
 
         <a
@@ -134,7 +136,7 @@ const HomePage = ({ user }) => {
             borderBottom: '1px dashed var(--glass-border)'
           }}
         >
-          ✏️ Need a pack? Open the pack editor ↗
+          {t('home.packEditorLink')}
         </a>
 
         {error && (
@@ -146,15 +148,15 @@ const HomePage = ({ user }) => {
             color: '#ef4444',
             textAlign: 'center'
           }}>
-            {error}
+            {translateMessage(error)}
           </div>
         )}
 
         {loading ? (
-          <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>Loading games...</div>
+          <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>{t('home.loadingGames')}</div>
         ) : games.length === 0 ? (
           <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            No games yet. Create the first one!
+            {t('home.noGames')}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -171,24 +173,24 @@ const HomePage = ({ user }) => {
                   <Avatar src={game.hostImageUrl} alt={game.hostName} />
                   <div style={{ flex: 1, minWidth: '200px' }}>
                     <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.1rem' }}>
-                      {game.hasPassword && <span title="Password protected" style={{ marginRight: '0.4rem' }}>🔒</span>}
+                      {game.hasPassword && <span title={t('home.passwordProtected')} style={{ marginRight: '0.4rem' }}>🔒</span>}
                       {game.packName}
                     </div>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                      hosted by <strong>{game.hostName}</strong>
-                      {game.packAuthor ? <> · pack by {game.packAuthor}</> : null}
+                      {t('home.hostedBy')} <strong>{game.hostName}</strong>
+                      {game.packAuthor ? <> · {t('home.packBy')} {game.packAuthor}</> : null}
                     </div>
                   </div>
                   <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', whiteSpace: 'nowrap' }}>
-                    {game.playerCount} player{game.playerCount === 1 ? '' : 's'}
+                    {tp('home.playersCount', game.playerCount)}
                     {' · '}
                     <span style={{ color: game.status === 'started' ? '#4ade80' : 'var(--accent)' }}>
-                      {game.status === 'started' ? 'in progress' : 'lobby'}
+                      {game.status === 'started' ? t('home.inProgress') : t('home.lobby')}
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button className="btn-primary" onClick={() => handleJoin(game)}>
-                      {isMine ? 'Open' : 'Join'}
+                      {isMine ? t('home.open') : t('home.join')}
                     </button>
                     {isMine && (
                       <button
@@ -202,7 +204,7 @@ const HomePage = ({ user }) => {
                           cursor: 'pointer'
                         }}
                       >
-                        Delete
+                        {t('home.delete')}
                       </button>
                     )}
                   </div>
@@ -231,20 +233,20 @@ const HomePage = ({ user }) => {
             onSubmit={handlePasswordSubmit}
           >
             <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>
-              Password for "{passwordPromptGame.packName}"
+              {t('home.passwordFor', { name: passwordPromptGame.packName })}
             </h3>
             <input
               type="password"
               value={passwordInput}
               onChange={e => setPasswordInput(e.target.value)}
-              placeholder="Game password"
+              placeholder={t('home.passwordPlaceholder')}
               autoFocus
             />
             {passwordError && (
-              <div style={{ color: '#ef4444', fontSize: '0.875rem', textAlign: 'center' }}>{passwordError}</div>
+              <div style={{ color: '#ef4444', fontSize: '0.875rem', textAlign: 'center' }}>{t(passwordError)}</div>
             )}
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button type="submit" className="btn-primary" style={{ flex: 1 }}>Join</button>
+              <button type="submit" className="btn-primary" style={{ flex: 1 }}>{t('home.join')}</button>
               <button
                 type="button"
                 onClick={() => setPasswordPromptGame(null)}
@@ -258,7 +260,7 @@ const HomePage = ({ user }) => {
                   cursor: 'pointer'
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </form>
