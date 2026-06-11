@@ -22,6 +22,7 @@ class Game {
 
     this.packName = null;
     this.packAuthor = null;
+    this.packSize = 0;
     this.questionTypes = new Map(); // questionId -> type; the only pack data kept in memory
 
     this.sockets = new Set();
@@ -57,6 +58,7 @@ class Game {
       id: this.id,
       packName: this.packName,
       packAuthor: this.packAuthor,
+      packSize: this.packSize,
       hostName: this.hostName,
       hostImageUrl: this.hostImageUrl,
       hasPassword: !!this.password,
@@ -225,6 +227,11 @@ class GameManager {
     game.questionTypes = types;
     game.packName = typeof pack.name === 'string' ? pack.name : 'Unnamed pack';
     game.packAuthor = typeof pack.author === 'string' ? pack.author : '';
+    try {
+      game.packSize = fs.statSync(game.packPath).size;
+    } catch (e) {
+      game.packSize = 0;
+    }
   }
 }
 

@@ -33,7 +33,7 @@ export const GameProvider = ({ user, children }) => {
     userRef.current = user;
   }, [user]);
 
-  const loadPack = useCallback(async () => {
+  const loadPack = useCallback(async (info) => {
     try {
       setPackLoading(true);
       setDownloadProgress(null);
@@ -60,8 +60,8 @@ export const GameProvider = ({ user, children }) => {
         setPackLoading(false);
         return;
       }
-      const contentLength = response.headers.get('Content-Length');
-      const total = contentLength ? parseInt(contentLength, 10) : null;
+      const contentLength = response.headers.get('Content-Length') || response.headers.get('content-length');
+      const total = (contentLength ? parseInt(contentLength, 10) : null) || (info && info.packSize) || (gameInfo && gameInfo.packSize) || null;
       let loaded = 0;
       let chunks = [];
       const reader = response.body.getReader();
@@ -94,7 +94,7 @@ export const GameProvider = ({ user, children }) => {
       setPackLoading(false);
       setDownloadProgress(null);
     }
-  }, [gameId]);
+  }, [gameId, gameInfo]);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,7 +117,7 @@ export const GameProvider = ({ user, children }) => {
           password: getGamePassword(gameId)
         });
 
-        loadPack();
+        loadPack(result.data);
       } catch (e) {
         if (!cancelled) setError('game.serverUnreachable');
       }
