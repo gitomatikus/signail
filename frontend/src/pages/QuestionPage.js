@@ -1796,7 +1796,7 @@ const QuestionPage = () => {
               padding: '0.5rem 1.25rem',
               borderRadius: '12px',
               color: 'var(--text-primary)',
-              fontWeight: '700',
+              fontWeight: '500',
               fontSize: '1.1rem',
               letterSpacing: '0.05em',
               textTransform: 'uppercase',

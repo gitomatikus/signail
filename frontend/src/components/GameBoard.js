@@ -300,7 +300,7 @@ const GameBoard = ({ isAdmin = false }) => {
           <div key={`theme-${rowIdx}`} style={{
             background: 'rgba(15, 23, 42, 0.6)',
             color: 'var(--text-primary)',
-            fontWeight: '600',
+            fontWeight: '500',
             fontSize: '1.1rem',
             textAlign: 'center',
             padding: '1rem',
