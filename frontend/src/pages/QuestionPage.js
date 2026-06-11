@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { indexedDBService } from '../services/indexedDB';
 import { checkCacheVersion } from '../services/cacheVersion';
-import wsManager from '../utils/websocket';
+import realtimeManager from '../utils/realtime';
 import OnlineUsers from '../components/OnlineUsers';
 import ProgressiveImage from '../components/ProgressiveImage';
 import ImageLightbox from '../components/ImageLightbox';
@@ -128,7 +128,7 @@ const QuestionPage = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   // The game host is the admin of their own game; everyone else is a player
-  const { gameId, isHost, onlineUsers } = useGame();
+  const { gameId, isHost, onlineUsers, connectionLost } = useGame();
   const isAdmin = isHost;
   const isReadOnly = !isHost;
   const boardPath = `/game/${gameId}`;
@@ -344,8 +344,75 @@ const QuestionPage = () => {
       }
     };
 
-    const unsubscribe = wsManager.subscribe((data) => {
-      if (data.type === 'question_reveal' && data.data.questionId === parseInt(questionId)) {
+    // After a reconnect the stream may have missed broadcasts. Pull the
+    // per-question runtime state back over REST - the same calls the initial
+    // load makes. Unconditional: cheap at this scale, and it makes message
+    // sequence tracking unnecessary for correctness.
+    const refetchRuntimeState = async () => {
+      if (!question) return;
+      const qid = parseInt(questionId);
+      if (question.type === 'secret') {
+        try {
+          const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${qid}/secret`);
+          const result = await response.json();
+          if (result.status === 'success') {
+            setSecretSelectorId(result.data.selectorId || null);
+            setSecretTargetId(result.data.assignment?.targetUserId || null);
+            if (result.data.revealed) {
+              setIsQuestionRevealed(true);
+            }
+          }
+        } catch (error) {
+          console.error('Error refetching secret question info:', error);
+        }
+      }
+      if (['close-enough', 'choice', 'text-answer'].includes(question.type)) {
+        try {
+          const query = currentUserId ? `?userId=${encodeURIComponent(currentUserId)}` : '';
+          const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${qid}/answers${query}`);
+          const result = await response.json();
+          if (result.status === 'success') {
+            setNumberAnswers(result.data.answers || {});
+            setAnswersRevealed(!!result.data.revealed);
+          }
+        } catch (error) {
+          console.error('Error refetching question answers:', error);
+        }
+      }
+      if (question.type === 'find-a-cat' && question.max_clicks > 0) {
+        try {
+          const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${qid}/clicks`);
+          const result = await response.json();
+          if (result.status === 'success') {
+            // Each client is authoritative for its own clicks: keep the
+            // local count, take the server's word for everyone else
+            setClicksLeftMap(prev => {
+              const next = { ...result.data };
+              if (currentUserId && prev[currentUserId] !== undefined) {
+                next[currentUserId] = prev[currentUserId];
+              }
+              return next;
+            });
+          }
+        } catch (error) {
+          console.error('Error refetching question clicks:', error);
+        }
+      }
+      try {
+        const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${qid}/times`);
+        const result = await response.json();
+        if (result.status === 'success') {
+          setUserTimes(result.data);
+        }
+      } catch (error) {
+        console.error('Error refetching question times:', error);
+      }
+    };
+
+    const unsubscribe = realtimeManager.subscribe((data) => {
+      if (data.type === 'ws_open') {
+        refetchRuntimeState();
+      } else if (data.type === 'question_reveal' && data.data.questionId === parseInt(questionId)) {
         setIsQuestionRevealed(true);
       } else if (data.type === 'answer_reveal' && data.data.questionId === parseInt(questionId)) {
         setIsAnswerRevealed(true);
@@ -451,7 +518,7 @@ const QuestionPage = () => {
     return () => {
       unsubscribe();
     };
-  }, [questionId, navigate, isAdmin, question, currentUserId]);
+  }, [questionId, navigate, isAdmin, question, currentUserId, gameId]);
 
   useEffect(() => {
     if (!question) return;
@@ -559,7 +626,7 @@ const QuestionPage = () => {
       const action = event.type === 'seeked' ? 'seek' : event.type;
       if (action === 'play') adminPausedMediaRef.current = false;
       if (action === 'pause') adminPausedMediaRef.current = true;
-      wsManager.sendMediaControl(parseInt(questionId), {
+      realtimeManager.sendMediaControl(parseInt(questionId), {
         action,
         time: el.currentTime,
         mediaIndex: getQuestionMedia().indexOf(el),
@@ -634,6 +701,9 @@ const QuestionPage = () => {
   // Add keyboard event listener for space and right arrow
   useEffect(() => {
     const handleKeyPress = (event) => {
+      if (connectionLost) {
+        return; // The buzz would never reach the server; the banner says why
+      }
       if (['find-a-cat', 'close-enough', 'choice', 'text-answer'].includes(question?.type)) {
         return; // These types answer by clicking/typing, not by racing on the spacebar
       }
@@ -653,7 +723,7 @@ const QuestionPage = () => {
         setElapsedTime(timeTaken);
         setHasRecordedTime(true);
         // Send elapsed time to other users
-        wsManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
+        realtimeManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
         console.log('=== SCORE LOG ===');
         console.log(`Score: ${question?.price?.correct || 0} points`);
         console.log(`Time taken: ${timeTaken.toFixed(3)} seconds`);
@@ -663,7 +733,7 @@ const QuestionPage = () => {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isQuestionRevealed, isAnswerRevealed, startTime, question, isAdmin, hasRecordedTime, questionId, currentUserId, userTimes, secretTargetId]);
+  }, [isQuestionRevealed, isAnswerRevealed, startTime, question, isAdmin, hasRecordedTime, questionId, currentUserId, userTimes, secretTargetId, connectionLost]);
 
   // Start timer when question is revealed or when non-admin user sees the question
   // For cat-in-the-bag, wait until a player is chosen and the admin shows the question
@@ -691,7 +761,7 @@ const QuestionPage = () => {
 
   const handleShowQuestion = () => {
     if (isAdmin && question) {
-      wsManager.sendQuestionReveal(question.id);
+      realtimeManager.sendQuestionReveal(question.id);
       setIsQuestionRevealed(true);
       if (question.type !== 'find-a-cat') {
         setIsAnswerRevealed(true);
@@ -706,7 +776,7 @@ const QuestionPage = () => {
 
   const handleShowAnswer = () => {
     if (isAdmin && question) {
-      wsManager.sendAnswerReveal(question.id);
+      realtimeManager.sendAnswerReveal(question.id);
       setIsAnswerRevealed(true);
       setShowAfterRound(true);
       setCurrentAfterRoundIndex(0);
@@ -719,9 +789,9 @@ const QuestionPage = () => {
       // "Show Result" step: revealing the response also publishes everyone's
       // picks to the players and stops further submissions
       if (question.type === 'choice' && !answersRevealed) {
-        wsManager.sendRevealNumberAnswers(parseInt(questionId));
+        realtimeManager.sendRevealNumberAnswers(parseInt(questionId));
       }
-      wsManager.sendResponseReveal(question.id);
+      realtimeManager.sendResponseReveal(question.id);
       setIsResponseRevealed(true);
       setShowAfterRound(true);
       setCurrentAfterRoundIndex(0);
@@ -730,7 +800,7 @@ const QuestionPage = () => {
 
   const handleReturnToGame = () => {
     if (isAdmin) {
-      wsManager.sendReturnToGame();
+      realtimeManager.sendReturnToGame();
       navigate(boardPath);
     }
   };
@@ -869,7 +939,7 @@ const QuestionPage = () => {
     }
     const newLeft = Math.max(0, myClicksLeft - 1);
     setClicksLeftMap(prev => ({ ...prev, [currentUserId]: newLeft }));
-    wsManager.sendCatClicks(parseInt(questionId), currentUserId, newLeft);
+    realtimeManager.sendCatClicks(parseInt(questionId), currentUserId, newLeft);
   };
 
   const handleAreaClick = (e, index) => {
@@ -903,7 +973,7 @@ const QuestionPage = () => {
       const timeTaken = (endTime - startTime) / 1000;
       setElapsedTime(timeTaken);
       setHasRecordedTime(true);
-      wsManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
+      realtimeManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
       console.log('=== SCORE LOG (Find a Cat) ===');
       console.log(`Score: ${question?.price?.correct || 0} points`);
       console.log(`Time taken: ${timeTaken.toFixed(3)} seconds`);
@@ -1111,10 +1181,10 @@ const QuestionPage = () => {
   };
 
   const handleSecretAssign = (targetUserId) => {
-    if (secretTargetId) {
+    if (secretTargetId || connectionLost) {
       return;
     }
-    wsManager.sendSecretAssign(parseInt(questionId), targetUserId, secretSelectorId);
+    realtimeManager.sendSecretAssign(parseInt(questionId), targetUserId, secretSelectorId);
   };
 
   const renderSecretContent = () => {
@@ -1227,14 +1297,14 @@ const QuestionPage = () => {
 
   const handleSubmitNumberAnswer = () => {
     const value = parseFloat(answerInput);
-    if (!Number.isFinite(value) || !currentUserId) {
+    if (!Number.isFinite(value) || !currentUserId || connectionLost) {
       return;
     }
     if (answersRevealed || timer <= 0 || numberAnswers[currentUserId] !== undefined) {
       return;
     }
     setNumberAnswers(prev => ({ ...prev, [currentUserId]: value }));
-    wsManager.sendNumberAnswer(parseInt(questionId), currentUserId, value);
+    realtimeManager.sendNumberAnswer(parseInt(questionId), currentUserId, value);
   };
 
   const renderCloseEnoughContent = () => {
@@ -1297,8 +1367,8 @@ const QuestionPage = () => {
                 <button
                   onClick={handleSubmitNumberAnswer}
                   className="btn-primary"
-                  style={{ ...buttonStyle, opacity: Number.isFinite(parseFloat(answerInput)) ? 1 : 0.5 }}
-                  disabled={!Number.isFinite(parseFloat(answerInput))}
+                  style={{ ...buttonStyle, opacity: Number.isFinite(parseFloat(answerInput)) && !connectionLost ? 1 : 0.5 }}
+                  disabled={!Number.isFinite(parseFloat(answerInput)) || connectionLost}
                 >
                   {t('question.submitAnswer')}
                 </button>
@@ -1322,7 +1392,7 @@ const QuestionPage = () => {
     const timeTaken = (Date.now() - startTime) / 1000;
     setElapsedTime(timeTaken);
     setHasRecordedTime(true);
-    wsManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
+    realtimeManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
   };
 
   const handleToggleOption = (idx) => {
@@ -1346,7 +1416,7 @@ const QuestionPage = () => {
   };
 
   const handleConfirmChoice = () => {
-    if (!currentUserId || selectedOptions.size === 0) {
+    if (!currentUserId || selectedOptions.size === 0 || connectionLost) {
       return;
     }
     if (answersRevealed || numberAnswers[currentUserId] !== undefined) {
@@ -1354,7 +1424,7 @@ const QuestionPage = () => {
     }
     const picks = [...selectedOptions].sort((a, b) => a - b);
     setNumberAnswers(prev => ({ ...prev, [currentUserId]: picks }));
-    wsManager.sendNumberAnswer(parseInt(questionId), currentUserId, picks);
+    realtimeManager.sendNumberAnswer(parseInt(questionId), currentUserId, picks);
     recordAnswerTime();
   };
 
@@ -1440,9 +1510,9 @@ const QuestionPage = () => {
             style={{
               ...buttonStyle,
               alignSelf: 'center',
-              opacity: selectedOptions.size > 0 ? 1 : 0.5
+              opacity: selectedOptions.size > 0 && !connectionLost ? 1 : 0.5
             }}
-            disabled={selectedOptions.size === 0}
+            disabled={selectedOptions.size === 0 || connectionLost}
           >
             {t('question.confirmAnswer')}
           </button>
@@ -1457,7 +1527,7 @@ const QuestionPage = () => {
   };
 
   // Keep pasted images well under the server's answer-size limit (8M chars,
-  // isValidAnswerValue in backend websocket.js), otherwise the submission is
+  // isValidAnswerValue in backend actions.js), otherwise the submission is
   // rejected silently and only its author would see it. The byte budget maps
   // to the data-URL length the server sees: chars ≈ bytes * 4/3 + prefix.
   const MAX_ANSWER_IMAGE_CHARS = 2000000;
@@ -1481,7 +1551,7 @@ const QuestionPage = () => {
   };
 
   const handleSubmitTextAnswer = () => {
-    if (!currentUserId) {
+    if (!currentUserId || connectionLost) {
       return;
     }
     if (answersRevealed || numberAnswers[currentUserId] !== undefined) {
@@ -1492,7 +1562,7 @@ const QuestionPage = () => {
       return;
     }
     setNumberAnswers(prev => ({ ...prev, [currentUserId]: value }));
-    wsManager.sendNumberAnswer(parseInt(questionId), currentUserId, value);
+    realtimeManager.sendNumberAnswer(parseInt(questionId), currentUserId, value);
     recordAnswerTime();
   };
 
@@ -1579,9 +1649,9 @@ const QuestionPage = () => {
                   className="btn-primary"
                   style={{
                     ...buttonStyle,
-                    opacity: (pastedImage || textAnswerInput.trim()) ? 1 : 0.5
+                    opacity: (pastedImage || textAnswerInput.trim()) && !connectionLost ? 1 : 0.5
                   }}
-                  disabled={!pastedImage && !textAnswerInput.trim()}
+                  disabled={(!pastedImage && !textAnswerInput.trim()) || connectionLost}
                 >
                   {t('question.submitAnswer')}
                 </button>
@@ -2010,7 +2080,7 @@ const QuestionPage = () => {
         {/* Choice has no "Show Result": the admin sees picks in real time */}
         {isAdmin && ['close-enough', 'text-answer'].includes(question.type) && isQuestionRevealed && !answersRevealed && (
           <button
-            onClick={() => wsManager.sendRevealNumberAnswers(parseInt(questionId))}
+            onClick={() => realtimeManager.sendRevealNumberAnswers(parseInt(questionId))}
             className="btn-primary"
             style={buttonStyle}
           >

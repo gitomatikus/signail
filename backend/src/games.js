@@ -8,7 +8,9 @@ const EMPTY_GAME_TTL_MS = 15 * 60 * 1000; // remove a game 15 minutes after the 
 const SWEEP_INTERVAL_MS = 60 * 1000;
 
 // One running game: lobby metadata + the per-game state that used to be
-// global (scores, selections, reveals, times, answers...) + its sockets.
+// global (scores, selections, reveals, times, answers...) + its connections
+// (legacy WebSocket sockets and SSE stream clients side by side during the
+// transition).
 class Game {
   constructor({ id, hostToken, hostName, hostImageUrl, password }) {
     this.id = id;
@@ -25,7 +27,8 @@ class Game {
     this.packSize = 0;
     this.questionTypes = new Map(); // questionId -> type; the only pack data kept in memory
 
-    this.sockets = new Set();
+    this.sockets = new Set(); // legacy WebSocket connections
+    this.clients = new Set(); // SSE stream clients ({ res, isHost, clientId, ... })
     this.cacheKey = crypto.randomUUID();
     this.onlineUsers = new Map(); // ws -> user data
     this.persistentUsers = new Map(); // userId -> user data
@@ -49,7 +52,14 @@ class Game {
     for (const ws of this.sockets) {
       if (ws.isHost) return true;
     }
+    for (const client of this.clients) {
+      if (client.isHost) return true;
+    }
     return false;
+  }
+
+  connectionCount() {
+    return this.sockets.size + this.clients.size;
   }
 
   // Public lobby/list representation
@@ -80,6 +90,85 @@ class Game {
         client.send(message);
       }
     });
+    this.clients.forEach((client) => {
+      client.sendRaw(message);
+    });
+  }
+
+  // The four messages a (re)joining client needs to catch up immediately
+  snapshotPayloads() {
+    return [
+      { type: 'game_info', data: this.toListInfo() },
+      { type: 'selected_questions_update', data: Array.from(this.selectedQuestions) },
+      { type: 'cache_key_update', data: { cacheKey: this.cacheKey } },
+      { type: 'online_users', data: Array.from(this.persistentUsers.values()) }
+    ];
+  }
+
+  addSseClient(client) {
+    // A reconnecting tab reuses its clientId: hand the old stream's presence
+    // over to the new one and drop the old quietly - its close event may
+    // arrive long after the replacement is already live.
+    if (client.clientId) {
+      for (const existing of this.clients) {
+        if (existing.clientId === client.clientId) {
+          this.clients.delete(existing);
+          const userData = this.onlineUsers.get(existing);
+          if (userData) {
+            this.onlineUsers.delete(existing);
+            this.onlineUsers.set(client, userData);
+          }
+          existing.close();
+          break;
+        }
+      }
+    }
+    this.clients.add(client);
+    this.emptySince = null;
+    return client;
+  }
+
+  removeSseClient(client) {
+    if (!this.clients.delete(client)) {
+      return; // already evicted by a same-clientId reconnect
+    }
+    this.handleConnectionClosed(client);
+  }
+
+  findSseClient(clientId) {
+    if (!clientId) return null;
+    for (const client of this.clients) {
+      if (client.clientId === clientId) return client;
+    }
+    return null;
+  }
+
+  // Shared disconnect cleanup for both transports.
+  handleConnectionClosed(conn) {
+    const userData = this.onlineUsers.get(conn);
+    if (userData) {
+      this.onlineUsers.delete(conn);
+      // Another connection (second tab, or the reconnect that replaced this
+      // one) may still claim the same user - only without one does the user
+      // actually go offline.
+      let stillOnline = false;
+      for (const u of this.onlineUsers.values()) {
+        if (u.id === userData.id) {
+          stillOnline = true;
+          break;
+        }
+      }
+      if (!stillOnline) {
+        this.persistentUsers.delete(userData.id);
+      }
+      this.broadcastOnlineUsers();
+    }
+    if (conn.isHost) {
+      this.broadcastGameInfo(); // host went offline
+    }
+    if (this.connectionCount() === 0) {
+      this.emptySince = Date.now();
+    }
   }
 
   broadcastOnlineUsers() {
@@ -191,6 +280,7 @@ class GameManager {
     game.sockets.forEach(ws => {
       try { ws.close(); } catch (e) { /* already closing */ }
     });
+    game.clients.forEach(client => client.close());
     fs.unlink(game.packPath, () => {});
     console.log(`Game ${id} removed (${reason})`);
     return true;
@@ -199,7 +289,7 @@ class GameManager {
   sweepEmptyGames() {
     const now = Date.now();
     for (const game of this.games.values()) {
-      if (game.sockets.size === 0 && game.emptySince && now - game.emptySince > EMPTY_GAME_TTL_MS) {
+      if (game.connectionCount() === 0 && game.emptySince && now - game.emptySince > EMPTY_GAME_TTL_MS) {
         this.deleteGame(game.id, 'inactive');
       }
     }

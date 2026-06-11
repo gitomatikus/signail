@@ -14,26 +14,20 @@ const buildUrl = (protocol, hostname, port, path = '') => {
 const location = getBrowserLocation();
 const defaultHostname = process.env.REACT_APP_DEFAULT_HOST || location?.hostname || 'localhost';
 const apiPort = process.env.REACT_APP_API_PORT || '8000';
-const wsPort = process.env.REACT_APP_WS_PORT || apiPort;
-const wsPath = process.env.REACT_APP_WS_PATH || '/ws';
 const httpProtocol = location?.protocol || 'http:';
-const wsProtocol = stripTrailingColon(httpProtocol) === 'https' ? 'wss:' : 'ws:';
 
+// Everything - REST, the SSE event stream and action POSTs - goes through
+// the one API base URL.
 const apiUrl =
   process.env.REACT_APP_API_URL ||
   buildUrl(httpProtocol, defaultHostname, apiPort, '');
-
-const wsUrl =
-  process.env.REACT_APP_WS_URL ||
-  buildUrl(wsProtocol, defaultHostname, wsPort, wsPath);
 
 const packEditorUrl =
   process.env.REACT_APP_PACK_EDITOR_URL || 'https://packer.critfail.art';
 
 const config = {
-  wsUrl,
   apiUrl,
   packEditorUrl
 };
 
-export default config; 
+export default config;

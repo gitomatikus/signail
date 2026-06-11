@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import wsManager from '../utils/websocket';
+import realtimeManager from '../utils/realtime';
 import { applyCacheKey, checkCacheVersion } from '../services/cacheVersion';
 import { indexedDBService } from '../services/indexedDB';
 import { getHostToken, getGamePassword } from '../services/gameAuth';
@@ -21,6 +21,9 @@ export const GameProvider = ({ user, children }) => {
   const [gameInfo, setGameInfo] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [error, setError] = useState(null);
+  // True between a detected stream death and the next successful (re)open -
+  // drives the "reconnecting" banner and lets pages hold their fire
+  const [connectionLost, setConnectionLost] = useState(false);
   const [pack, setPack] = useState(null);
   const [packLoading, setPackLoading] = useState(true);
   const [downloadProgress, setDownloadProgress] = useState(null);
@@ -126,7 +129,7 @@ export const GameProvider = ({ user, children }) => {
         gameInfoRef.current = result.data;
         setGameInfo(result.data);
 
-        wsManager.connect({
+        realtimeManager.connect({
           gameId,
           hostToken: getHostToken(gameId),
           password: getGamePassword(gameId)
@@ -139,12 +142,15 @@ export const GameProvider = ({ user, children }) => {
     };
     load();
 
-    const unsubscribe = wsManager.subscribe((data) => {
+    const unsubscribe = realtimeManager.subscribe((data) => {
       if (data.type === 'ws_open') {
+        setConnectionLost(false);
         // (Re)introduce ourselves on every (re)connect; the host is not a player
         if (!getHostToken(gameId) && userRef.current) {
-          wsManager.sendUserLogin(userRef.current);
+          realtimeManager.sendUserLogin(userRef.current);
         }
+      } else if (data.type === 'connection_lost') {
+        setConnectionLost(true);
       } else if (data.type === 'game_info') {
         gameInfoRef.current = data.data;
         setGameInfo(data.data);
@@ -174,12 +180,12 @@ export const GameProvider = ({ user, children }) => {
     return () => {
       cancelled = true;
       unsubscribe();
-      wsManager.disconnect();
+      realtimeManager.disconnect();
     };
   }, [gameId, loadPack]);
 
   const startGame = useCallback(() => {
-    wsManager.sendStartGame();
+    realtimeManager.sendStartGame();
   }, []);
 
   if (error) {
@@ -207,7 +213,38 @@ export const GameProvider = ({ user, children }) => {
   }
 
   return (
-    <GameContext.Provider value={{ gameId, isHost, user, gameInfo, onlineUsers, startGame, pack, packLoading, downloadProgress, loadPack }}>
+    <GameContext.Provider value={{ gameId, isHost, user, gameInfo, onlineUsers, startGame, pack, packLoading, downloadProgress, loadPack, connectionLost }}>
+      {connectionLost && (
+        <div style={{
+          position: 'fixed',
+          top: '0.75rem',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 100000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.6rem',
+          padding: '0.5rem 1.25rem',
+          borderRadius: '999px',
+          background: 'var(--bg-dark)',
+          border: '1px solid #fbbf24',
+          boxShadow: '0 0 20px rgba(251, 191, 36, 0.35)',
+          color: '#fbbf24',
+          fontWeight: 600,
+          fontSize: '0.95rem'
+        }}>
+          <span style={{
+            width: 14,
+            height: 14,
+            border: '2px solid rgba(251, 191, 36, 0.35)',
+            borderTopColor: '#fbbf24',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+          {t('game.reconnecting')}
+        </div>
+      )}
       {children}
     </GameContext.Provider>
   );

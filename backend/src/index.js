@@ -3,6 +3,7 @@ const http = require('http');
 const cors = require('cors');
 const fs = require('fs');
 const wsManager = require('./websocket');
+const sseManager = require('./sse');
 const { GameManager } = require('./games');
 const config = require('./config');
 
@@ -100,6 +101,10 @@ app.post('/api/games/:gameId/pack', (req, res) => {
     });
   });
 });
+
+// SSE stream + actions endpoint. Registered before the global json parser:
+// the actions route carries its own 10mb limit for pasted-image answers.
+sseManager.initialize(app, gameManager);
 
 app.use(express.json({ limit: '1mb' }));
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { indexedDBService } from '../services/indexedDB';
-import wsManager from '../utils/websocket';
+import realtimeManager from '../utils/realtime';
 import { useGame } from '../contexts/GameContext';
 import { isHostHidden, setHostHidden } from '../utils/hostVisibility';
 import { getHostToken, removeHostToken } from '../services/gameAuth';
@@ -42,7 +42,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
     try {
       setIsClearingCache(true);
       setMessage(null);
-      wsManager.sendClearCache();
+      realtimeManager.sendClearCache();
       setMessage({ text: t('settings.cacheCleared'), isError: false });
     } catch (error) {
       setMessage({ text: t('settings.errorClearingCache', { message: translateMessage(error.message) }), isError: true });

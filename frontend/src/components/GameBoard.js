@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Settings from './Settings';
 import Logo from './Logo';
-import wsManager from '../utils/websocket';
+import realtimeManager from '../utils/realtime';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
 
@@ -35,7 +35,7 @@ const GameBoard = ({ isAdmin = false }) => {
   }, [selectedQuestions, gameId]);
 
   useEffect(() => {
-    wsManager.sendRequestSelectedQuestions();
+    realtimeManager.sendRequestSelectedQuestions();
   }, [gameId]);
 
   useEffect(() => {
@@ -49,7 +49,7 @@ const GameBoard = ({ isAdmin = false }) => {
       return null;
     };
 
-    const unsubscribe = wsManager.subscribe((data) => {
+    const unsubscribe = realtimeManager.subscribe((data) => {
       if (data.type === 'selected_questions_update') {
         setSelectedQuestions(new Set(data.data));
       } else if (data.type === 'question_select') {
@@ -97,7 +97,7 @@ const GameBoard = ({ isAdmin = false }) => {
     }
 
     setSelectedQuestionId(question.id);
-    wsManager.sendQuestionSelect(question.id, isAdmin ? 'admin' : 'user', isAdmin ? null : (currentUser.id || null));
+    realtimeManager.sendQuestionSelect(question.id, isAdmin ? 'admin' : 'user', isAdmin ? null : (currentUser.id || null));
 
     if (isAdmin) {
       navigate(`/game/${gameId}/question/${question.id}`);
@@ -110,7 +110,7 @@ const GameBoard = ({ isAdmin = false }) => {
       setCurrentRoundIndex(newIndex);
       localStorage.setItem(`currentRoundIndex-${gameId}`, newIndex.toString());
       if (isAdmin) {
-        wsManager.sendRoundChange(newIndex);
+        realtimeManager.sendRoundChange(newIndex);
       }
     }
   };
@@ -121,7 +121,7 @@ const GameBoard = ({ isAdmin = false }) => {
       setCurrentRoundIndex(newIndex);
       localStorage.setItem(`currentRoundIndex-${gameId}`, newIndex.toString());
       if (isAdmin) {
-        wsManager.sendRoundChange(newIndex);
+        realtimeManager.sendRoundChange(newIndex);
       }
     }
   };

@@ -78,6 +78,7 @@ export const translations = {
     "game.wrongPassword": "Wrong game password.",
     "game.backToGames": "Back to games",
     "game.connecting": "Connecting to game...",
+    "game.reconnecting": "Connection lost — reconnecting...",
 
     "board.downloadingPack": "Downloading Quiz... {progress}",
     "board.errorLoadingPack": "Error loading quiz",
@@ -241,6 +242,7 @@ export const translations = {
     "game.wrongPassword": "Невірний пароль гри.",
     "game.backToGames": "До списку ігор",
     "game.connecting": "З'єднання з грою...",
+    "game.reconnecting": "Зв'язок втрачено — перепідключення...",
 
     "board.downloadingPack": "Завантаження квізу... {progress}",
     "board.errorLoadingPack": "Помилка завантаження квізу",

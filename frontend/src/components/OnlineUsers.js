@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import wsManager from '../utils/websocket';
+import realtimeManager from '../utils/realtime';
 import { useLocation } from 'react-router-dom';
 import ImageLightbox from './ImageLightbox';
 import { useGame } from '../contexts/GameContext';
+import config from '../config';
 import { HIDE_HOST_KEY, HIDE_HOST_EVENT } from '../utils/hostVisibility';
 import { useTranslation } from '../i18n/LanguageContext';
 
@@ -33,7 +34,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
   }, []);
 
   useEffect(() => {
-    const unsubscribe = wsManager.subscribe((data) => {
+    const unsubscribe = realtimeManager.subscribe((data) => {
       if (data.type === 'admin_clicked_red_number') {
         setPenalizedUsers(prev => new Set([...prev, data.data.userId]));
       } else if (data.type === 'admin_clicked_green_number') {
@@ -42,6 +43,19 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
           localStorage.setItem(`greenFramedUsers-${gameId}`, JSON.stringify([data.data.userId]));
           return newSet;
         });
+      } else if (data.type === 'ws_open') {
+        // Reconnect resync: the green frame (who picks the next question)
+        // may have moved while this client was away
+        fetch(`${config.apiUrl}/api/games/${gameId}/last-green-frame`)
+          .then(response => response.json())
+          .then(result => {
+            if (result.status === 'success') {
+              const ids = result.data.userId ? [result.data.userId] : [];
+              localStorage.setItem(`greenFramedUsers-${gameId}`, JSON.stringify(ids));
+              setGreenFrameUsers(new Set(ids));
+            }
+          })
+          .catch(() => {});
       }
     });
 
@@ -112,23 +126,23 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
 
   const handleGrantClick = (userId) => {
     if (!isAdmin || !question) return;
-    wsManager.sendCatClicksGrant(question.id, userId, 1);
+    realtimeManager.sendCatClicksGrant(question.id, userId, 1);
   };
 
   const handleScoreClick = (userId, currentScore, value, grantsMove = true) => {
     if (!isAdmin) return;
 
     const newScore = currentScore + value;
-    wsManager.sendUpdateScore(userId, newScore);
+    realtimeManager.sendUpdateScore(userId, newScore);
 
     if (value > 0) {
       setUpdatedUsers(prev => new Set([...prev, userId]));
       if (grantsMove) {
-        wsManager.sendAdminClickedGreenNumber(userId);
+        realtimeManager.sendAdminClickedGreenNumber(userId);
       }
     } else {
       setPenalizedUsers(prev => new Set([...prev, userId]));
-      wsManager.sendAdminClickedRedNumber(userId);
+      realtimeManager.sendAdminClickedRedNumber(userId);
     }
   };
 
@@ -374,7 +388,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   onContextMenu={(e) => {
                     e.preventDefault();
                     if (isAdmin) {
-                      wsManager.sendAdminClickedGreenNumber(user.id);
+                      realtimeManager.sendAdminClickedGreenNumber(user.id);
                     }
                   }}
                 />
@@ -401,7 +415,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   const newScore = e.target.textContent.trim();
                   const parsedScore = Number(newScore);
                   if (newScore !== '' && Number.isFinite(parsedScore)) {
-                    wsManager.sendUpdateScore(user.id, parsedScore);
+                    realtimeManager.sendUpdateScore(user.id, parsedScore);
                     e.target.textContent = parsedScore;
                   } else {
                     e.target.textContent = previousScore;
