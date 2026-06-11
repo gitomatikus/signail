@@ -187,6 +187,9 @@ const QuestionPage = () => {
     const loadQuestion = async () => {
       try {
         setLoading(true);
+        // Any scroll position carried over from the board would push the
+        // question media below the fold on small screens
+        window.scrollTo(0, 0);
         setThemeName('');
         setClicksLeftMap({}); // Click budgets are per-question; drop stale entries
         setNumberAnswers({});
@@ -761,6 +764,8 @@ const QuestionPage = () => {
     flexDirection: 'column',
     alignItems: 'center',
   };
+  // Wider than the 1200px page chrome: on big monitors the extra width goes
+  // to question media so wide images can actually use the screen
   const boardGridStyle = {
     display: 'grid',
     gridTemplateColumns: '1fr',
@@ -769,7 +774,7 @@ const QuestionPage = () => {
     borderRadius: '16px',
     margin: '0 auto',
     width: '100%',
-    maxWidth: '1200px',
+    maxWidth: 'min(1600px, 100%)',
   };
   const cardStyle = {
     color: 'var(--text-primary)',
@@ -935,7 +940,7 @@ const QuestionPage = () => {
       ? t('question.foundAll')
       : t('question.foundAllLegacy', { name: question.name || '' });
 
-    return (
+    const playField = (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '1.5rem' }}>
         {/* Helper message */}
         <div className="glass-panel" style={{
@@ -968,29 +973,34 @@ const QuestionPage = () => {
           )}
         </div>
 
-        {/* Image Container with map areas; container clicks are misses that consume the budget */}
+        {/* Image Container with map areas; container clicks are misses that consume the budget.
+            The container shrink-wraps the image (no fixed width) so the %-based
+            map areas always line up with the picture; the image itself is capped
+            to the viewport so the whole play field is visible without scrolling */}
         <div
           onClick={handleMissClick}
           style={{
             position: 'relative',
             display: 'inline-block',
-            width: '100%',
-            maxWidth: '800px',
+            maxWidth: '100%',
             borderRadius: '16px',
             overflow: 'hidden',
             boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
             border: '1px solid var(--glass-border)'
           }}>
-          <img 
-            src={question.image} 
+          <img
+            src={question.image}
             alt={question.task || question.name}
-            style={{ 
-              width: '100%', 
-              height: 'auto', 
-              display: 'block', 
+            className="question-media"
+            style={{
+              maxWidth: '100%',
+              maxHeight: 'max(calc(100vh - 500px), 320px)',
+              width: 'auto',
+              height: 'auto',
+              display: 'block',
               userSelect: 'none',
               pointerEvents: 'none'
-            }} 
+            }}
           />
           {/* Overlay Map Areas */}
           {question.map && question.map.map((area, idx) => {
@@ -1071,26 +1081,33 @@ const QuestionPage = () => {
           })}
         </div>
 
-        {/* If answer is revealed and there are after-round rules, display them below */}
-        {showAfterRound && question.after_round && question.after_round.length > 0 && (
-          <div style={{ ...cardStyle, width: '100%', maxWidth: '800px', minHeight: 'auto', padding: '1.5rem', marginTop: '1rem' }}>
-            {question.after_round.map((rule, index) => (
-              <div key={index} style={{ width: '100%' }}>
-                {rule.type === 'embedded' ? (
-                  <div
-                    className="question-content"
-                    style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
-                    dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
-                  />
-                ) : (
-                  renderRule(rule)
-                )}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     );
+
+    const afterRoundRules = question.after_round || [];
+    if (showAfterRound && afterRoundRules.length > 0) {
+      const lastRuleIndex = Math.min(currentAfterRoundIndex, afterRoundRules.length - 1);
+      const answerCard = renderRuleCard(afterRoundRules[lastRuleIndex], t('question.answerLabel'));
+      // The host gets the same question | answer design as normal questions
+      if (isAdmin && isQuestionRevealed) {
+        const questionCard = (
+          <div style={cardStyle}>
+            <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
+            {playField}
+          </div>
+        );
+        return renderHostQuestionAnswer(questionCard, answerCard);
+      }
+      // Players keep the play field on screen with the answer below it
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: '16px' }}>
+          {playField}
+          {answerCard}
+        </div>
+      );
+    }
+
+    return playField;
   };
 
   const handleSecretAssign = (targetUserId) => {
@@ -1350,7 +1367,7 @@ const QuestionPage = () => {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {renderNormalContent()}
 
-        <div style={{
+        <div className="choice-options-grid" style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
           gap: '1rem'
@@ -1590,7 +1607,7 @@ const QuestionPage = () => {
     const progress = applyRevealCurve(rawProgress, question.curve);
     const buzzPending = Object.keys(userTimes).some(uid => !redJudgedUsers.has(uid));
 
-    return (
+    const playField = (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '1.5rem' }}>
         <div className="glass-panel" style={{
           padding: '1rem 2rem',
@@ -1610,9 +1627,11 @@ const QuestionPage = () => {
               : t('question.pressSpace')}
         </div>
 
+        {/* Shrink-wraps the image so the frame hugs it; the image is capped to
+            the viewport inside ProgressiveImage so it fits without scrolling */}
         <div style={{
-          width: '100%',
-          maxWidth: '800px',
+          width: 'fit-content',
+          maxWidth: '100%',
           borderRadius: '16px',
           overflow: 'hidden',
           border: '1px solid var(--glass-border)',
@@ -1625,25 +1644,33 @@ const QuestionPage = () => {
           />
         </div>
 
-        {showAfterRound && question.after_round && question.after_round.length > 0 && (
-          <div style={{ ...cardStyle, width: '100%', maxWidth: '800px', minHeight: 'auto', padding: '1.5rem' }}>
-            {question.after_round.map((rule, index) => (
-              <div key={index} style={{ width: '100%' }}>
-                {rule.type === 'embedded' ? (
-                  <div
-                    className="question-content"
-                    style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
-                    dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
-                  />
-                ) : (
-                  renderRule(rule)
-                )}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     );
+
+    const afterRoundRules = question.after_round || [];
+    if (showAfterRound && afterRoundRules.length > 0) {
+      const lastRuleIndex = Math.min(currentAfterRoundIndex, afterRoundRules.length - 1);
+      const answerCard = renderRuleCard(afterRoundRules[lastRuleIndex], t('question.answerLabel'));
+      // The host gets the same question | answer design as normal questions
+      if (isAdmin && isQuestionRevealed) {
+        const questionCard = (
+          <div style={cardStyle}>
+            <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
+            {playField}
+          </div>
+        );
+        return renderHostQuestionAnswer(questionCard, answerCard);
+      }
+      // Players keep the play field on screen with the answer below it
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: '16px' }}>
+          {playField}
+          {answerCard}
+        </div>
+      );
+    }
+
+    return playField;
   };
 
   const renderContent = () => {
@@ -1714,6 +1741,33 @@ const QuestionPage = () => {
     </div>
   );
 
+  // Question + answer in the host's chosen layout (split | tabs). Every
+  // question type funnels its host answer view through here so the design
+  // stays the same across types.
+  const renderHostQuestionAnswer = (questionCard, answerCard) => {
+    if (hostLayout === 'tabs') {
+      return renderHostTabs(questionCard, answerCard);
+    }
+    // Split view: question | answer side by side, falling back to one
+    // column on narrow screens; media inside is scaled down via the
+    // .host-split-view rules in index.css
+    return (
+      <div
+        className="host-split-view"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))',
+          gap: '16px',
+          alignItems: 'stretch'
+        }}
+        onClick={handleSplitImageClick}
+      >
+        {questionCard}
+        {answerCard}
+      </div>
+    );
+  };
+
   const renderNormalContent = () => {
     if (showAfterRound) {
       const afterRoundRules = question.after_round || [];
@@ -1742,27 +1796,7 @@ const QuestionPage = () => {
             ))}
           </div>
         );
-        if (hostLayout === 'tabs') {
-          return renderHostTabs(questionCard, answerCard);
-        }
-        // Split view: question | answer side by side, falling back to one
-        // column on narrow screens; media inside is scaled down via the
-        // .host-split-view rules in index.css
-        return (
-          <div
-            className="host-split-view"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))',
-              gap: '16px',
-              alignItems: 'stretch'
-            }}
-            onClick={handleSplitImageClick}
-          >
-            {questionCard}
-            {answerCard}
-          </div>
-        );
+        return renderHostQuestionAnswer(questionCard, answerCard);
       }
     }
 
@@ -1946,7 +1980,7 @@ const QuestionPage = () => {
         alignItems: 'center',
         marginBottom: 20,
         width: '100%',
-        maxWidth: '1200px',
+        maxWidth: 'min(1600px, 100%)',
         margin: '0 auto 20px auto'
       }}>
         <div style={boardGridStyle}>

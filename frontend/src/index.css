@@ -961,12 +961,22 @@ input[type="range"].volume-slider::-moz-range-track {
 }
 
 /* Media Elements - Only in Question Content */
+/* Question media scales with the viewport instead of a fixed pixel size:
+   a 4K monitor gets a proportionally big image while a small laptop still
+   fits the whole image on screen without scrolling. The 470px in the calc()
+   is the vertical chrome around the media (logo header, timer row, card
+   paddings, action buttons). !important beats inline width/height styles
+   coming from pack HTML. */
 .question-content img,
 .question-content video {
-    height: 500px !important;
+    height: clamp(240px, calc(100vh - 470px), 75vh) !important;
     width: auto;
     max-width: 100%;
     object-fit: contain;
+    /* Centered regardless of the pack's own text alignment */
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .question-content audio {
@@ -977,7 +987,21 @@ input[type="range"].volume-slider::-moz-range-track {
    cards and the judging panel fit on one screen; click an image to enlarge */
 .host-split-view .question-content img,
 .host-split-view .question-content video {
-    height: 300px !important;
+    height: clamp(200px, 30vh, 560px) !important;
+}
+
+/* Find-a-cat / progressive-reveal play fields size themselves to the viewport
+   with inline styles; in the split view they scale down like other media
+   (!important beats the inline sizing) */
+.host-split-view .question-media {
+    max-height: clamp(200px, 30vh, 560px) !important;
+}
+
+/* Images inside choice options share a grid with the other options:
+   keep them option-card-sized rather than screen-sized */
+.choice-options-grid .question-content img,
+.choice-options-grid .question-content video {
+    height: clamp(140px, 24vh, 400px) !important;
 }
 
 .host-split-view .question-content img {

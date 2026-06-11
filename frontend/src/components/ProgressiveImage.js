@@ -2,6 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 
 // Renders an image hidden by the chosen effect; progress 0 = fully hidden,
 // progress 1 = fully revealed. Effects: blur (default), pixelate, zoom.
+
+// Sized to the viewport so the whole image is visible without scrolling on
+// small screens (the 500px is the page chrome around it) and still grows
+// with the screen on large monitors
+const fitScreenStyle = {
+  display: 'block',
+  width: 'auto',
+  height: 'auto',
+  maxWidth: '100%',
+  maxHeight: 'max(calc(100vh - 500px), 320px)'
+};
+
 const ProgressiveImage = ({ src, effect = 'blur', progress = 0 }) => {
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
@@ -57,7 +69,8 @@ const ProgressiveImage = ({ src, effect = 'blur', progress = 0 }) => {
     return (
       <canvas
         ref={canvasRef}
-        style={{ display: 'block', width: '100%', height: 'auto' }}
+        className="question-media"
+        style={fitScreenStyle}
       />
     );
   }
@@ -69,10 +82,9 @@ const ProgressiveImage = ({ src, effect = 'blur', progress = 0 }) => {
           src={src}
           alt=""
           draggable={false}
+          className="question-media"
           style={{
-            display: 'block',
-            width: '100%',
-            height: 'auto',
+            ...fitScreenStyle,
             userSelect: 'none',
             pointerEvents: 'none',
             transform: `scale(${1 + hidden * 7})`,
@@ -91,10 +103,9 @@ const ProgressiveImage = ({ src, effect = 'blur', progress = 0 }) => {
         src={src}
         alt=""
         draggable={false}
+        className="question-media"
         style={{
-          display: 'block',
-          width: '100%',
-          height: 'auto',
+          ...fitScreenStyle,
           userSelect: 'none',
           pointerEvents: 'none',
           filter: `blur(${Math.round(hidden * 40)}px)`,
