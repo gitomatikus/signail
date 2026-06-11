@@ -9,6 +9,11 @@ export const translations = {
     "common.settings": "Settings",
     "common.language": "Language",
 
+    "profile.editTooltip": "Edit profile nickname & avatar",
+    "profile.editTitle": "Edit Profile",
+    "profile.save": "Save changes",
+    "profile.editProfileBtn": "Edit Profile",
+
     "login.tagline": "No sign-up needed — log in with any name and image",
     "login.errorName": "Please enter your name",
     "login.errorImage": "Please enter an image URL",
@@ -161,6 +166,11 @@ export const translations = {
     "common.logout": "Вийти",
     "common.settings": "Налаштування",
     "common.language": "Мова",
+
+    "profile.editTooltip": "Редагувати нікнейм та аватар",
+    "profile.editTitle": "Редагувати профіль",
+    "profile.save": "Зберегти зміни",
+    "profile.editProfileBtn": "Редагувати профіль",
 
     "login.tagline":
       "Реєстрація не потрібна — увійдіть з будь-яким ім'ям та зображенням",

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Settings from '../components/Settings';
 import { useGame } from '../contexts/GameContext';
 import GamePage from './GamePage';
 import config from '../config';
@@ -27,6 +28,7 @@ const Lobby = () => {
   const navigate = useNavigate();
   const { t, tp } = useTranslation();
   const { gameId, isHost, gameInfo, onlineUsers, startGame, packLoading, downloadProgress } = useGame();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const handleDelete = async () => {
     if (!window.confirm(t('lobby.deleteConfirm'))) return;
@@ -52,6 +54,28 @@ const Lobby = () => {
       padding: '2rem',
       gap: '1.5rem'
     }}>
+      {/* Settings button in the top left corner */}
+      <div style={{ position: 'absolute', top: '1rem', left: '1rem', zIndex: 10 }}>
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="glass-panel"
+          style={{
+            padding: '0.5rem 1rem',
+            color: 'var(--text-secondary)',
+            border: '1px solid var(--glass-border)',
+            cursor: 'pointer',
+            fontSize: '0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            transition: 'var(--transition-fast)'
+          }}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
+        >
+          <span>⚙️</span> {t('common.settings')}
+        </button>
+      </div>
       <div className="glass-panel" style={{
         padding: '2.5rem',
         width: '100%',
@@ -158,6 +182,7 @@ const Lobby = () => {
           {t('lobby.leave')}
         </button>
       </div>
+      {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} isAdmin={isHost} />}
     </div>
   );
 };

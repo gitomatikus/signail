@@ -10,8 +10,8 @@ import { LanguageProvider } from './i18n/LanguageContext';
 
 // GameProvider needs the logged-in user that AuthWrapper injects, so this
 // little bridge receives it as a prop and passes it down.
-const GameRoutes = ({ user, children }) => (
-  <GameProvider user={user}>
+const GameRoutes = ({ user, onUpdateUser, children }) => (
+  <GameProvider user={user} onUpdateUser={onUpdateUser}>
     {children}
   </GameProvider>
 );

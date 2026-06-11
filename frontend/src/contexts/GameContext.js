@@ -14,7 +14,7 @@ export const useGame = () => useContext(GameContext);
 // Connects the current user to one game room and exposes everything the
 // game pages need: gameId, host role, game info (lobby/started, host
 // name/image), and the live player list.
-export const GameProvider = ({ user, children }) => {
+export const GameProvider = ({ user, onUpdateUser, children }) => {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -37,6 +37,22 @@ export const GameProvider = ({ user, children }) => {
   useEffect(() => {
     userRef.current = user;
   }, [user]);
+
+  // Profile edits from the header/settings modal: keep AuthWrapper's copy in
+  // sync, then push the change over the socket. Players re-announce themselves
+  // via user_login; the host sends a dedicated host-profile update.
+  const handleUpdateUser = useCallback((updatedData) => {
+    if (onUpdateUser) {
+      onUpdateUser(updatedData);
+    }
+    if (!isHost && userRef.current) {
+      const updatedUser = { ...userRef.current, ...updatedData };
+      wsManager.sendUserLogin(updatedUser);
+    } else if (isHost) {
+      wsManager.sendUpdateHostProfile(updatedData.name, updatedData.imageUrl);
+    }
+  }, [onUpdateUser, isHost]);
+
   useEffect(() => {
     gameInfoRef.current = gameInfo;
   }, [gameInfo]);
@@ -207,7 +223,7 @@ export const GameProvider = ({ user, children }) => {
   }
 
   return (
-    <GameContext.Provider value={{ gameId, isHost, user, gameInfo, onlineUsers, startGame, pack, packLoading, downloadProgress, loadPack }}>
+    <GameContext.Provider value={{ gameId, isHost, user, onUpdateUser: handleUpdateUser, gameInfo, onlineUsers, startGame, pack, packLoading, downloadProgress, loadPack }}>
       {children}
     </GameContext.Provider>
   );

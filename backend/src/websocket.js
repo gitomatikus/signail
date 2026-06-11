@@ -141,6 +141,19 @@ class WebSocketManager {
         game.broadcast({ type: 'game_started', data: { gameId: game.id } });
         game.broadcastGameInfo();
       }
+    } else if (data.type === 'update_host_profile') {
+      // Host edits their own nickname/avatar from the profile modal; apply it
+      // to the game and rebroadcast so every client updates live.
+      if (ws.isHost) {
+        const { name, imageUrl } = data.data || {};
+        if (typeof name === 'string' && name.trim()) {
+          game.hostName = name.trim();
+        }
+        if (typeof imageUrl === 'string') {
+          game.hostImageUrl = imageUrl.trim();
+        }
+        game.broadcastGameInfo();
+      }
     } else if (data.type === 'question_select') {
       const { questionId, userId } = data.data;
       const selectorId = userId || game.lastGreenFrameUser;
