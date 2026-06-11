@@ -60,7 +60,7 @@ export const GameProvider = ({ user, children }) => {
       }
       if (!response.body || !window.ReadableStream) {
         const data = await response.json();
-        await indexedDBService.savePack({ id: `pack-${gameId}`, ...data });
+        await indexedDBService.savePack({ ...data, id: `pack-${gameId}` });
         setPack(data);
         setPackLoading(false);
         return;
@@ -93,7 +93,7 @@ export const GameProvider = ({ user, children }) => {
       }
       const text = new TextDecoder('utf-8').decode(allChunks);
       const data = JSON.parse(text);
-      await indexedDBService.savePack({ id: `pack-${gameId}`, ...data });
+      await indexedDBService.savePack({ ...data, id: `pack-${gameId}` });
       setPack(data);
     } catch (error) {
       console.error('Error loading pack in context:', error);

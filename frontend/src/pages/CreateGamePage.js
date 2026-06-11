@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import config from '../config';
 import { saveHostToken } from '../services/gameAuth';
+import { applyCacheKey } from '../services/cacheVersion';
+import { indexedDBService } from '../services/indexedDB';
 import { useTranslation } from '../i18n/LanguageContext';
 
 // Creates a game: registers it (host identity + optional password), then
@@ -42,7 +44,11 @@ const CreateGamePage = ({ user }) => {
         };
         xhr.onload = () => {
             if (xhr.status === 200) {
-                resolve();
+                try {
+                    resolve(JSON.parse(xhr.responseText).data || {});
+                } catch (e) {
+                    reject(new Error('create.uploadFailed'));
+                }
             } else {
                 let message = 'create.uploadFailed';
                 try {
@@ -55,6 +61,18 @@ const CreateGamePage = ({ user }) => {
         // Send the raw file: the browser streams it, the server pipes it to disk
         xhr.send(file);
     });
+
+    const cacheUploadedPack = async (gameId, cacheKey) => {
+        try {
+            await applyCacheKey(gameId, cacheKey);
+            const pack = JSON.parse(await file.text());
+            await indexedDBService.savePack({ ...pack, id: `pack-${gameId}` });
+        } catch (error) {
+            // The upload already succeeded. Let GameContext download the pack
+            // from the server if local parsing or IndexedDB storage fails.
+            console.warn('Could not cache uploaded pack locally:', error);
+        }
+    };
 
     const handleCreate = async () => {
         if (!file) {
@@ -83,7 +101,8 @@ const CreateGamePage = ({ user }) => {
             created = result.data;
             saveHostToken(created.gameId, created.hostToken);
 
-            await uploadPack(created.gameId, created.hostToken);
+            const uploaded = await uploadPack(created.gameId, created.hostToken);
+            await cacheUploadedPack(created.gameId, uploaded.cacheKey);
             navigate(`/game/${created.gameId}`);
         } catch (err) {
             setError(err.message);
