@@ -30,12 +30,19 @@ export const GameProvider = ({ user, children }) => {
 
   const userRef = useRef(user);
   const gameInfoRef = useRef(gameInfo);
+  // navigate changes identity on every pathname change (non-data router), so
+  // the connection effect reads it through a ref - listing it as a dependency
+  // would tear down and reconnect the socket on every in-game navigation
+  const navigateRef = useRef(navigate);
   useEffect(() => {
     userRef.current = user;
   }, [user]);
   useEffect(() => {
     gameInfoRef.current = gameInfo;
   }, [gameInfo]);
+  useEffect(() => {
+    navigateRef.current = navigate;
+  }, [navigate]);
 
   const loadPack = useCallback(async (info) => {
     try {
@@ -147,11 +154,11 @@ export const GameProvider = ({ user, children }) => {
         setOnlineUsers(data.data);
       } else if (data.type === 'game_not_found' || data.type === 'game_deleted') {
         setError('game.noLongerExists');
-        setTimeout(() => navigate('/'), 1500);
+        setTimeout(() => navigateRef.current('/'), 1500);
       } else if (data.type === 'join_rejected') {
         sessionStorage.removeItem(`gamePassword-${gameId}`);
         setError('game.wrongPassword');
-        setTimeout(() => navigate('/'), 1500);
+        setTimeout(() => navigateRef.current('/'), 1500);
       } else if (data.type === 'cache_key_update' && data.data?.cacheKey) {
         // Server rotated the cache key (new pack uploaded / cache cleared).
         // Drop local caches and reload from the board so everyone picks up
@@ -169,7 +176,7 @@ export const GameProvider = ({ user, children }) => {
       unsubscribe();
       wsManager.disconnect();
     };
-  }, [gameId, navigate, loadPack]);
+  }, [gameId, loadPack]);
 
   const startGame = useCallback(() => {
     wsManager.sendStartGame();
