@@ -256,6 +256,10 @@ class RealtimeManager {
     this.send({ type: 'user_login', data: userData });
   }
 
+  sendUpdateHostProfile(name, imageUrl) {
+    this.send({ type: 'update_host_profile', data: { name, imageUrl } });
+  }
+
   sendUserLogout(userData) {
     this.send({ type: 'user_logout', data: userData });
   }

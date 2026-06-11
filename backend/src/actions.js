@@ -194,6 +194,17 @@ function handleAction(game, ctx, type, data) {
         data: { questionId, action, time, mediaIndex, src }
       });
     }
+  } else if (type === 'update_host_profile') {
+    if (ctx.isHost) {
+      const { name, imageUrl } = data || {};
+      if (typeof name === 'string' && name.trim()) {
+        game.hostName = name.trim();
+      }
+      if (typeof imageUrl === 'string') {
+        game.hostImageUrl = imageUrl.trim();
+      }
+      game.broadcastGameInfo();
+    }
   }
 }
 

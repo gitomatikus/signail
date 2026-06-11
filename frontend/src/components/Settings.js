@@ -11,11 +11,13 @@ import { useTranslation } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import { THEMES, getTheme, applyTheme } from '../utils/theme';
 import { HOST_LAYOUTS, getHostLayout, setHostLayout } from '../utils/hostLayout';
+import EditProfileModal from './EditProfileModal';
 
 const Settings = ({ onClose, isAdmin = false }) => {
-  const { gameId, gameInfo } = useGame() || {};
+  const { gameId, gameInfo, user, onUpdateUser } = useGame() || {};
   const navigate = useNavigate();
   const { t, translateMessage } = useTranslation();
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [isClearingCache, setIsClearingCache] = useState(false);
   const [isClearingPack, setIsClearingPack] = useState(false);
   // message: { text, isError } — text is a translation key or a server message
@@ -273,6 +275,16 @@ const Settings = ({ onClose, isAdmin = false }) => {
             </div>
           )}
 
+          {user && onUpdateUser && (
+            <button
+              onClick={() => setEditProfileOpen(true)}
+              className="btn-primary"
+              style={{ width: '100%' }}
+            >
+              {t('profile.editProfileBtn')}
+            </button>
+          )}
+
           {gameId && (
             <button
               onClick={handleExitGame}
@@ -336,6 +348,16 @@ const Settings = ({ onClose, isAdmin = false }) => {
           {t('common.close')}
         </button>
       </div>
+      {editProfileOpen && (
+        <EditProfileModal
+          user={user}
+          onClose={() => setEditProfileOpen(false)}
+          onSave={(data) => {
+            onUpdateUser(data);
+            setEditProfileOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 

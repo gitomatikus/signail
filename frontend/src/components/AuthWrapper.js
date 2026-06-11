@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import LoginPage from './LoginPage';
 import LanguageSwitcher from './LanguageSwitcher';
+import EditProfileModal from './EditProfileModal';
 import { useTranslation } from '../i18n/LanguageContext';
 import { THEMES, getTheme, applyTheme } from '../utils/theme';
 
@@ -21,6 +22,7 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
     }
   });
   const [loginOpen, setLoginOpen] = useState(false);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [theme, setTheme] = useState(() => getTheme());
 
   const handleThemeChange = (e) => {
@@ -36,6 +38,15 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
   const handleLogout = () => {
     localStorage.removeItem('user');
     setUser(null);
+  };
+
+  const handleUpdateUser = (updatedData) => {
+    setUser((prevUser) => {
+      if (!prevUser) return null;
+      const newUser = { ...prevUser, ...updatedData };
+      localStorage.setItem('user', JSON.stringify(newUser));
+      return newUser;
+    });
   };
 
   if (!user && requireAuth) {
@@ -69,7 +80,23 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
           <LanguageSwitcher />
           {user && (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div
+                onClick={() => setEditProfileOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  cursor: 'pointer',
+                  padding: '0.3rem 0.6rem',
+                  borderRadius: '8px',
+                  background: 'var(--surface-soft)',
+                  border: '1px solid var(--glass-border)',
+                  transition: 'var(--transition-fast)'
+                }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--primary)'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
+                title={t('profile.editTooltip')}
+              >
                 {user.imageUrl.toLowerCase().endsWith('.mp4') ? (
                   <video
                     src={user.imageUrl}
@@ -96,7 +123,8 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
                     }}
                   />
                 )}
-                <span style={{ color: 'var(--text-secondary)' }}>{user.name}</span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{user.name}</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>✏️</span>
               </div>
               <button
                 onClick={handleLogout}
@@ -109,9 +137,19 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
           )}
         </div>
       )}
-      {React.cloneElement(children, { user, onRequestLogin: () => setLoginOpen(true) })}
+      {React.cloneElement(children, { user, onUpdateUser: handleUpdateUser, onRequestLogin: () => setLoginOpen(true) })}
       {!user && loginOpen && (
         <LoginPage onLogin={handleLogin} onClose={() => setLoginOpen(false)} />
+      )}
+      {user && editProfileOpen && (
+        <EditProfileModal
+          user={user}
+          onClose={() => setEditProfileOpen(false)}
+          onSave={(data) => {
+            handleUpdateUser(data);
+            setEditProfileOpen(false);
+          }}
+        />
       )}
     </div>
   );

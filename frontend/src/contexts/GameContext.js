@@ -14,7 +14,7 @@ export const useGame = () => useContext(GameContext);
 // Connects the current user to one game room and exposes everything the
 // game pages need: gameId, host role, game info (lobby/started, host
 // name/image), and the live player list.
-export const GameProvider = ({ user, children }) => {
+export const GameProvider = ({ user, onUpdateUser, children }) => {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -40,6 +40,18 @@ export const GameProvider = ({ user, children }) => {
   useEffect(() => {
     userRef.current = user;
   }, [user]);
+
+  const handleUpdateUser = useCallback((updatedData) => {
+    if (onUpdateUser) {
+      onUpdateUser(updatedData);
+    }
+    if (!isHost && userRef.current) {
+      const updatedUser = { ...userRef.current, ...updatedData };
+      realtimeManager.sendUserLogin(updatedUser);
+    } else if (isHost) {
+      realtimeManager.sendUpdateHostProfile(updatedData.name, updatedData.imageUrl);
+    }
+  }, [onUpdateUser, isHost]);
   useEffect(() => {
     gameInfoRef.current = gameInfo;
   }, [gameInfo]);
@@ -213,7 +225,7 @@ export const GameProvider = ({ user, children }) => {
   }
 
   return (
-    <GameContext.Provider value={{ gameId, isHost, user, gameInfo, onlineUsers, startGame, pack, packLoading, downloadProgress, loadPack, connectionLost }}>
+    <GameContext.Provider value={{ gameId, isHost, user, onUpdateUser: handleUpdateUser, gameInfo, onlineUsers, startGame, pack, packLoading, downloadProgress, loadPack, connectionLost }}>
       {connectionLost && (
         <div style={{
           position: 'fixed',
