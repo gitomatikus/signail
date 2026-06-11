@@ -9,6 +9,24 @@
 
 export const MAX_AVATAR_BYTES = 200 * 1024;
 
+// True for inline image payloads like the ones compressImageToDataUrl produces
+// (data:image/webp;base64,...). These are valid avatar sources but aren't
+// "URLs" in the file-extension sense, so callers treat them like a pasted
+// image (chip + preview) rather than running them through URL validation.
+export const isImageDataUrl = (value) =>
+  typeof value === 'string' && /^data:image\//i.test(value.trim());
+
+// Approximate decoded size of a base64 data URL, for the "(N KB)" size label.
+// Returns 0 for anything without a base64 payload.
+export const dataUrlBytes = (dataUrl) => {
+  if (typeof dataUrl !== 'string') return 0;
+  const comma = dataUrl.indexOf(',');
+  if (comma < 0) return 0;
+  const b64 = dataUrl.slice(comma + 1);
+  const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
+};
+
 // {dim, quality} pairs tried in order; first result under the budget wins.
 const ENCODE_LADDER = [
   { dim: 1024, quality: 0.85 },

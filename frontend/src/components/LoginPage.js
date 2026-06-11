@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import Logo from './Logo';
-import { compressImageToDataUrl } from '../utils/compressImage';
+import { compressImageToDataUrl, isImageDataUrl, dataUrlBytes } from '../utils/compressImage';
 
 // Standalone full-screen login by default; pass onClose to render it as a
 // dismissable overlay on top of the current page (backdrop click / × close).
@@ -17,6 +17,18 @@ const LoginPage = ({ onLogin, onClose }) => {
   const validateImageUrl = (url) => {
     const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.mp4', '.webp'];
     return validExtensions.some(ext => url.toLowerCase().endsWith(ext));
+  };
+
+  // A data URL pasted as text (rather than as a file) becomes a pasted image
+  // too, so it gets the real preview + chip and skips URL-extension validation.
+  const handleImageUrlChange = (value) => {
+    if (isImageDataUrl(value)) {
+      const trimmed = value.trim();
+      setPastedImage({ dataUrl: trimmed, bytes: dataUrlBytes(trimmed) });
+      setImageUrl('');
+    } else {
+      setImageUrl(value);
+    }
   };
 
   // Catches image pastes anywhere in the form; text pastes fall through to
@@ -211,7 +223,7 @@ const LoginPage = ({ onLogin, onClose }) => {
               <input
                 type="text"
                 value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
+                onChange={(e) => handleImageUrlChange(e.target.value)}
                 placeholder={t('login.avatarPlaceholder')}
               />
             )}

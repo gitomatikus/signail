@@ -1,19 +1,38 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useTranslation } from '../i18n/LanguageContext';
-import { compressImageToDataUrl } from '../utils/compressImage';
+import { compressImageToDataUrl, isImageDataUrl, dataUrlBytes } from '../utils/compressImage';
 
 const EditProfileModal = ({ user, onSave, onClose }) => {
   const { t } = useTranslation();
+  // An existing avatar stored as an inline data URL (a previously pasted image)
+  // is restored as a pasted image, so we show the real picture and a size chip
+  // instead of dumping a giant base64 blob into the URL text field.
+  const initialImage = user?.imageUrl || '';
+  const initialIsDataUrl = isImageDataUrl(initialImage);
   const [name, setName] = useState(user?.name || '');
-  const [imageUrl, setImageUrl] = useState(user?.imageUrl || '');
-  const [pastedImage, setPastedImage] = useState(null); // { dataUrl, bytes }
+  const [imageUrl, setImageUrl] = useState(initialIsDataUrl ? '' : initialImage);
+  const [pastedImage, setPastedImage] = useState(
+    initialIsDataUrl ? { dataUrl: initialImage, bytes: dataUrlBytes(initialImage) } : null
+  ); // { dataUrl, bytes }
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
 
   const validateImageUrl = (url) => {
     const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.mp4', '.webp'];
     return validExtensions.some(ext => url.toLowerCase().endsWith(ext));
+  };
+
+  // A data URL pasted as text (rather than as a file) becomes a pasted image
+  // too, so it gets the real preview + chip and skips URL-extension validation.
+  const handleImageUrlChange = (value) => {
+    if (isImageDataUrl(value)) {
+      const trimmed = value.trim();
+      setPastedImage({ dataUrl: trimmed, bytes: dataUrlBytes(trimmed) });
+      setImageUrl('');
+    } else {
+      setImageUrl(value);
+    }
   };
 
   const handlePaste = async (e) => {
@@ -193,7 +212,7 @@ const EditProfileModal = ({ user, onSave, onClose }) => {
               <input
                 type="text"
                 value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
+                onChange={(e) => handleImageUrlChange(e.target.value)}
                 placeholder={t('login.avatarPlaceholder')}
               />
             )}
