@@ -17,7 +17,6 @@ const GameBoard = ({ isAdmin = false }) => {
     const savedRoundIndex = localStorage.getItem(`currentRoundIndex-${gameId}`);
     return savedRoundIndex ? parseInt(savedRoundIndex) : 0;
   });
-  const [hovered, setHovered] = useState({});
 
   useEffect(() => {
     const savedQuestions = localStorage.getItem(`selectedQuestions-${gameId}`);
@@ -162,7 +161,7 @@ const GameBoard = ({ isAdmin = false }) => {
             <div style={{
               width: '100%',
               height: '8px',
-              background: 'rgba(255, 255, 255, 0.1)',
+              background: 'var(--track)',
               borderRadius: '999px',
               overflow: 'hidden',
               border: '1px solid var(--glass-border)'
@@ -234,44 +233,23 @@ const GameBoard = ({ isAdmin = false }) => {
       }}>
         {isAdmin && (
           <button
+            className="round-nav"
             onClick={currentRoundIndex === 0 ? undefined : goToPreviousRound}
             disabled={currentRoundIndex === 0}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: currentRoundIndex === 0 ? 'var(--text-muted)' : 'var(--primary)',
-              fontSize: '2rem',
-              cursor: currentRoundIndex === 0 ? 'default' : 'pointer',
-              transition: 'var(--transition-fast)',
-              padding: '0.5rem'
-            }}
           >
             ←
           </button>
         )}
 
-        <h2 style={{
-          margin: 0,
-          color: 'var(--text-primary)',
-          fontSize: '2rem',
-          fontWeight: '600'
-        }}>
+        <h2 className="round-title">
           {round.name}
         </h2>
 
         {isAdmin && (
           <button
+            className="round-nav"
             onClick={currentRoundIndex >= pack.rounds.length - 1 ? undefined : goToNextRound}
             disabled={currentRoundIndex >= pack.rounds.length - 1}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: currentRoundIndex >= pack.rounds.length - 1 ? 'var(--text-muted)' : 'var(--primary)',
-              fontSize: '2rem',
-              cursor: currentRoundIndex >= pack.rounds.length - 1 ? 'default' : 'pointer',
-              transition: 'var(--transition-fast)',
-              padding: '0.5rem'
-            }}
           >
             →
           </button>
@@ -288,20 +266,7 @@ const GameBoard = ({ isAdmin = false }) => {
         overflowX: 'auto'
       }}>
         {themes.map((theme, rowIdx) => [
-          <div key={`theme-${rowIdx}`} style={{
-            background: 'var(--bg-dark)',
-            color: 'var(--text-primary)',
-            fontWeight: '500',
-            fontSize: '1.1rem',
-            textAlign: 'center',
-            padding: '1rem',
-            borderRadius: '12px',
-            minHeight: '80px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px solid var(--glass-border)'
-          }}>
+          <div key={`theme-${rowIdx}`} className="board-theme">
             {theme.name}
           </div>,
           ...Array.from({ length: maxQuestions }).map((_, colIdx) => {
@@ -310,28 +275,23 @@ const GameBoard = ({ isAdmin = false }) => {
               return <div key={`empty-${rowIdx}-${colIdx}`} />;
             }
 
-            const isHovered = hovered[`${rowIdx}-${colIdx}`];
             const isAnswered = selectedQuestions.has(question.id);
-            const isDisabled = (selectedQuestionId && question.id !== selectedQuestionId) || isAnswered;
+            const isLocked = !isAnswered && selectedQuestionId && question.id !== selectedQuestionId;
+            const isDisabled = isLocked || isAnswered;
+            // Row color variant (used by the Party Mix theme); answered tiles
+            // drop it so the dimmed state always wins
+            const rowVariant = ` board-cell--r${rowIdx % 6}`;
+            const cellClass = isAnswered
+              ? 'board-cell board-cell--answered'
+              : `board-cell${rowVariant}${isLocked ? ' board-cell--locked' : ''}`;
 
             return (
               <div
                 key={`q-${rowIdx}-${colIdx}`}
+                className={cellClass}
                 style={{
-                  background: isAnswered
-                    ? 'var(--bg-dark)'
-                    : isHovered && !isDisabled ? 'var(--fill-hover)' : 'var(--fill)',
-                  color: isAnswered ? 'var(--text-muted)' : '#fff',
-                  fontWeight: '700',
-                  fontSize: '2rem',
-                  borderRadius: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: isDisabled ? 'default' : 'pointer',
-                  opacity: isDisabled ? (isAnswered ? 0.5 : 0.3) : 1,
-                  transition: 'background var(--transition-fast), opacity var(--transition-fast)',
-                  border: '1px solid transparent'
+                  // Staggered pop-in, wave running diagonally across the board
+                  animationDelay: `${Math.min((rowIdx + colIdx) * 45, 600)}ms`
                 }}
                 onClick={() => {
                   if (!isDisabled) {
@@ -344,8 +304,6 @@ const GameBoard = ({ isAdmin = false }) => {
                     handleQuestionClick(question);
                   }
                 }}
-                onMouseEnter={() => !isDisabled && setHovered(h => ({ ...h, [`${rowIdx}-${colIdx}`]: true }))}
-                onMouseLeave={() => !isDisabled && setHovered(h => ({ ...h, [`${rowIdx}-${colIdx}`]: false }))}
               >
                 {question.price?.text || ''}
               </div>

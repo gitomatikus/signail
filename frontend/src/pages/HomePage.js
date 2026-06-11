@@ -186,7 +186,7 @@ const HomePage = ({ user, onRequestLogin }) => {
             {games.map(game => {
               const isMine = !!getHostToken(game.id);
               return (
-                <div key={game.id} className="glass-panel" style={{
+                <div key={game.id} className="glass-panel card-hover" style={{
                   padding: '1rem 1.5rem',
                   display: 'flex',
                   alignItems: 'center',
@@ -223,14 +223,8 @@ const HomePage = ({ user, onRequestLogin }) => {
                     {user && isMine && (
                       <button
                         onClick={() => handleDelete(game)}
-                        style={{
-                          padding: '0.5rem 1rem',
-                          background: 'rgba(239, 68, 68, 0.15)',
-                          color: '#ef4444',
-                          border: '1px solid rgba(239, 68, 68, 0.4)',
-                          borderRadius: '8px',
-                          cursor: 'pointer'
-                        }}
+                        className="btn-danger"
+                        style={{ padding: '0.5rem 1rem' }}
                       >
                         {t('home.delete')}
                       </button>
@@ -278,15 +272,8 @@ const HomePage = ({ user, onRequestLogin }) => {
               <button
                 type="button"
                 onClick={() => setPasswordPromptGame(null)}
-                style={{
-                  flex: 1,
-                  padding: '0.5rem 1rem',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--glass-border)',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
+                className="btn-ghost"
+                style={{ flex: 1, padding: '0.5rem 1rem' }}
               >
                 {t('common.cancel')}
               </button>

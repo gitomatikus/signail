@@ -81,7 +81,7 @@ const Lobby = () => {
               margin: '1rem auto 0',
               maxWidth: '320px',
               padding: '0.75rem',
-              background: 'rgba(255, 255, 255, 0.03)',
+              background: 'var(--surface-soft)',
               borderRadius: '8px',
               border: '1px solid var(--glass-border)'
             }}>
@@ -93,7 +93,7 @@ const Lobby = () => {
               <div style={{
                 width: '100%',
                 height: '8px',
-                background: 'rgba(255, 255, 255, 0.1)',
+                background: 'var(--track)',
                 borderRadius: '999px',
                 overflow: 'hidden',
                 border: '1px solid var(--glass-border)'
@@ -138,14 +138,8 @@ const Lobby = () => {
             </button>
             <button
               onClick={handleDelete}
-              style={{
-                padding: '0.75rem 1.5rem',
-                background: 'rgba(239, 68, 68, 0.15)',
-                color: '#ef4444',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
-                borderRadius: '8px',
-                cursor: 'pointer'
-              }}
+              className="btn-danger"
+              style={{ padding: '0.75rem 1.5rem' }}
             >
               {t('lobby.deleteGame')}
             </button>
@@ -158,15 +152,8 @@ const Lobby = () => {
 
         <button
           onClick={() => navigate('/')}
-          style={{
-            alignSelf: 'center',
-            padding: '0.5rem 1.5rem',
-            background: 'rgba(255, 255, 255, 0.08)',
-            color: 'var(--text-secondary)',
-            border: '1px solid var(--glass-border)',
-            borderRadius: '8px',
-            cursor: 'pointer'
-          }}
+          className="btn-ghost"
+          style={{ alignSelf: 'center', padding: '0.5rem 1.5rem', color: 'var(--text-secondary)' }}
         >
           {t('lobby.leave')}
         </button>

@@ -76,6 +76,7 @@ export const translations = {
     'board.errorLoadingPack': 'Error loading pack',
 
     'settings.title': 'Settings',
+    'settings.design': 'Design',
     'settings.clearCache': 'Clear Cache',
     'settings.clearing': 'Clearing...',
     'settings.clearPack': 'Clear Pack',
@@ -215,6 +216,7 @@ export const translations = {
     'board.errorLoadingPack': 'Помилка завантаження паку',
 
     'settings.title': 'Налаштування',
+    'settings.design': 'Дизайн',
     'settings.clearCache': 'Очистити кеш',
     'settings.clearing': 'Очищення...',
     'settings.clearPack': 'Очистити пак',

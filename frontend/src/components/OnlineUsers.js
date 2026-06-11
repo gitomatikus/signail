@@ -312,7 +312,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                 left: '50%',
                 transform: 'translateX(-50%)',
                 background: 'var(--primary)',
-                color: '#fff',
+                color: 'var(--on-primary)',
                 padding: '4px 12px',
                 borderRadius: '9999px',
                 fontSize: '1rem',
@@ -334,14 +334,14 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                 background: isPerfectGuess
                   ? 'linear-gradient(90deg, #ff0040, #ff8c00, #ffd700, #00e676, #00b0ff, #d500f9)'
                   : answersRevealed && closestIds.includes(user.id) ? '#fbbf24' : 'var(--primary)',
-                color: '#fff',
+                color: isPerfectGuess ? '#fff' : 'var(--on-primary)',
                 padding: '4px 12px',
                 borderRadius: '9999px',
                 fontSize: '1rem',
                 fontWeight: 'bold',
                 zIndex: 10,
                 whiteSpace: 'nowrap',
-                textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+                textShadow: isPerfectGuess ? '0 1px 2px rgba(0,0,0,0.6)' : 'none',
                 boxShadow: '0 4px 12px var(--primary-glow)'
               }}>
                 {answerBadge}
@@ -648,7 +648,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               fontWeight: '700',
               letterSpacing: '0.15em',
               color: 'var(--accent)',
-              background: 'rgba(34, 211, 238, 0.1)',
+              background: 'var(--accent-soft)',
               border: '1px solid var(--accent)',
               borderRadius: '9999px',
               padding: '2px 10px'

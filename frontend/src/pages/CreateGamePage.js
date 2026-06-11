@@ -136,14 +136,8 @@ const CreateGamePage = ({ user }) => {
             }}>
                 <button
                     onClick={() => navigate('/')}
-                    className="btn-primary"
-                    style={{
-                        alignSelf: 'flex-start',
-                        background: 'rgba(255, 255, 255, 0.08)',
-                        color: 'var(--text-primary)',
-                        boxShadow: 'none',
-                        border: '1px solid var(--glass-border)'
-                    }}
+                    className="btn-ghost"
+                    style={{ alignSelf: 'flex-start' }}
                 >
                     {t('create.back')}
                 </button>
@@ -180,7 +174,7 @@ const CreateGamePage = ({ user }) => {
                             style={{
                                 width: '100%',
                                 padding: '0.75rem',
-                                background: 'rgba(255, 255, 255, 0.05)',
+                                background: 'var(--surface-soft)',
                                 border: '1px solid var(--glass-border)',
                                 borderRadius: '8px',
                                 color: 'var(--text-primary)',
@@ -193,7 +187,7 @@ const CreateGamePage = ({ user }) => {
                             <div style={{
                                 marginTop: '0.75rem',
                                 padding: '0.5rem 1rem',
-                                background: 'rgba(62, 99, 245, 0.1)',
+                                background: 'var(--accent-soft)',
                                 border: '1px solid var(--accent)',
                                 borderRadius: '8px',
                                 color: 'var(--accent)',
@@ -245,7 +239,7 @@ const CreateGamePage = ({ user }) => {
                             <div style={{
                                 width: '100%',
                                 height: '12px',
-                                background: 'rgba(255, 255, 255, 0.1)',
+                                background: 'var(--track)',
                                 borderRadius: '999px',
                                 overflow: 'hidden',
                                 border: '1px solid var(--glass-border)'

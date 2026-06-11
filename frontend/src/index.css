@@ -38,32 +38,92 @@
     font-display: swap;
 }
 
+/* ============================================================ Themes ====
+   Every theme defines the same variable contract; components reference only
+   variables (plus a few html[data-theme=...] structural overrides below).
+   The selected theme is set as <html data-theme="..."> from utils/theme.js.
+
+   Contract:
+   surfaces  --bg-dark --bg-darker --glass-bg --glass-border --glass-shadow
+             --surface-soft --track --input-bg
+   text      --text-primary --text-secondary --text-muted
+   primary   --primary --primary-hover --primary-glow --on-primary --ring
+             (focus rings, selection, timers, info highlights)
+   secondary --secondary --secondary-glow
+   accent    --accent --accent-glow --accent-soft --accent-line
+             (money: scores, prices, value badges)
+   status    --danger --warning
+   buttons   --grad-primary --btn-primary-text --btn-shadow
+   tiles     --grad-cell --cell-text --cell-border --cell-glow
+             --cell-answered-bg
+   headline  --grad-text --logo-glow
+   progress  --fill --fill-hover
+   backdrop  --aurora --vignette
+   misc      --selection-bg --selection-text --scroll-thumb
+             --scroll-thumb-hover --hover-border
+   ======================================================================= */
+
+/* Default theme: Party Mix — neutral charcoal stage, every board row gets
+   its own color (see the row rules further down) */
 :root {
-    /* Core Colors */
-    --bg-dark: #10131b;
-    --bg-darker: #0a0c11;
-    --primary: #3c54b4;
-    --primary-hover: #3354dd;
-    --primary-glow: rgba(62, 99, 245, 0.3);
-    /* Main game blue for filled surfaces (buttons, board cells, progress
-       bars). Translucent so large areas sit softly on the dark background;
-       the vivid --primary stays for text accents, borders and focus rings */
-    --fill: rgba(67, 95, 203, 0.46);
-    --fill-hover: rgba(67, 95, 203, 0.68);
-    --secondary: #7c5cff;
-    --secondary-glow: rgba(124, 92, 255, 0.3);
-    --accent: #8ba3ff;
-    --accent-glow: rgba(139, 163, 255, 0.3);
+    --bg-dark: #1f232e;
+    --bg-darker: #14161e;
+    --glass-bg: rgba(30, 34, 46, 0.55);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-shadow: 0 8px 32px rgba(5, 7, 12, 0.45);
+    --surface-soft: rgba(255, 255, 255, 0.06);
+    --track: rgba(255, 255, 255, 0.12);
+    --input-bg: rgba(9, 11, 16, 0.6);
 
-    /* Text Colors */
-    --text-primary: #f4f6fb;
-    --text-secondary: #98a0b3;
-    --text-muted: #636b7e;
+    --text-primary: #f2f4f8;
+    --text-secondary: #9aa3b2;
+    --text-muted: #5a6170;
 
-    /* Surfaces (legacy "glass" names; flat cards now) */
-    --glass-bg: #12151e;
-    --glass-border: rgba(255, 255, 255, 0.08);
-    --glass-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    --primary: #2d7ff0;
+    --primary-hover: #4f93f5;
+    --primary-glow: rgba(45, 127, 240, 0.4);
+    --on-primary: #ffffff;
+    --ring: rgba(45, 127, 240, 0.22);
+
+    --secondary: #e8485c;
+    --secondary-glow: rgba(232, 72, 92, 0.35);
+
+    --accent: #f2a724;
+    --accent-glow: rgba(242, 167, 36, 0.35);
+    --accent-soft: rgba(242, 167, 36, 0.12);
+    --accent-line: rgba(242, 167, 36, 0.45);
+
+    --danger: #ff5470;
+    --warning: #ffb02e;
+
+    --grad-primary: linear-gradient(180deg, #ffffff 0%, #e9ecf2 100%);
+    --btn-primary-text: #15171f;
+    --btn-shadow: rgba(0, 0, 0, 0.4);
+
+    --grad-cell: linear-gradient(180deg, #3b87f2 0%, #2566cd 100%);
+    --cell-text: #ffffff;
+    --cell-border: rgba(255, 255, 255, 0.16);
+    --cell-glow: rgba(255, 255, 255, 0.22);
+    --cell-answered-bg: rgba(10, 12, 17, 0.55);
+
+    --grad-text: linear-gradient(92deg, #e8485c 0%, #f2a724 35%, #1fb377 68%, #2d7ff0 100%);
+    --logo-glow: rgba(242, 167, 36, 0.22);
+
+    --fill: linear-gradient(180deg, #f6b53e 0%, #df9416 100%);
+    --fill-hover: var(--fill);
+
+    --aurora:
+        radial-gradient(40% 46% at 14% 22%, rgba(232, 72, 92, 0.13) 0%, transparent 70%),
+        radial-gradient(42% 50% at 86% 18%, rgba(45, 127, 240, 0.14) 0%, transparent 70%),
+        radial-gradient(44% 50% at 82% 84%, rgba(242, 167, 36, 0.1) 0%, transparent 70%),
+        radial-gradient(36% 42% at 12% 86%, rgba(31, 179, 119, 0.12) 0%, transparent 70%);
+    --vignette: radial-gradient(120% 110% at 50% 0%, transparent 55%, rgba(4, 5, 9, 0.6) 100%);
+
+    --selection-bg: rgba(242, 167, 36, 0.9);
+    --selection-text: #1d1402;
+    --scroll-thumb: rgba(255, 255, 255, 0.18);
+    --scroll-thumb-hover: rgba(255, 255, 255, 0.35);
+    --hover-border: rgba(255, 255, 255, 0.28);
 
     /* Spacing */
     --spacing-xs: 0.25rem;
@@ -77,13 +137,332 @@
     --transition-normal: 0.3s ease;
 }
 
+/* Neon Arcade — deep violet space, electric gradients */
+html[data-theme="neon"] {
+    --bg-dark: #1c1442;
+    --bg-darker: #0e0a23;
+    --glass-bg: rgba(28, 21, 62, 0.55);
+    --glass-border: rgba(165, 148, 255, 0.16);
+    --glass-shadow: 0 8px 32px rgba(8, 4, 30, 0.45);
+    --surface-soft: rgba(255, 255, 255, 0.06);
+    --track: rgba(255, 255, 255, 0.12);
+    --input-bg: rgba(12, 8, 32, 0.6);
+
+    --text-primary: #f7f6ff;
+    --text-secondary: #aaa3d4;
+    --text-muted: #6d678f;
+
+    --primary: #8c6cff;
+    --primary-hover: #a285ff;
+    --primary-glow: rgba(140, 108, 255, 0.45);
+    --on-primary: #ffffff;
+    --ring: rgba(140, 108, 255, 0.2);
+
+    --secondary: #ff4fd8;
+    --secondary-glow: rgba(255, 79, 216, 0.35);
+
+    --accent: #2de2ff;
+    --accent-glow: rgba(45, 226, 255, 0.35);
+    --accent-soft: rgba(45, 226, 255, 0.12);
+    --accent-line: rgba(45, 226, 255, 0.45);
+
+    --danger: #ff5470;
+    --warning: #ffb02e;
+
+    --grad-primary: linear-gradient(135deg, #6d5dfc 0%, #9a4dff 55%, #e44dff 115%);
+    --btn-primary-text: #ffffff;
+    --btn-shadow: rgba(124, 92, 255, 0.4);
+
+    --grad-cell: linear-gradient(155deg, #5b48f5 0%, #7a3df0 55%, #b32de0 110%);
+    --cell-text: #ffffff;
+    --cell-border: rgba(255, 255, 255, 0.14);
+    --cell-glow: rgba(228, 77, 255, 0.32);
+    --cell-answered-bg: rgba(18, 12, 44, 0.55);
+
+    --grad-text: linear-gradient(92deg, #8c6cff 0%, #ff4fd8 60%, #ffc83d 115%);
+    --logo-glow: rgba(140, 108, 255, 0.4);
+
+    --fill: linear-gradient(135deg, #6d5dfc 0%, #9a4dff 55%, #e44dff 115%);
+    --fill-hover: var(--fill);
+
+    --aurora:
+        radial-gradient(42% 50% at 18% 20%, rgba(124, 77, 255, 0.34) 0%, transparent 70%),
+        radial-gradient(38% 46% at 85% 14%, rgba(255, 61, 154, 0.2) 0%, transparent 70%),
+        radial-gradient(46% 52% at 80% 88%, rgba(64, 110, 255, 0.22) 0%, transparent 70%),
+        radial-gradient(32% 40% at 10% 90%, rgba(45, 226, 255, 0.14) 0%, transparent 70%);
+    --vignette: radial-gradient(120% 110% at 50% 0%, transparent 55%, rgba(6, 3, 20, 0.6) 100%);
+
+    --selection-bg: rgba(140, 108, 255, 0.5);
+    --selection-text: #ffffff;
+    --scroll-thumb: rgba(140, 108, 255, 0.35);
+    --scroll-thumb-hover: rgba(140, 108, 255, 0.6);
+    --hover-border: rgba(165, 148, 255, 0.4);
+}
+
+/* Tide Pool — dark teal water, coral actions, sand-gold money */
+html[data-theme="tidepool"] {
+    --bg-dark: #10333b;
+    --bg-darker: #0a2228;
+    --glass-bg: rgba(13, 42, 49, 0.55);
+    --glass-border: rgba(242, 214, 160, 0.15);
+    --glass-shadow: 0 8px 32px rgba(2, 10, 12, 0.45);
+    --surface-soft: rgba(255, 255, 255, 0.05);
+    --track: rgba(255, 255, 255, 0.12);
+    --input-bg: rgba(5, 18, 21, 0.6);
+
+    --text-primary: #eff7f4;
+    --text-secondary: #8fb8bd;
+    --text-muted: #4e6e73;
+
+    --primary: #f2d6a0;
+    --primary-hover: #f8e3bd;
+    --primary-glow: rgba(242, 214, 160, 0.35);
+    --on-primary: #2e2008;
+    --ring: rgba(242, 214, 160, 0.22);
+
+    --secondary: #ff6b4a;
+    --secondary-glow: rgba(255, 107, 74, 0.35);
+
+    --accent: #f2d6a0;
+    --accent-glow: rgba(242, 214, 160, 0.35);
+    --accent-soft: rgba(242, 214, 160, 0.12);
+    --accent-line: rgba(242, 214, 160, 0.45);
+
+    --danger: #ff5470;
+    --warning: #ffb02e;
+
+    --grad-primary: linear-gradient(180deg, #ff7553 0%, #e5512c 100%);
+    --btn-primary-text: #38130a;
+    --btn-shadow: rgba(229, 81, 44, 0.35);
+
+    --grad-cell: linear-gradient(180deg, #14939e 0%, #0d6b74 100%);
+    --cell-text: #effaf6;
+    --cell-border: rgba(242, 214, 160, 0.2);
+    --cell-glow: rgba(242, 214, 160, 0.3);
+    --cell-answered-bg: rgba(13, 40, 46, 0.55);
+
+    --grad-text: linear-gradient(92deg, #f8e3b8 0%, #f2d6a0 55%, #d9b26e 110%);
+    --logo-glow: rgba(242, 214, 160, 0.3);
+
+    --fill: linear-gradient(180deg, #f6dfae 0%, #e3bd7d 100%);
+    --fill-hover: var(--fill);
+
+    --aurora:
+        radial-gradient(50% 38% at 50% 0%, rgba(242, 214, 160, 0.08) 0%, transparent 70%),
+        radial-gradient(42% 50% at 16% 30%, rgba(17, 128, 138, 0.3) 0%, transparent 70%),
+        radial-gradient(46% 52% at 84% 80%, rgba(13, 90, 98, 0.28) 0%, transparent 70%),
+        radial-gradient(30% 36% at 88% 12%, rgba(255, 107, 74, 0.08) 0%, transparent 70%);
+    --vignette: radial-gradient(120% 110% at 50% 0%, transparent 55%, rgba(2, 9, 11, 0.62) 100%);
+
+    --selection-bg: rgba(242, 214, 160, 0.9);
+    --selection-text: #241a05;
+    --scroll-thumb: rgba(242, 214, 160, 0.28);
+    --scroll-thumb-hover: rgba(242, 214, 160, 0.5);
+    --hover-border: rgba(242, 214, 160, 0.4);
+}
+
+/* Card Table — deep felt green, brass-gold value, red actions */
+html[data-theme="cardtable"] {
+    --bg-dark: #143626;
+    --bg-darker: #0b2018;
+    --glass-bg: rgba(17, 42, 30, 0.55);
+    --glass-border: rgba(233, 196, 120, 0.16);
+    --glass-shadow: 0 8px 32px rgba(3, 12, 7, 0.45);
+    --surface-soft: rgba(255, 255, 255, 0.05);
+    --track: rgba(255, 255, 255, 0.12);
+    --input-bg: rgba(6, 20, 13, 0.6);
+
+    --text-primary: #f2ebd4;
+    --text-secondary: #a7bfa9;
+    --text-muted: #5e7766;
+
+    --primary: #e9b53c;
+    --primary-hover: #f3c45a;
+    --primary-glow: rgba(233, 181, 60, 0.4);
+    --on-primary: #241803;
+    --ring: rgba(233, 181, 60, 0.18);
+
+    --secondary: #e0532f;
+    --secondary-glow: rgba(224, 83, 47, 0.35);
+
+    --accent: #e9b53c;
+    --accent-glow: rgba(233, 181, 60, 0.4);
+    --accent-soft: rgba(233, 181, 60, 0.12);
+    --accent-line: rgba(233, 181, 60, 0.4);
+
+    --danger: #ff5470;
+    --warning: #ffb02e;
+
+    --grad-primary: linear-gradient(180deg, #e25a33 0%, #c8431f 100%);
+    --btn-primary-text: #fff7ec;
+    --btn-shadow: rgba(196, 62, 28, 0.4);
+
+    --grad-cell: linear-gradient(180deg, #218559 0%, #175c3e 100%);
+    --cell-text: #ffd66b;
+    --cell-border: rgba(246, 214, 130, 0.22);
+    --cell-glow: rgba(233, 181, 60, 0.32);
+    --cell-answered-bg: rgba(16, 40, 28, 0.55);
+
+    --grad-text: linear-gradient(92deg, #f6d27a 0%, #e9b53c 55%, #d2942a 110%);
+    --logo-glow: rgba(233, 181, 60, 0.35);
+
+    --fill: linear-gradient(180deg, #f0c254 0%, #dfa62e 100%);
+    --fill-hover: var(--fill);
+
+    --aurora:
+        radial-gradient(50% 38% at 50% 0%, rgba(233, 181, 60, 0.1) 0%, transparent 70%),
+        radial-gradient(42% 50% at 16% 28%, rgba(31, 122, 82, 0.3) 0%, transparent 70%),
+        radial-gradient(46% 52% at 84% 80%, rgba(20, 96, 64, 0.26) 0%, transparent 70%),
+        radial-gradient(30% 36% at 88% 12%, rgba(224, 83, 47, 0.07) 0%, transparent 70%);
+    --vignette: radial-gradient(120% 110% at 50% 0%, transparent 55%, rgba(3, 10, 6, 0.62) 100%);
+
+    --selection-bg: rgba(233, 181, 60, 0.9);
+    --selection-text: #1a1206;
+    --scroll-thumb: rgba(233, 181, 60, 0.28);
+    --scroll-thumb-hover: rgba(233, 181, 60, 0.5);
+    --hover-border: rgba(233, 196, 120, 0.4);
+}
+
+/* Royal Court — navy ink, royal blue tiles, gold for money and actions */
+html[data-theme="royal"] {
+    --bg-dark: #15223f;
+    --bg-darker: #0a1228;
+    --glass-bg: rgba(18, 30, 58, 0.55);
+    --glass-border: rgba(245, 196, 90, 0.16);
+    --glass-shadow: 0 8px 32px rgba(3, 7, 18, 0.45);
+    --surface-soft: rgba(255, 255, 255, 0.05);
+    --track: rgba(255, 255, 255, 0.12);
+    --input-bg: rgba(6, 11, 26, 0.6);
+
+    --text-primary: #f8f7f2;
+    --text-secondary: #b8c6e8;
+    --text-muted: #5a6a8f;
+
+    --primary: #f5b62e;
+    --primary-hover: #f8c452;
+    --primary-glow: rgba(245, 182, 46, 0.4);
+    --on-primary: #2a1b00;
+    --ring: rgba(245, 182, 46, 0.2);
+
+    --secondary: #2e63e7;
+    --secondary-glow: rgba(46, 99, 231, 0.4);
+
+    --accent: #f5b62e;
+    --accent-glow: rgba(245, 182, 46, 0.4);
+    --accent-soft: rgba(245, 182, 46, 0.12);
+    --accent-line: rgba(245, 182, 46, 0.45);
+
+    --danger: #ff5470;
+    --warning: #ffb02e;
+
+    --grad-primary: linear-gradient(180deg, #f8c24a 0%, #e5a41c 100%);
+    --btn-primary-text: #2a1b00;
+    --btn-shadow: rgba(229, 164, 28, 0.35);
+
+    --grad-cell: linear-gradient(180deg, #2a63e8 0%, #1c45b8 100%);
+    --cell-text: #ffffff;
+    --cell-border: rgba(140, 170, 255, 0.25);
+    --cell-glow: rgba(46, 99, 231, 0.45);
+    --cell-answered-bg: rgba(17, 26, 50, 0.6);
+
+    --grad-text: linear-gradient(92deg, #f8d97e 0%, #f5b62e 55%, #d99a18 110%);
+    --logo-glow: rgba(245, 182, 46, 0.35);
+
+    --fill: linear-gradient(180deg, #f6c351 0%, #e2a31f 100%);
+    --fill-hover: var(--fill);
+
+    --aurora:
+        radial-gradient(50% 38% at 50% 0%, rgba(245, 182, 46, 0.09) 0%, transparent 70%),
+        radial-gradient(42% 50% at 16% 28%, rgba(36, 88, 214, 0.26) 0%, transparent 70%),
+        radial-gradient(46% 52% at 84% 80%, rgba(23, 58, 150, 0.3) 0%, transparent 70%),
+        radial-gradient(30% 36% at 88% 12%, rgba(120, 160, 255, 0.08) 0%, transparent 70%);
+    --vignette: radial-gradient(120% 110% at 50% 0%, transparent 55%, rgba(3, 6, 16, 0.62) 100%);
+
+    --selection-bg: rgba(245, 182, 46, 0.9);
+    --selection-text: #241700;
+    --scroll-thumb: rgba(245, 182, 46, 0.28);
+    --scroll-thumb-hover: rgba(245, 182, 46, 0.5);
+    --hover-border: rgba(245, 196, 90, 0.4);
+}
+
+/* Daylight — warm paper, vivid blue tiles, coral actions. The only light
+   theme: bg-dark/bg-darker keep their semantic roles but flip in lightness */
+html[data-theme="daylight"] {
+    --bg-dark: #ffffff;
+    --bg-darker: #faf5ea;
+    --glass-bg: rgba(255, 255, 255, 0.75);
+    --glass-border: rgba(32, 38, 59, 0.12);
+    --glass-shadow: 0 8px 28px rgba(31, 41, 55, 0.1);
+    --surface-soft: rgba(32, 38, 59, 0.05);
+    --track: rgba(32, 38, 59, 0.12);
+    --input-bg: #ffffff;
+
+    --text-primary: #20263b;
+    --text-secondary: #6e7894;
+    --text-muted: #a3a695;
+
+    --primary: #3d6bf5;
+    --primary-hover: #5d83f7;
+    --primary-glow: rgba(61, 107, 245, 0.3);
+    --on-primary: #ffffff;
+    --ring: rgba(61, 107, 245, 0.18);
+
+    --secondary: #f0454f;
+    --secondary-glow: rgba(240, 69, 79, 0.3);
+
+    --accent: #d98e0b;
+    --accent-glow: rgba(217, 142, 11, 0.3);
+    --accent-soft: rgba(217, 142, 11, 0.12);
+    --accent-line: rgba(217, 142, 11, 0.45);
+
+    --danger: #d22b44;
+    --warning: #9a6a00;
+
+    --grad-primary: linear-gradient(180deg, #f4565e 0%, #dd3640 100%);
+    --btn-primary-text: #ffffff;
+    --btn-shadow: rgba(221, 54, 64, 0.3);
+
+    --grad-cell: linear-gradient(180deg, #4a76f7 0%, #3057d8 100%);
+    --cell-text: #ffffff;
+    --cell-border: rgba(32, 38, 59, 0.1);
+    --cell-glow: rgba(61, 107, 245, 0.35);
+    --cell-answered-bg: rgba(32, 38, 59, 0.08);
+
+    --grad-text: linear-gradient(92deg, #3d6bf5 0%, #f0454f 110%);
+    --logo-glow: rgba(61, 107, 245, 0.25);
+
+    --fill: linear-gradient(180deg, #f2b135 0%, #dd9a12 100%);
+    --fill-hover: var(--fill);
+
+    --aurora:
+        radial-gradient(50% 38% at 50% 0%, rgba(245, 166, 35, 0.12) 0%, transparent 70%),
+        radial-gradient(42% 50% at 14% 30%, rgba(61, 107, 245, 0.08) 0%, transparent 70%),
+        radial-gradient(46% 52% at 86% 78%, rgba(240, 69, 79, 0.07) 0%, transparent 70%),
+        radial-gradient(32% 38% at 90% 10%, rgba(31, 179, 119, 0.07) 0%, transparent 70%);
+    --vignette: radial-gradient(120% 110% at 50% 0%, transparent 60%, rgba(196, 178, 140, 0.28) 100%);
+
+    --selection-bg: rgba(61, 107, 245, 0.9);
+    --selection-text: #ffffff;
+    --scroll-thumb: rgba(32, 38, 59, 0.25);
+    --scroll-thumb-hover: rgba(32, 38, 59, 0.45);
+    --hover-border: rgba(61, 107, 245, 0.35);
+}
+
+/* ====================================================== Base layout ==== */
+
+/* The aurora lives on body::before; body/#root must stay transparent or the
+   page background would paint over it. html keeps the base color so there is
+   never a flash. */
+html {
+    background-color: var(--bg-darker);
+}
+
 html,
 body,
 #root {
     margin: 0;
     padding: 0;
     min-height: 100vh;
-    background-color: var(--bg-darker);
     color: var(--text-primary);
     font-family: "Fixel Text", sans-serif;
     font-weight: 500;
@@ -92,8 +471,45 @@ body,
     overflow-x: hidden;
 }
 
+/* Slowly drifting color pools behind every page */
+body::before {
+    content: "";
+    position: fixed;
+    inset: -15%;
+    z-index: -2;
+    pointer-events: none;
+    background: var(--aurora);
+    animation: auroraDrift 26s ease-in-out infinite alternate;
+    will-change: transform;
+}
+
+/* Static vignette so content edges stay readable over the aurora */
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--vignette);
+}
+
+@keyframes auroraDrift {
+    from {
+        transform: translate3d(-2%, -1.5%, 0) scale(1);
+    }
+
+    to {
+        transform: translate3d(2.5%, 3%, 0) scale(1.1);
+    }
+}
+
 * {
     box-sizing: border-box;
+}
+
+::selection {
+    background: var(--selection-bg);
+    color: var(--selection-text);
 }
 
 /* Scrollbar */
@@ -102,24 +518,38 @@ body,
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--bg-dark);
+    background: var(--bg-darker);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--glass-border);
+    background: var(--scroll-thumb);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--text-muted);
+    background: var(--scroll-thumb-hover);
 }
 
-/* Utility Classes */
+/* ================================================== Utility classes ==== */
+
 .glass-panel {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
     border-radius: 16px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+/* List cards that respond to the cursor (e.g. games on the home page) */
+.card-hover {
+    transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.card-hover:hover {
+    transform: translateY(-2px);
+    border-color: var(--hover-border);
+    box-shadow: var(--glass-shadow), 0 0 24px var(--accent-soft);
 }
 
 .brand-logo {
@@ -128,42 +558,326 @@ body,
     letter-spacing: -0.03em;
     line-height: 1;
     color: var(--text-primary);
+    filter: drop-shadow(0 6px 28px var(--logo-glow));
 }
 
 .brand-logo span {
-    color: var(--primary);
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
 }
 
+/* Buttons: primary (hero action), ghost (neutral), danger/warning (soft) */
 .btn-primary {
-    background: var(--fill);
-    color: white;
+    background: var(--grad-primary);
+    color: var(--btn-primary-text);
     border: none;
     padding: 12px 24px;
-    border-radius: 10px;
-    font-weight: 600;
+    border-radius: 12px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
     cursor: pointer;
-    transition: background var(--transition-fast);
+    box-shadow: 0 4px 16px var(--btn-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast), filter var(--transition-fast);
 }
 
-.btn-primary:hover {
-    background: var(--fill-hover);
+.btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.07);
+    box-shadow: 0 7px 22px var(--btn-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.25),
+        inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+}
+
+.btn-primary:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
+    box-shadow: 0 2px 10px var(--btn-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .btn-primary:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
 }
 
-/* Input Fields */
+.btn-ghost {
+    background: var(--surface-soft);
+    color: var(--text-primary);
+    border: 1px solid var(--glass-border);
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.btn-ghost:hover:not(:disabled) {
+    background: var(--track);
+    border-color: var(--hover-border);
+}
+
+.btn-ghost:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.btn-danger {
+    background: rgba(255, 84, 112, 0.14);
+    color: #ff8597;
+    border: 1px solid rgba(255, 84, 112, 0.45);
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: rgba(255, 84, 112, 0.26);
+    box-shadow: 0 0 18px rgba(255, 84, 112, 0.3);
+}
+
+.btn-danger:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.btn-warning {
+    background: rgba(255, 176, 46, 0.14);
+    color: #ffc35e;
+    border: 1px solid rgba(255, 176, 46, 0.45);
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.btn-warning:hover:not(:disabled) {
+    background: rgba(255, 176, 46, 0.26);
+    box-shadow: 0 0 18px rgba(255, 176, 46, 0.3);
+}
+
+.btn-warning:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.btn-danger:disabled,
+.btn-warning:disabled,
+.btn-ghost:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* The soft red/amber buttons assume a dark backdrop; on paper they need
+   full-strength ink versions */
+html[data-theme="daylight"] .btn-danger {
+    background: rgba(210, 43, 68, 0.08);
+    color: #d22b44;
+    border-color: rgba(210, 43, 68, 0.5);
+}
+
+html[data-theme="daylight"] .btn-warning {
+    background: rgba(154, 106, 0, 0.08);
+    color: #9a6a00;
+    border-color: rgba(154, 106, 0, 0.5);
+}
+
+/* ======================================================== Game board ==== */
+
+.board-theme {
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 1.05rem;
+    text-align: center;
+    padding: 1rem;
+    border-radius: 14px;
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--glass-border);
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+}
+
+html[data-theme="daylight"] .board-theme {
+    text-shadow: none;
+}
+
+/* Prize tiles: flat color face, darker bottom edge, pop-in stagger */
+.board-cell {
+    position: relative;
+    background: var(--grad-cell);
+    color: var(--cell-text);
+    font-weight: 700;
+    font-size: 2rem;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border: 1px solid var(--cell-border);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        inset 0 -2px 0 rgba(0, 0, 0, 0.22);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast),
+        filter var(--transition-fast), opacity var(--transition-fast);
+    animation: cellPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
+
+.board-cell:hover {
+    transform: translateY(-3px) scale(1.03);
+    filter: brightness(1.16) saturate(1.08);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.38), 0 0 18px var(--cell-glow),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -2px 0 rgba(0, 0, 0, 0.22);
+    z-index: 1;
+}
+
+.board-cell:active {
+    transform: translateY(-1px) scale(0.99);
+}
+
+/* Already played */
+.board-cell--answered {
+    background: var(--cell-answered-bg);
+    color: var(--text-muted);
+    cursor: default;
+    border-color: transparent;
+    box-shadow: none;
+    text-shadow: none;
+    opacity: 0.55;
+}
+
+/* Another tile is being played right now */
+.board-cell--locked {
+    cursor: default;
+    opacity: 0.3;
+}
+
+.board-cell--answered:hover,
+.board-cell--locked:hover {
+    transform: none;
+    filter: none;
+    box-shadow: none;
+}
+
+/* Party Mix only: each theme row cycles through its own tile color.
+   GameBoard drops the row class once a tile is answered, so these never
+   fight the answered state. */
+html[data-theme="party"] .board-cell--r0 {
+    background: linear-gradient(180deg, #ef5366 0%, #d63a4e 100%);
+}
+
+html[data-theme="party"] .board-cell--r1 {
+    background: linear-gradient(180deg, #3b87f2 0%, #2566cd 100%);
+}
+
+html[data-theme="party"] .board-cell--r2 {
+    background: linear-gradient(180deg, #f5b13a 0%, #e0961a 100%);
+    color: #2a1a00;
+    text-shadow: none;
+}
+
+html[data-theme="party"] .board-cell--r3 {
+    background: linear-gradient(180deg, #1eb377 0%, #14905e 100%);
+}
+
+html[data-theme="party"] .board-cell--r4 {
+    background: linear-gradient(180deg, #9d6bf5 0%, #7e4ad8 100%);
+}
+
+html[data-theme="party"] .board-cell--r5 {
+    background: linear-gradient(180deg, #ee7038 0%, #d4571f 100%);
+}
+
+@keyframes cellPop {
+    from {
+        opacity: 0;
+        transform: scale(0.85) translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Round header: gradient title + circular nav arrows */
+.round-title {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 700;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    filter: drop-shadow(0 4px 18px var(--logo-glow));
+}
+
+.round-nav {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--surface-soft);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.round-nav:hover:not(:disabled) {
+    background: var(--accent-soft);
+    border-color: var(--primary);
+    box-shadow: 0 0 16px var(--primary-glow);
+}
+
+.round-nav:disabled {
+    opacity: 0.25;
+    cursor: default;
+}
+
+/* Question countdown pill; --low takes over in the final seconds */
+.timer-pill {
+    border: 2px solid var(--primary);
+    box-shadow: 0 0 30px var(--primary-glow), var(--glass-shadow);
+}
+
+.timer-pill--low {
+    border-color: var(--danger);
+    box-shadow: 0 0 30px rgba(255, 84, 112, 0.5), var(--glass-shadow);
+    animation: timerPulse 1s ease-in-out infinite;
+}
+
+@keyframes timerPulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.06);
+    }
+}
+
+/* ======================================================= Form fields ==== */
+
 input[type="text"],
 input[type="email"],
 input[type="password"],
 input[type="number"],
 input,
-textarea {
+textarea,
+select {
     width: 100%;
     padding: 12px 16px;
-    background: var(--bg-darker);
+    background: var(--input-bg);
     border: 1px solid var(--glass-border);
     border-radius: 10px;
     color: var(--text-primary);
@@ -178,14 +892,29 @@ input[type="email"]:focus,
 input[type="password"]:focus,
 input[type="number"]:focus,
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(62, 99, 245, 0.15);
+    box-shadow: 0 0 0 3px var(--ring), 0 0 18px var(--ring);
 }
 
 input::placeholder,
 textarea::placeholder {
     color: var(--text-muted);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+    accent-color: var(--primary);
+}
+
+select {
+    cursor: pointer;
+}
+
+select option {
+    background: var(--bg-dark);
+    color: var(--text-primary);
 }
 
 /* Volume slider: the generic input styles above (padding, border, width)
@@ -215,6 +944,7 @@ input[type="range"].volume-slider::-webkit-slider-thumb {
     border-radius: 50%;
     background: var(--text-primary);
     border: none;
+    box-shadow: 0 0 10px var(--primary-glow);
 }
 
 input[type="range"].volume-slider::-moz-range-thumb {
@@ -223,6 +953,7 @@ input[type="range"].volume-slider::-moz-range-thumb {
     border-radius: 50%;
     background: var(--text-primary);
     border: none;
+    box-shadow: 0 0 10px var(--primary-glow);
 }
 
 input[type="range"].volume-slider::-moz-range-track {
@@ -237,6 +968,7 @@ input[type="range"].volume-slider::-moz-range-track {
     max-width: 100%;
     object-fit: contain;
 }
+
 .question-content audio {
     min-width: 400px;
 }
@@ -255,5 +987,24 @@ input[type="range"].volume-slider::-moz-range-track {
     to {
         opacity: 1;
         transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    body::before,
+    .board-cell,
+    .timer-pill--low,
+    .fade-in {
+        animation: none;
+    }
+
+    .btn-primary,
+    .btn-ghost,
+    .btn-danger,
+    .btn-warning,
+    .board-cell,
+    .card-hover {
+        transition: none;
     }
 }

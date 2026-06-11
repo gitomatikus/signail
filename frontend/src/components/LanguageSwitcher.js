@@ -8,7 +8,7 @@ const LanguageSwitcher = ({ style }) => {
   const buttonStyle = (active) => ({
     padding: '0.35rem 0.75rem',
     background: active ? 'var(--primary)' : 'transparent',
-    color: active ? '#fff' : 'var(--text-secondary)',
+    color: active ? 'var(--on-primary)' : 'var(--text-secondary)',
     border: 'none',
     borderRadius: '6px',
     cursor: active ? 'default' : 'pointer',
@@ -25,7 +25,7 @@ const LanguageSwitcher = ({ style }) => {
         display: 'inline-flex',
         gap: '2px',
         padding: '2px',
-        background: 'rgba(255, 255, 255, 0.05)',
+        background: 'var(--surface-soft)',
         border: '1px solid var(--glass-border)',
         borderRadius: '8px',
         ...style

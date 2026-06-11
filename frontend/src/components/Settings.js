@@ -9,6 +9,7 @@ import { getHostToken, removeHostToken } from '../services/gameAuth';
 import config from '../config';
 import { useTranslation } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
+import { THEMES, getTheme, applyTheme } from '../utils/theme';
 
 const Settings = ({ onClose, isAdmin = false }) => {
   const { gameId, gameInfo } = useGame() || {};
@@ -21,6 +22,13 @@ const Settings = ({ onClose, isAdmin = false }) => {
   const [hideHost, setHideHost] = useState(() => isHostHidden());
   const [passwordInput, setPasswordInput] = useState('');
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [theme, setTheme] = useState(() => getTheme());
+
+  const handleThemeChange = (e) => {
+    const id = e.target.value;
+    setTheme(id);
+    applyTheme(id);
+  };
 
   const handleClearCache = async () => {
     try {
@@ -144,7 +152,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
             justifyContent: 'space-between',
             gap: '1rem',
             padding: '0.75rem 1rem',
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: 'var(--surface-soft)',
             border: '1px solid var(--glass-border)',
             borderRadius: '8px',
             color: 'var(--text-primary)'
@@ -153,15 +161,35 @@ const Settings = ({ onClose, isAdmin = false }) => {
             <LanguageSwitcher />
           </div>
 
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            padding: '0.75rem 1rem',
+            background: 'var(--surface-soft)',
+            border: '1px solid var(--glass-border)',
+            borderRadius: '8px',
+            color: 'var(--text-primary)'
+          }}>
+            <span>{t('settings.design')}</span>
+            <select
+              value={theme}
+              onChange={handleThemeChange}
+              style={{ width: 'auto', padding: '8px 12px', fontSize: '0.9rem' }}
+            >
+              {THEMES.map(option => (
+                <option key={option.id} value={option.id}>{option.name}</option>
+              ))}
+            </select>
+          </div>
+
           {isAdmin && (
             <button
               onClick={handleClearCache}
               disabled={isClearingCache}
-              className="btn-primary"
-              style={{
-                background: '#dc2626',
-                width: '100%'
-              }}
+              className="btn-danger"
+              style={{ width: '100%' }}
             >
               {isClearingCache ? t('settings.clearing') : t('settings.clearCache')}
             </button>
@@ -170,11 +198,8 @@ const Settings = ({ onClose, isAdmin = false }) => {
           <button
             onClick={handleClearPack}
             disabled={isClearingPack}
-            className="btn-primary"
-            style={{
-              background: '#d97706',
-              width: '100%'
-            }}
+            className="btn-warning"
+            style={{ width: '100%' }}
           >
             {isClearingPack ? t('settings.clearing') : t('settings.clearPack')}
           </button>
@@ -186,7 +211,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
               justifyContent: 'space-between',
               gap: '1rem',
               padding: '0.75rem 1rem',
-              background: 'rgba(255, 255, 255, 0.05)',
+              background: 'var(--surface-soft)',
               border: '1px solid var(--glass-border)',
               borderRadius: '8px',
               color: 'var(--text-primary)',
@@ -208,7 +233,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
               flexDirection: 'column',
               gap: '0.5rem',
               padding: '0.75rem 1rem',
-              background: 'rgba(255, 255, 255, 0.05)',
+              background: 'var(--surface-soft)',
               border: '1px solid var(--glass-border)',
               borderRadius: '8px'
             }}>
@@ -238,14 +263,8 @@ const Settings = ({ onClose, isAdmin = false }) => {
           {gameId && (
             <button
               onClick={handleExitGame}
-              className="btn-primary"
-              style={{
-                background: 'rgba(255, 255, 255, 0.08)',
-                color: 'var(--text-primary)',
-                boxShadow: 'none',
-                border: '1px solid var(--glass-border)',
-                width: '100%'
-              }}
+              className="btn-ghost"
+              style={{ width: '100%' }}
             >
               {t('settings.exitGame')}
             </button>
@@ -254,11 +273,8 @@ const Settings = ({ onClose, isAdmin = false }) => {
           {isAdmin && gameId && (
             <button
               onClick={handleExitAndDelete}
-              className="btn-primary"
-              style={{
-                background: '#b91c1c',
-                width: '100%'
-              }}
+              className="btn-danger"
+              style={{ width: '100%' }}
             >
               {t('settings.exitDelete')}
             </button>
@@ -281,24 +297,8 @@ const Settings = ({ onClose, isAdmin = false }) => {
 
         <button
           onClick={onClose}
-          style={{
-            marginTop: '2rem',
-            width: '100%',
-            padding: '0.75rem',
-            background: 'rgba(255, 255, 255, 0.1)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--glass-border)',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            transition: 'all 0.2s'
-          }}
-          onMouseEnter={e => {
-            e.target.style.background = 'rgba(255, 255, 255, 0.2)';
-          }}
-          onMouseLeave={e => {
-            e.target.style.background = 'rgba(255, 255, 255, 0.1)';
-          }}
+          className="btn-ghost"
+          style={{ marginTop: '2rem', width: '100%', fontSize: '1rem' }}
         >
           {t('common.close')}
         </button>

@@ -767,6 +767,8 @@ const QuestionPage = () => {
     minHeight: '200px',
     background: 'var(--glass-bg)',
     boxShadow: 'var(--glass-shadow)',
+    backdropFilter: 'blur(14px)',
+    WebkitBackdropFilter: 'blur(14px)',
     position: 'relative',
   };
   // Small pill pinned to the card's top-left corner ("Запитання" / "Відповідь")
@@ -779,8 +781,8 @@ const QuestionPage = () => {
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
     color: 'var(--accent)',
-    background: 'rgba(62, 99, 245, 0.12)',
-    border: '1px solid rgba(62, 99, 245, 0.35)',
+    background: 'var(--accent-soft)',
+    border: '1px solid var(--accent-line)',
     padding: '0.2rem 0.6rem',
     borderRadius: '999px',
     userSelect: 'none'
@@ -800,16 +802,10 @@ const QuestionPage = () => {
     userSelect: 'none'
   };
 
+  // Sizing only — visuals come from the .btn-primary / .btn-danger classes
   const buttonStyle = {
     padding: '0.75rem 1.5rem',
-    background: 'var(--fill)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '10px',
-    cursor: 'pointer',
-    fontSize: '1rem',
-    fontWeight: '600',
-    transition: 'background 0.2s'
+    fontSize: '1rem'
   };
 
   // The admin keeps native media controls; players get media stripped of them
@@ -820,13 +816,13 @@ const QuestionPage = () => {
       return (
         <div
           className="question-content"
-          style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
+          style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
           dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
         />
       );
     } else if (rule.type === 'app') {
       return (
-        <div style={{ color: '#e0e0e0', fontSize: '1.1rem' }}>
+        <div style={{ color: 'var(--text-primary)', fontSize: '1.1rem' }}>
           {t('question.loadingApp', { path: rule.path })}
         </div>
       );
@@ -1062,7 +1058,7 @@ const QuestionPage = () => {
                 {rule.type === 'embedded' ? (
                   <div
                     className="question-content"
-                    style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
+                    style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
                     dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
                   />
                 ) : (
@@ -1249,7 +1245,7 @@ const QuestionPage = () => {
                     padding: '0.6rem 1rem',
                     borderRadius: '8px',
                     border: '1px solid var(--glass-border)',
-                    background: 'var(--bg-darker)',
+                    background: 'var(--input-bg)',
                     color: 'var(--text-primary)',
                     width: '200px',
                     textAlign: 'center'
@@ -1370,7 +1366,9 @@ const QuestionPage = () => {
                   borderRadius: '50%',
                   flexShrink: 0,
                   background: highlightCorrect ? '#4ade80' : isSelected ? 'var(--primary)' : 'var(--bg-dark)',
-                  color: '#fff',
+                  // Dark numeral on the bright "correct" chip, theme-defined
+                  // contrast color on the selected chip
+                  color: highlightCorrect ? '#0e3318' : isSelected ? 'var(--on-primary)' : 'var(--text-primary)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -1381,7 +1379,7 @@ const QuestionPage = () => {
                 </div>
                 <div
                   className="question-content"
-                  style={{ color: '#e0e0e0', fontSize: '1.05rem', flex: 1, minWidth: 0 }}
+                  style={{ color: 'var(--text-primary)', fontSize: '1.05rem', flex: 1, minWidth: 0 }}
                   dangerouslySetInnerHTML={{ __html: renderHtmlContent(option.content) }}
                 />
                 {isSelected && (
@@ -1560,7 +1558,7 @@ const QuestionPage = () => {
                       padding: '0.75rem 1rem',
                       borderRadius: '8px',
                       border: '1px solid var(--glass-border)',
-                      background: 'var(--bg-darker)',
+                      background: 'var(--input-bg)',
                       color: 'var(--text-primary)',
                       resize: 'vertical',
                       fontFamily: 'inherit'
@@ -1642,7 +1640,7 @@ const QuestionPage = () => {
                 {rule.type === 'embedded' ? (
                   <div
                     className="question-content"
-                    style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
+                    style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
                     dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
                   />
                 ) : (
@@ -1692,7 +1690,7 @@ const QuestionPage = () => {
                   <div
                     key={index}
                     className="question-content"
-                    style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap', marginBottom: '8px' }}
+                    style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap', marginBottom: '8px' }}
                     dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
                   />
                 ))}
@@ -1734,7 +1732,7 @@ const QuestionPage = () => {
           {badgeEl}
           <div
             className="question-content"
-            style={{ color: '#e0e0e0', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
+            style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </div>
@@ -1819,15 +1817,12 @@ const QuestionPage = () => {
             </div>
           )}
         </div>
-        <div className="glass-panel" style={{
+        <div className={`glass-panel timer-pill${timer <= 5 ? ' timer-pill--low' : ''}`} style={{
           fontSize: '2.5rem',
-          color: 'var(--text-primary)',
+          color: timer <= 5 ? 'var(--danger)' : 'var(--text-primary)',
           fontWeight: '800',
           padding: '0.75rem 1.5rem',
           borderRadius: '24px',
-          background: 'var(--glass-bg)',
-          border: '2px solid var(--primary)',
-          boxShadow: '0 0 30px var(--primary-glow), var(--glass-shadow)',
           fontVariantNumeric: 'tabular-nums'
         }}>
           {timer}
@@ -1872,7 +1867,7 @@ const QuestionPage = () => {
             value={mediaVolume}
             onChange={handleVolumeChange}
             style={{
-              background: `linear-gradient(to right, var(--primary) ${mediaVolume * 100}%, rgba(255, 255, 255, 0.2) ${mediaVolume * 100}%)`
+              background: `linear-gradient(to right, var(--primary) ${mediaVolume * 100}%, var(--track) ${mediaVolume * 100}%)`
             }}
           />
           <span style={{ minWidth: '3em', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
@@ -1942,11 +1937,8 @@ const QuestionPage = () => {
         {isAdmin && (
           <button
             onClick={handleReturnToGame}
-            className="btn-primary"
-            style={{
-              ...buttonStyle,
-              background: '#dc2626'
-            }}
+            className="btn-danger"
+            style={buttonStyle}
           >
             {t('question.backToGame')}
           </button>

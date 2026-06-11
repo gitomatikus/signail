@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import LoginPage from './LoginPage';
 import LanguageSwitcher from './LanguageSwitcher';
 import { useTranslation } from '../i18n/LanguageContext';
+import { THEMES, getTheme, applyTheme } from '../utils/theme';
 
 // Makes sure a user profile (name + avatar) exists before rendering the page.
 // The profile is global: the same identity is used to browse, host and join
@@ -20,6 +21,12 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
     }
   });
   const [loginOpen, setLoginOpen] = useState(false);
+  const [theme, setTheme] = useState(() => getTheme());
+
+  const handleThemeChange = (e) => {
+    setTheme(e.target.value);
+    applyTheme(e.target.value);
+  };
 
   const handleLogin = (userData) => {
     setUser(userData);
@@ -48,6 +55,17 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
           gap: '1rem',
           zIndex: 1000
         }}>
+          <select
+            value={theme}
+            onChange={handleThemeChange}
+            aria-label={t('settings.design')}
+            title={t('settings.design')}
+            style={{ width: 'auto', padding: '0.4rem 0.6rem', fontSize: '0.85rem', borderRadius: '8px' }}
+          >
+            {THEMES.map(option => (
+              <option key={option.id} value={option.id}>{option.name}</option>
+            ))}
+          </select>
           <LanguageSwitcher />
           {user && (
             <>
@@ -78,18 +96,12 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
                     }}
                   />
                 )}
-                <span style={{ color: '#aaa' }}>{user.name}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{user.name}</span>
               </div>
               <button
                 onClick={handleLogout}
-                style={{
-                  padding: '0.5rem 1rem',
-                  background: '#dc3545',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
+                className="btn-ghost"
+                style={{ padding: '0.5rem 1rem' }}
               >
                 {t('common.logout')}
               </button>
