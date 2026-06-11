@@ -26,7 +26,7 @@ const Avatar = ({ src, alt, size = 72 }) => {
 const Lobby = () => {
   const navigate = useNavigate();
   const { t, tp } = useTranslation();
-  const { gameId, isHost, gameInfo, onlineUsers, startGame } = useGame();
+  const { gameId, isHost, gameInfo, onlineUsers, startGame, packLoading, downloadProgress } = useGame();
 
   const handleDelete = async () => {
     if (!window.confirm(t('lobby.deleteConfirm'))) return;
@@ -72,6 +72,44 @@ const Lobby = () => {
             {t('home.hostedBy')} <strong style={{ color: 'var(--text-primary)' }}>{gameInfo.hostName}</strong>
             {gameInfo.packAuthor ? <> · {t('home.packBy')} {gameInfo.packAuthor}</> : null}
           </div>
+          {packLoading && (
+            <div className="fade-in" style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.5rem',
+              margin: '1rem auto 0',
+              maxWidth: '320px',
+              padding: '0.75rem',
+              background: 'rgba(255, 255, 255, 0.03)',
+              borderRadius: '8px',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: '500' }}>
+                {downloadProgress !== null
+                  ? t('board.downloadingPack', { progress: downloadProgress > -1 ? downloadProgress + '%' : '' })
+                  : t('common.loading')}
+              </div>
+              <div style={{
+                width: '100%',
+                height: '8px',
+                background: 'rgba(255, 255, 255, 0.1)',
+                borderRadius: '999px',
+                overflow: 'hidden',
+                border: '1px solid var(--glass-border)'
+              }}>
+                <div
+                  style={{
+                    width: `${downloadProgress > -1 ? downloadProgress : 0}%`,
+                    height: '100%',
+                    background: 'linear-gradient(90deg, var(--primary), var(--accent))',
+                    transition: 'width 0.3s ease',
+                    boxShadow: '0 0 10px var(--primary-glow)'
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div>

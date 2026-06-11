@@ -17,7 +17,8 @@ const corsHandler = cors({
   origin: config.allowAllOrigins ? true : config.corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Host-Token']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Host-Token'],
+  exposedHeaders: ['Content-Length']
 });
 
 app.use(corsHandler);

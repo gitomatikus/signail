@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import wsManager from '../utils/websocket';
-import { applyCacheKey } from '../services/cacheVersion';
+import { applyCacheKey, checkCacheVersion } from '../services/cacheVersion';
+import { indexedDBService } from '../services/indexedDB';
 import { getHostToken, getGamePassword } from '../services/gameAuth';
 import config from '../config';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -20,6 +21,9 @@ export const GameProvider = ({ user, children }) => {
   const [gameInfo, setGameInfo] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [error, setError] = useState(null);
+  const [pack, setPack] = useState(null);
+  const [packLoading, setPackLoading] = useState(true);
+  const [downloadProgress, setDownloadProgress] = useState(null);
 
   const hostToken = getHostToken(gameId);
   const isHost = !!hostToken;
@@ -28,6 +32,69 @@ export const GameProvider = ({ user, children }) => {
   useEffect(() => {
     userRef.current = user;
   }, [user]);
+
+  const loadPack = useCallback(async () => {
+    try {
+      setPackLoading(true);
+      setDownloadProgress(null);
+      // If the server rotated the cache key (new pack uploaded / cache
+      // cleared), the cached pack and answered questions were just wiped -
+      // drop them from state too so we fall through to a fresh fetch
+      const cacheChanged = await checkCacheVersion(gameId);
+      const cachedPack = await indexedDBService.getPack(`pack-${gameId}`);
+
+      if (cachedPack && !cacheChanged) {
+        setPack(cachedPack);
+        setPackLoading(false);
+        return;
+      }
+
+      const response = await fetch(`${config.apiUrl}/api/games/${gameId}/pack`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch pack');
+      }
+      if (!response.body || !window.ReadableStream) {
+        const data = await response.json();
+        await indexedDBService.savePack({ id: `pack-${gameId}`, ...data });
+        setPack(data);
+        setPackLoading(false);
+        return;
+      }
+      const contentLength = response.headers.get('Content-Length');
+      const total = contentLength ? parseInt(contentLength, 10) : null;
+      let loaded = 0;
+      let chunks = [];
+      const reader = response.body.getReader();
+      let progress = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.length;
+        if (total) {
+          progress = Math.round((loaded / total) * 100);
+          setDownloadProgress(progress);
+        } else {
+          setDownloadProgress(-1);
+        }
+      }
+      const allChunks = new Uint8Array(chunks.reduce((acc, val) => acc + val.length, 0));
+      let offset = 0;
+      for (const chunk of chunks) {
+        allChunks.set(chunk, offset);
+        offset += chunk.length;
+      }
+      const text = new TextDecoder('utf-8').decode(allChunks);
+      const data = JSON.parse(text);
+      await indexedDBService.savePack({ id: `pack-${gameId}`, ...data });
+      setPack(data);
+    } catch (error) {
+      console.error('Error loading pack in context:', error);
+    } finally {
+      setPackLoading(false);
+      setDownloadProgress(null);
+    }
+  }, [gameId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +116,8 @@ export const GameProvider = ({ user, children }) => {
           hostToken: getHostToken(gameId),
           password: getGamePassword(gameId)
         });
+
+        loadPack();
       } catch (e) {
         if (!cancelled) setError('game.serverUnreachable');
       }
@@ -91,7 +160,7 @@ export const GameProvider = ({ user, children }) => {
       unsubscribe();
       wsManager.disconnect();
     };
-  }, [gameId, navigate]);
+  }, [gameId, navigate, loadPack]);
 
   const startGame = useCallback(() => {
     wsManager.sendStartGame();
@@ -122,7 +191,7 @@ export const GameProvider = ({ user, children }) => {
   }
 
   return (
-    <GameContext.Provider value={{ gameId, isHost, user, gameInfo, onlineUsers, startGame }}>
+    <GameContext.Provider value={{ gameId, isHost, user, gameInfo, onlineUsers, startGame, pack, packLoading, downloadProgress, loadPack }}>
       {children}
     </GameContext.Provider>
   );

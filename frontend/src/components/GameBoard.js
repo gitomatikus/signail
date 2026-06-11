@@ -1,18 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Settings from './Settings';
-import { indexedDBService } from '../services/indexedDB';
-import { checkCacheVersion } from '../services/cacheVersion';
 import wsManager from '../utils/websocket';
 import { useGame } from '../contexts/GameContext';
-import config from '../config';
 import { useTranslation } from '../i18n/LanguageContext';
 
 const GameBoard = ({ isAdmin = false }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { gameId } = useGame();
-  const [pack, setPack] = useState(null);
+  const { gameId, pack, packLoading, downloadProgress, loadPack } = useGame();
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const [selectedQuestions, setSelectedQuestions] = useState(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -20,17 +16,17 @@ const GameBoard = ({ isAdmin = false }) => {
     const savedRoundIndex = localStorage.getItem(`currentRoundIndex-${gameId}`);
     return savedRoundIndex ? parseInt(savedRoundIndex) : 0;
   });
-  const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState({});
-  const [downloadProgress, setDownloadProgress] = useState(null);
 
   useEffect(() => {
     const savedQuestions = localStorage.getItem(`selectedQuestions-${gameId}`);
     if (savedQuestions) {
       const parsedQuestions = JSON.parse(savedQuestions);
       setSelectedQuestions(new Set(parsedQuestions));
+    } else {
+      setSelectedQuestions(new Set());
     }
-  }, [gameId]);
+  }, [gameId, pack]);
 
   useEffect(() => {
     if (selectedQuestions.size > 0) {
@@ -38,74 +34,8 @@ const GameBoard = ({ isAdmin = false }) => {
     }
   }, [selectedQuestions, gameId]);
 
-  const loadPack = async () => {
-    try {
-      setLoading(true);
-      setDownloadProgress(null);
-      // If the server rotated the cache key (new pack uploaded / cache
-      // cleared), the cached pack and answered questions were just wiped -
-      // drop them from state too so we fall through to a fresh fetch
-      const cacheChanged = await checkCacheVersion(gameId);
-      if (cacheChanged) {
-        setSelectedQuestions(new Set());
-        localStorage.removeItem(`selectedQuestions-${gameId}`);
-      }
-      const cachedPack = await indexedDBService.getPack(`pack-${gameId}`);
-
-      if (cachedPack) {
-        setPack(cachedPack);
-        setLoading(false);
-        return;
-      }
-
-      const response = await fetch(`${config.apiUrl}/api/games/${gameId}/pack`);
-      if (!response.body || !window.ReadableStream) {
-        const data = await response.json();
-        await indexedDBService.savePack({ id: `pack-${gameId}`, ...data });
-        setPack(data);
-        setLoading(false);
-        return;
-      }
-      const contentLength = response.headers.get('Content-Length');
-      const total = contentLength ? parseInt(contentLength, 10) : null;
-      let loaded = 0;
-      let chunks = [];
-      const reader = response.body.getReader();
-      let progress = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        loaded += value.length;
-        if (total) {
-          progress = Math.round((loaded / total) * 100);
-          setDownloadProgress(progress);
-        } else {
-          setDownloadProgress(-1);
-        }
-      }
-      const allChunks = new Uint8Array(chunks.reduce((acc, val) => acc + val.length, 0));
-      let offset = 0;
-      for (const chunk of chunks) {
-        allChunks.set(chunk, offset);
-        offset += chunk.length;
-      }
-      const text = new TextDecoder('utf-8').decode(allChunks);
-      const data = JSON.parse(text);
-      await indexedDBService.savePack({ id: `pack-${gameId}`, ...data });
-      setPack(data);
-    } catch (error) {
-      console.error('Error loading pack:', error);
-    } finally {
-      setLoading(false);
-      setDownloadProgress(null);
-    }
-  };
-
   useEffect(() => {
-    loadPack();
     wsManager.sendRequestSelectedQuestions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId]);
 
   useEffect(() => {
@@ -201,7 +131,7 @@ const GameBoard = ({ isAdmin = false }) => {
     loadPack();
   };
 
-  if (loading) {
+  if (packLoading) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
         <div style={{
@@ -211,13 +141,42 @@ const GameBoard = ({ isAdmin = false }) => {
           borderTopColor: 'var(--primary)',
           borderRadius: '50%',
           animation: 'spin 1s linear infinite',
-          marginBottom: '1rem'
+          marginBottom: '1.5rem'
         }} />
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-        <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '1.25rem' }}>
-          {downloadProgress !== null
-            ? t('board.downloadingPack', { progress: downloadProgress > -1 ? downloadProgress + '%' : '' })
-            : t('common.loading')}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '0.75rem',
+          width: '100%',
+          maxWidth: '320px'
+        }}>
+          <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '1.25rem', textAlign: 'center' }}>
+            {downloadProgress !== null
+              ? t('board.downloadingPack', { progress: downloadProgress > -1 ? downloadProgress + '%' : '' })
+              : t('common.loading')}
+          </div>
+          {downloadProgress !== null && (
+            <div style={{
+              width: '100%',
+              height: '8px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '999px',
+              overflow: 'hidden',
+              border: '1px solid var(--glass-border)'
+            }}>
+              <div
+                style={{
+                  width: `${downloadProgress > -1 ? downloadProgress : 0}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, var(--primary), var(--accent))',
+                  transition: 'width 0.3s ease',
+                  boxShadow: '0 0 10px var(--primary-glow)'
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -361,7 +320,6 @@ const GameBoard = ({ isAdmin = false }) => {
             }
 
             const isHovered = hovered[`${rowIdx}-${colIdx}`];
-            const isSelected = question.id === selectedQuestionId;
             const isAnswered = selectedQuestions.has(question.id);
             const isDisabled = (selectedQuestionId && question.id !== selectedQuestionId) || isAnswered;
 
