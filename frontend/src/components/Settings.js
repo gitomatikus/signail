@@ -10,6 +10,7 @@ import config from '../config';
 import { useTranslation } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import { THEMES, getTheme, applyTheme } from '../utils/theme';
+import { HOST_LAYOUTS, getHostLayout, setHostLayout } from '../utils/hostLayout';
 
 const Settings = ({ onClose, isAdmin = false }) => {
   const { gameId, gameInfo } = useGame() || {};
@@ -23,11 +24,18 @@ const Settings = ({ onClose, isAdmin = false }) => {
   const [passwordInput, setPasswordInput] = useState('');
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [theme, setTheme] = useState(() => getTheme());
+  const [hostLayout, setHostLayoutChoice] = useState(() => getHostLayout());
 
   const handleThemeChange = (e) => {
     const id = e.target.value;
     setTheme(id);
     applyTheme(id);
+  };
+
+  const handleHostLayoutChange = (e) => {
+    const layout = e.target.value;
+    setHostLayoutChoice(layout);
+    setHostLayout(layout);
   };
 
   const handleClearCache = async () => {
@@ -185,24 +193,29 @@ const Settings = ({ onClose, isAdmin = false }) => {
           </div>
 
           {isAdmin && (
-            <button
-              onClick={handleClearCache}
-              disabled={isClearingCache}
-              className="btn-danger"
-              style={{ width: '100%' }}
-            >
-              {isClearingCache ? t('settings.clearing') : t('settings.clearCache')}
-            </button>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              padding: '0.75rem 1rem',
+              background: 'var(--surface-soft)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '8px',
+              color: 'var(--text-primary)'
+            }}>
+              <span>{t('settings.hostLayout')}</span>
+              <select
+                value={hostLayout}
+                onChange={handleHostLayoutChange}
+                style={{ width: 'auto', padding: '8px 12px', fontSize: '0.9rem' }}
+              >
+                {HOST_LAYOUTS.map(id => (
+                  <option key={id} value={id}>{t(`settings.hostLayout.${id}`)}</option>
+                ))}
+              </select>
+            </div>
           )}
-
-          <button
-            onClick={handleClearPack}
-            disabled={isClearingPack}
-            className="btn-warning"
-            style={{ width: '100%' }}
-          >
-            {isClearingPack ? t('settings.clearing') : t('settings.clearPack')}
-          </button>
 
           {!isAdmin && (
             <label style={{
@@ -267,6 +280,26 @@ const Settings = ({ onClose, isAdmin = false }) => {
               style={{ width: '100%' }}
             >
               {t('settings.exitGame')}
+            </button>
+          )}
+
+          <button
+            onClick={handleClearPack}
+            disabled={isClearingPack}
+            className="btn-warning"
+            style={{ width: '100%' }}
+          >
+            {isClearingPack ? t('settings.clearing') : t('settings.clearPack')}
+          </button>
+
+          {isAdmin && (
+            <button
+              onClick={handleClearCache}
+              disabled={isClearingCache}
+              className="btn-danger"
+              style={{ width: '100%' }}
+            >
+              {isClearingCache ? t('settings.clearing') : t('settings.clearCache')}
             </button>
           )}
 

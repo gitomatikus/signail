@@ -10,6 +10,7 @@ import Settings from '../components/Settings';
 import Logo from '../components/Logo';
 import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
+import { getHostLayout, HOST_LAYOUT_EVENT } from '../utils/hostLayout';
 import { compressImageToDataUrl } from '../utils/compressImage';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -164,6 +165,14 @@ const QuestionPage = () => {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [redJudgedUsers, setRedJudgedUsers] = useState(new Set());
   const [mediaVolume, setMediaVolume] = useState(() => getVolume());
+  // How the host sees question+answer once both are visible ('split' | 'tabs'),
+  // chosen in Settings; players are unaffected
+  const [hostLayout, setHostLayoutState] = useState(() => getHostLayout());
+  const [hostTab, setHostTab] = useState('question');
+  // Whether the host opened the answer tab for this question — used to mount
+  // the answer card lazily (its media may autoplay and would spoil the answer
+  // audibly) and to keep host-only inline answers hidden until peeked at
+  const [hostAnswerSeen, setHostAnswerSeen] = useState(false);
   // Grants already applied; a grant must never be applied twice even if the
   // same broadcast is somehow delivered more than once
   const processedGrantIds = useRef(new Set());
@@ -187,6 +196,8 @@ const QuestionPage = () => {
         setTextAnswerInput('');
         setPastedImage(null);
         setRedJudgedUsers(new Set());
+        setHostTab('question');
+        setHostAnswerSeen(false);
         adminPausedMediaRef.current = false;
         autoPausedMediaRef.current.clear();
         // Stale cache (new pack uploaded / cache cleared): this question may
@@ -428,6 +439,8 @@ const QuestionPage = () => {
         setTextAnswerInput('');
         setPastedImage(null);
         setRedJudgedUsers(new Set());
+        setHostTab('question');
+        setHostAnswerSeen(false);
         adminPausedMediaRef.current = false;
         autoPausedMediaRef.current.clear();
       }
@@ -606,6 +619,13 @@ const QuestionPage = () => {
         console.error('Error parsing stored user data:', error);
       }
     }
+  }, []);
+
+  // React to the host changing the layout in Settings while on this page
+  useEffect(() => {
+    const onLayoutChange = () => setHostLayoutState(getHostLayout());
+    window.addEventListener(HOST_LAYOUT_EVENT, onLayoutChange);
+    return () => window.removeEventListener(HOST_LAYOUT_EVENT, onLayoutChange);
   }, []);
 
   // Add keyboard event listener for space and right arrow
@@ -1204,6 +1224,11 @@ const QuestionPage = () => {
     const myAnswer = currentUserId ? numberAnswers[currentUserId] : undefined;
     const hasSubmitted = myAnswer !== undefined;
     const acceptingAnswers = !answersRevealed && timer > 0;
+    // In tabs mode the host plays along: keep the numeric answer hidden until
+    // they open the Answer tab (only when this question has one to open)
+    const hostAnswerHidden = hostLayout === 'tabs'
+      && (question.after_round || []).length > 0
+      && !hostAnswerSeen;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1221,7 +1246,7 @@ const QuestionPage = () => {
           </div>
         )}
 
-        {isAdmin && !isResponseRevealed && question.answer !== undefined && (
+        {isAdmin && !isResponseRevealed && question.answer !== undefined && !hostAnswerHidden && (
           <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
             {t('question.answerHostOnly')} <b style={{ color: '#4ade80' }}>{question.answer}</b>
           </div>
@@ -1643,27 +1668,99 @@ const QuestionPage = () => {
     return renderNormalContent();
   };
 
+  // Scaled-down images in the host split view open full-size in the lightbox
+  const handleSplitImageClick = (e) => {
+    if (e.target.tagName === 'IMG' && e.target.closest('.question-content')) {
+      setLightboxImage(e.target.currentSrc || e.target.src);
+    }
+  };
+
+  const hostTabButtonStyle = (active) => ({
+    padding: '0.6rem 1.75rem',
+    fontSize: '1rem',
+    fontWeight: '600',
+    borderRadius: '999px',
+    cursor: 'pointer',
+    border: active ? '1px solid var(--accent-line)' : '1px solid var(--glass-border)',
+    background: active ? 'var(--accent-soft)' : 'var(--glass-bg)',
+    color: active ? 'var(--accent)' : 'var(--text-secondary)',
+    transition: 'var(--transition-fast)'
+  });
+
+  // Tabs keep both cards mounted (hidden via display) so question media keeps
+  // playing for everyone while the host peeks at the answer. The answer card
+  // mounts only once the host first opens its tab: its media may autoplay and
+  // would otherwise be heard right away, defeating the play-along idea.
+  const renderHostTabs = (questionCard, answerCard) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem' }}>
+        <button
+          style={hostTabButtonStyle(hostTab === 'question')}
+          onClick={() => setHostTab('question')}
+        >
+          {t('question.questionLabel')}
+        </button>
+        <button
+          style={hostTabButtonStyle(hostTab === 'answer')}
+          onClick={() => { setHostTab('answer'); setHostAnswerSeen(true); }}
+        >
+          {t('question.answerLabel')}
+        </button>
+      </div>
+      <div style={{ display: hostTab === 'question' ? 'block' : 'none' }}>{questionCard}</div>
+      {(hostAnswerSeen || hostTab === 'answer') && (
+        <div style={{ display: hostTab === 'answer' ? 'block' : 'none' }}>{answerCard}</div>
+      )}
+    </div>
+  );
+
   const renderNormalContent = () => {
     if (showAfterRound) {
       const afterRoundRules = question.after_round || [];
       if (afterRoundRules.length > 0) {
         const lastRuleIndex = Math.min(currentAfterRoundIndex, afterRoundRules.length - 1);
+        const answerCard = renderRuleCard(afterRoundRules[lastRuleIndex], t('question.answerLabel'));
+        // Players only ever see the answer card here; the question stays on
+        // their screens while it is the active content
+        if (!isAdmin || !isQuestionRevealed) {
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {answerCard}
+            </div>
+          );
+        }
+        const questionCard = (
+          <div style={cardStyle}>
+            <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
+            {question.rules.map((rule, index) => (
+              <div
+                key={index}
+                className="question-content"
+                style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap', marginBottom: '8px' }}
+                dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
+              />
+            ))}
+          </div>
+        );
+        if (hostLayout === 'tabs') {
+          return renderHostTabs(questionCard, answerCard);
+        }
+        // Split view: question | answer side by side, falling back to one
+        // column on narrow screens; media inside is scaled down via the
+        // .host-split-view rules in index.css
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {isAdmin && isQuestionRevealed && (
-              <div style={cardStyle}>
-                <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
-                {question.rules.map((rule, index) => (
-                  <div
-                    key={index}
-                    className="question-content"
-                    style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap', marginBottom: '8px' }}
-                    dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
-                  />
-                ))}
-              </div>
-            )}
-            {renderRuleCard(afterRoundRules[lastRuleIndex], t('question.answerLabel'))}
+          <div
+            className="host-split-view"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))',
+              gap: '16px',
+              alignItems: 'stretch'
+            }}
+            onClick={handleSplitImageClick}
+          >
+            {questionCard}
+            {answerCard}
           </div>
         );
       }

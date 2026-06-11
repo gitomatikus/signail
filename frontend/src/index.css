@@ -973,6 +973,23 @@ input[type="range"].volume-slider::-moz-range-track {
     min-width: 400px;
 }
 
+/* Host split view (question | answer side by side): scale media down so both
+   cards and the judging panel fit on one screen; click an image to enlarge */
+.host-split-view .question-content img,
+.host-split-view .question-content video {
+    height: 300px !important;
+}
+
+.host-split-view .question-content img {
+    cursor: zoom-in;
+}
+
+.host-split-view .question-content audio {
+    min-width: 0;
+    width: 100%;
+    max-width: 400px;
+}
+
 /* Animations */
 .fade-in {
     animation: fadeIn 0.5s ease-in;
