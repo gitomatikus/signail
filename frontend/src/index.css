@@ -1,4 +1,42 @@
-@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap");
+@font-face {
+    font-family: "Fixel Text";
+    src: url("./assets/fonts/fixel/FixelText-Light.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 300;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Fixel Text";
+    src: url("./assets/fonts/fixel/FixelText-Regular.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Fixel Text";
+    src: url("./assets/fonts/fixel/FixelText-Medium.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Fixel Text";
+    src: url("./assets/fonts/fixel/FixelText-SemiBold.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Fixel Text";
+    src: url("./assets/fonts/fixel/FixelText-Bold.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+}
 
 :root {
     /* Core Colors */
@@ -52,7 +90,7 @@ body,
             transparent 20%
         );
     color: var(--text-primary);
-    font-family: "Outfit", sans-serif;
+    font-family: "Fixel Text", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
@@ -133,7 +171,7 @@ textarea {
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     color: var(--text-primary);
-    font-family: "Outfit", sans-serif;
+    font-family: inherit;
     font-size: 1rem;
     transition: var(--transition-normal);
     outline: none;
