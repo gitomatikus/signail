@@ -10,6 +10,7 @@ import Settings from '../components/Settings';
 import Logo from '../components/Logo';
 import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
+import { compressImageToDataUrl } from '../utils/compressImage';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
 
@@ -1413,61 +1414,27 @@ const QuestionPage = () => {
     );
   };
 
-  // Keep pasted images well under the server's answer-size limit, otherwise
-  // the submission is rejected silently and only its author would see it
+  // Keep pasted images well under the server's answer-size limit (8M chars,
+  // isValidAnswerValue in backend websocket.js), otherwise the submission is
+  // rejected silently and only its author would see it. The byte budget maps
+  // to the data-URL length the server sees: chars ≈ bytes * 4/3 + prefix.
   const MAX_ANSWER_IMAGE_CHARS = 2000000;
+  const MAX_ANSWER_IMAGE_BYTES = Math.floor((MAX_ANSWER_IMAGE_CHARS - 100) * 3 / 4);
 
-  const downscaleImage = (dataUrl, maxDimension, quality) => new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxDimension / Math.max(img.naturalWidth, img.naturalHeight));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        resolve(dataUrl);
-        return;
-      }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
+  const handleTextPaste = async (e) => {
+    const item = Array.from(e.clipboardData?.items || [])
+      .find(i => i.kind === 'file' && i.type.startsWith('image/'));
+    if (!item) return;
 
-  const compressPastedImage = async (dataUrl) => {
-    if (dataUrl.length <= MAX_ANSWER_IMAGE_CHARS) {
-      return dataUrl;
-    }
-    let result = await downscaleImage(dataUrl, 1280, 0.8);
-    let maxDimension = 1280;
-    // Extreme sources: keep shrinking until the answer fits
-    while (result.length > MAX_ANSWER_IMAGE_CHARS && maxDimension > 320) {
-      maxDimension = Math.round(maxDimension / 2);
-      result = await downscaleImage(dataUrl, maxDimension, 0.7);
-    }
-    return result;
-  };
+    e.preventDefault();
+    const file = item.getAsFile();
+    if (!file) return;
 
-  const handleTextPaste = (e) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1) {
-        const blob = items[i].getAsFile();
-        if (blob) {
-          const reader = new FileReader();
-          reader.onload = async (event) => {
-            if (event.target?.result) {
-              const compressed = await compressPastedImage(event.target.result);
-              setPastedImage(compressed);
-            }
-          };
-          reader.readAsDataURL(blob);
-          e.preventDefault();
-        }
-      }
+    try {
+      const { dataUrl } = await compressImageToDataUrl(file, MAX_ANSWER_IMAGE_BYTES);
+      setPastedImage(dataUrl);
+    } catch (error) {
+      console.warn('Could not process pasted image:', error);
     }
   };
 

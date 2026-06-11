@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import Logo from './Logo';
+import { compressImageToDataUrl } from '../utils/compressImage';
 
 // Standalone full-screen login by default; pass onClose to render it as a
 // dismissable overlay on top of the current page (backdrop click / × close).
@@ -9,11 +10,35 @@ const LoginPage = ({ onLogin, onClose }) => {
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [pastedImage, setPastedImage] = useState(null); // { dataUrl, bytes }
+  const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
 
   const validateImageUrl = (url) => {
     const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.mp4', '.webp'];
     return validExtensions.some(ext => url.toLowerCase().endsWith(ext));
+  };
+
+  // Catches image pastes anywhere in the form; text pastes fall through to
+  // the focused input untouched.
+  const handlePaste = async (e) => {
+    const item = Array.from(e.clipboardData?.items || [])
+      .find(i => i.kind === 'file' && i.type.startsWith('image/'));
+    if (!item) return;
+
+    e.preventDefault();
+    const file = item.getAsFile();
+    if (!file) return;
+
+    setProcessing(true);
+    setError('');
+    try {
+      setPastedImage(await compressImageToDataUrl(file));
+    } catch {
+      setError('login.errorPasteFailed');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const handleSubmit = (e) => {
@@ -25,20 +50,22 @@ const LoginPage = ({ onLogin, onClose }) => {
       return;
     }
 
-    if (!imageUrl.trim()) {
-      setError('login.errorImage');
-      return;
-    }
+    if (!pastedImage) {
+      if (!imageUrl.trim()) {
+        setError('login.errorImage');
+        return;
+      }
 
-    if (!validateImageUrl(imageUrl)) {
-      setError('login.errorImageInvalid');
-      return;
+      if (!validateImageUrl(imageUrl)) {
+        setError('login.errorImageInvalid');
+        return;
+      }
     }
 
     const userData = {
       id: `${name.trim()}-${Date.now()}`,
       name: name.trim(),
-      imageUrl: imageUrl.trim(),
+      imageUrl: pastedImage ? pastedImage.dataUrl : imageUrl.trim(),
       lastLogin: new Date().toISOString(),
       score: 0
     };
@@ -47,7 +74,8 @@ const LoginPage = ({ onLogin, onClose }) => {
     onLogin(userData);
   };
 
-  const showPreview = imageUrl && validateImageUrl(imageUrl);
+  const previewSrc = pastedImage ? pastedImage.dataUrl
+    : (imageUrl && validateImageUrl(imageUrl)) ? imageUrl : null;
 
   return (
     <div
@@ -76,7 +104,7 @@ const LoginPage = ({ onLogin, onClose }) => {
         flexDirection: 'column',
         gap: '1.5rem',
         position: 'relative'
-      }} onClick={e => e.stopPropagation()}>
+      }} onClick={e => e.stopPropagation()} onPaste={handlePaste}>
         {onClose && (
           <button
             type="button"
@@ -147,15 +175,52 @@ const LoginPage = ({ onLogin, onClose }) => {
               </a>
             </div>
 
-            <input
-              type="text"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              placeholder={t('login.avatarPlaceholder')}
-            />
+            {pastedImage ? (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '0.5rem',
+                padding: '0.6rem 0.75rem',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid var(--primary)',
+                borderRadius: '8px',
+                fontSize: '0.875rem'
+              }}>
+                <span>
+                  {t('login.pastedImage')} ({Math.round(pastedImage.bytes / 1024)} KB)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPastedImage(null)}
+                  aria-label={t('login.removeImage')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    fontSize: '1.1rem',
+                    lineHeight: 1,
+                    padding: 0,
+                    cursor: 'pointer'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ) : (
+              <input
+                type="text"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                placeholder={t('login.avatarPlaceholder')}
+              />
+            )}
+            <div style={{ marginTop: '0.4rem', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+              {processing ? t('login.processingImage') : t('login.pasteHint')}
+            </div>
           </div>
 
-          {showPreview && (
+          {previewSrc && (
             <div style={{
               width: '100px',
               height: '100px',
@@ -167,15 +232,15 @@ const LoginPage = ({ onLogin, onClose }) => {
               overflow: 'hidden',
               position: 'relative'
             }}>
-              {imageUrl.toLowerCase().endsWith('.mp4') ? (
+              {previewSrc.toLowerCase().endsWith('.mp4') ? (
                 <video
-                  src={imageUrl}
+                  src={previewSrc}
                   style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
                   autoPlay loop muted playsInline
                 />
               ) : (
                 <img
-                  src={imageUrl}
+                  src={previewSrc}
                   alt="preview"
                   style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
                   onError={e => { e.target.style.display = 'none'; }}
@@ -187,6 +252,7 @@ const LoginPage = ({ onLogin, onClose }) => {
           <button
             type="submit"
             className="btn-primary"
+            disabled={processing}
             style={{ width: '100%', marginTop: '0.5rem' }}
           >
             {t('login.join')}
