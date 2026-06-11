@@ -6,7 +6,10 @@ import { useTranslation } from '../i18n/LanguageContext';
 // Makes sure a user profile (name + avatar) exists before rendering the page.
 // The profile is global: the same identity is used to browse, host and join
 // games. Game-room connections are handled by GameProvider, not here.
-const AuthWrapper = ({ children, showHeader = true }) => {
+// Routes with requireAuth={false} render for anonymous visitors too: the page
+// gets user=null and an onRequestLogin() callback that opens the login form
+// as an overlay on top of the page.
+const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
   const { t } = useTranslation();
   const [user, setUser] = useState(() => {
     try {
@@ -16,9 +19,11 @@ const AuthWrapper = ({ children, showHeader = true }) => {
       return null;
     }
   });
+  const [loginOpen, setLoginOpen] = useState(false);
 
   const handleLogin = (userData) => {
     setUser(userData);
+    setLoginOpen(false);
   };
 
   const handleLogout = () => {
@@ -26,7 +31,7 @@ const AuthWrapper = ({ children, showHeader = true }) => {
     setUser(null);
   };
 
-  if (!user) {
+  if (!user && requireAuth) {
     return <LoginPage onLogin={handleLogin} />;
   }
 
@@ -44,51 +49,58 @@ const AuthWrapper = ({ children, showHeader = true }) => {
           zIndex: 1000
         }}>
           <LanguageSwitcher />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {user.imageUrl.toLowerCase().endsWith('.mp4') ? (
-              <video
-                src={user.imageUrl}
+          {user && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                {user.imageUrl.toLowerCase().endsWith('.mp4') ? (
+                  <video
+                    src={user.imageUrl}
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      objectFit: 'cover'
+                    }}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                  />
+                ) : (
+                  <img
+                    src={user.imageUrl}
+                    alt={user.name}
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '50%',
+                      objectFit: 'cover'
+                    }}
+                  />
+                )}
+                <span style={{ color: '#aaa' }}>{user.name}</span>
+              </div>
+              <button
+                onClick={handleLogout}
                 style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  objectFit: 'cover'
+                  padding: '0.5rem 1rem',
+                  background: '#dc3545',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
                 }}
-                autoPlay
-                loop
-                muted
-                playsInline
-              />
-            ) : (
-              <img
-                src={user.imageUrl}
-                alt={user.name}
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  objectFit: 'cover'
-                }}
-              />
-            )}
-            <span style={{ color: '#aaa' }}>{user.name}</span>
-          </div>
-          <button
-            onClick={handleLogout}
-            style={{
-              padding: '0.5rem 1rem',
-              background: '#dc3545',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            {t('common.logout')}
-          </button>
+              >
+                {t('common.logout')}
+              </button>
+            </>
+          )}
         </div>
       )}
-      {React.cloneElement(children, { user })}
+      {React.cloneElement(children, { user, onRequestLogin: () => setLoginOpen(true) })}
+      {!user && loginOpen && (
+        <LoginPage onLogin={handleLogin} onClose={() => setLoginOpen(false)} />
+      )}
     </div>
   );
 };

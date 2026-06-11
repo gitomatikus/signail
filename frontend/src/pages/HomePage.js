@@ -20,8 +20,9 @@ const Avatar = ({ src, alt, size = 40 }) => {
 };
 
 // Main page: every running game (one per uploaded pack) with its host and
-// pack name. Anyone can join; creators can delete their own games.
-const HomePage = ({ user }) => {
+// pack name. Anyone can browse; joining, creating and deleting games require
+// a profile — logged-out visitors see the list with a big login CTA instead.
+const HomePage = ({ user, onRequestLogin }) => {
   const navigate = useNavigate();
   const { t, tp, translateMessage } = useTranslation();
   const [games, setGames] = useState([]);
@@ -116,13 +117,34 @@ const HomePage = ({ user }) => {
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>{t('home.tagline')}</p>
         </div>
 
-        <button
-          className="btn-primary"
-          style={{ alignSelf: 'center', padding: '0.75rem 2.5rem', fontSize: '1.1rem' }}
-          onClick={() => navigate('/create')}
-        >
-          {t('home.createGame')}
-        </button>
+        {user ? (
+          <button
+            className="btn-primary"
+            style={{ alignSelf: 'center', padding: '0.75rem 2.5rem', fontSize: '1.1rem' }}
+            onClick={() => navigate('/create')}
+          >
+            {t('home.createGame')}
+          </button>
+        ) : (
+          <div style={{
+            alignSelf: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '0.75rem'
+          }}>
+            <div style={{ color: 'var(--text-primary)', fontSize: '1.15rem' }}>
+              {t('home.loginToJoin')}
+            </div>
+            <button
+              className="btn-primary"
+              style={{ padding: '1rem 4rem', fontSize: '1.3rem' }}
+              onClick={onRequestLogin}
+            >
+              {t('home.logIn')}
+            </button>
+          </div>
+        )}
 
         <a
           href={config.packEditorUrl}
@@ -189,10 +211,15 @@ const HomePage = ({ user }) => {
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button className="btn-primary" onClick={() => handleJoin(game)}>
+                    <button
+                      className="btn-primary"
+                      onClick={() => handleJoin(game)}
+                      disabled={!user}
+                      title={!user ? t('home.loginToJoin') : undefined}
+                    >
                       {isMine ? t('home.open') : t('home.join')}
                     </button>
-                    {isMine && (
+                    {user && isMine && (
                       <button
                         onClick={() => handleDelete(game)}
                         style={{

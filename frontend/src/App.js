@@ -22,7 +22,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={
-          <AuthWrapper>
+          <AuthWrapper requireAuth={false}>
             <HomePage />
           </AuthWrapper>
         } />

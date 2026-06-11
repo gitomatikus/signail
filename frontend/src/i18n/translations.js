@@ -21,6 +21,8 @@ export const translations = {
     'login.join': 'Join Game',
 
     'home.tagline': 'Pick a game to join or host your own',
+    'home.logIn': 'Log In',
+    'home.loginToJoin': 'Log in to join the game',
     'home.createGame': '+ Create Game',
     'home.packEditorLink': '✏️ Need a pack? Open the pack editor ↗',
     'home.loadingGames': 'Loading games...',
@@ -157,6 +159,8 @@ export const translations = {
     'login.join': 'Увійти до гри',
 
     'home.tagline': 'Оберіть гру, щоб приєднатися, або створіть власну',
+    'home.logIn': 'Увійти',
+    'home.loginToJoin': 'Увійдіть, щоб приєднатися до гри',
     'home.createGame': '+ Створити гру',
     'home.packEditorLink': '✏️ Потрібен пак? Відкрийте редактор паків ↗',
     'home.loadingGames': 'Завантаження ігор...',

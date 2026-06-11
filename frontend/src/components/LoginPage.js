@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useTranslation } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 
-const LoginPage = ({ onLogin }) => {
+// Standalone full-screen login by default; pass onClose to render it as a
+// dismissable overlay on top of the current page (backdrop click / × close).
+const LoginPage = ({ onLogin, onClose }) => {
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
@@ -47,13 +49,24 @@ const LoginPage = ({ onLogin }) => {
   const showPreview = imageUrl && validateImageUrl(imageUrl);
 
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      minHeight: '100vh',
-      padding: '1rem'
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh',
+        padding: '1rem',
+        ...(onClose ? {
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.7)',
+          backdropFilter: 'blur(5px)',
+          overflowY: 'auto',
+          zIndex: 99999
+        } : {})
+      }}
+      onClick={onClose}
+    >
       <div className="glass-panel fade-in" style={{
         padding: '2.5rem',
         width: '100%',
@@ -62,7 +75,28 @@ const LoginPage = ({ onLogin }) => {
         flexDirection: 'column',
         gap: '1.5rem',
         position: 'relative'
-      }}>
+      }} onClick={e => e.stopPropagation()}>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t('common.close')}
+            style={{
+              position: 'absolute',
+              top: '1rem',
+              left: '1rem',
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              fontSize: '1.5rem',
+              lineHeight: 1,
+              padding: 0,
+              cursor: 'pointer'
+            }}
+          >
+            ×
+          </button>
+        )}
         <LanguageSwitcher style={{ position: 'absolute', top: '1rem', right: '1rem' }} />
         <div style={{ textAlign: 'center' }}>
           <h1 className="text-gradient" style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>Signail</h1>
