@@ -16,6 +16,9 @@ services:
       - PORT=${BACKEND_PORT:-8000}
       - WS_PATH=${WS_PATH:-/ws}
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      # Test knob: override the SSE keepalive interval (ms), e.g. to simulate
+      # a silent stream when testing client-side recovery
+      - SSE_PING_MS=${SSE_PING_MS:-}
       - CHOKIDAR_USEPOLLING=true
     networks:
       - app-network

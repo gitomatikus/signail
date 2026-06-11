@@ -26,6 +26,11 @@ const WATCHDOG_INTERVAL_MS = 10000;
 const WAKE_STALE_MS = 45000;
 // Manual retry delay when the browser gave up reconnecting on its own
 const RETRY_DELAY_MS = 5000;
+// A successful action POST proves the network path works, so missing pings
+// can't be a network blip: if the stream has been silent this long the moment
+// a POST succeeds, it is dead - reconnect now instead of waiting out STALE_MS.
+// One ping interval + slack keeps tunnel jitter from tripping it.
+const POST_STALE_MS = PING_INTERVAL_MS + 10000;
 
 const TERMINAL_EVENTS = ['game_deleted', 'game_not_found', 'join_rejected'];
 
@@ -222,7 +227,27 @@ class RealtimeManager {
   }
 
   notifySubscribers(data) {
-    this.subscribers.forEach(callback => callback(data));
+    this.subscribers.forEach(callback => {
+      try {
+        callback(data);
+      } catch (error) {
+        // One broken subscriber must not starve the rest (children subscribe
+        // before GameContext, which carries scores and presence)
+        console.error('Realtime subscriber error:', error);
+      }
+    });
+  }
+
+  // Called after every successful action POST: the round-trip just proved the
+  // server is reachable, so a stream that still missed its pings is dead even
+  // though readyState claims OPEN. Reconnecting here turns "admin pressed a
+  // button and nothing happened" into an immediate resync.
+  assertStreamFresh() {
+    if (!this.es || this.intentionalClose) return;
+    if (this.es.readyState === EventSource.OPEN && Date.now() - this.lastMessageAt > POST_STALE_MS) {
+      console.warn('Action POST succeeded but the stream is silent, reconnecting');
+      this.forceReconnect();
+    }
   }
 
   // Deliver an action to the server. Unlike the old WebSocket send(), which
@@ -245,6 +270,7 @@ class RealtimeManager {
         console.error(`Action ${payload.type} rejected with status ${response.status}`);
         return false;
       }
+      this.assertStreamFresh();
       return true;
     }).catch((error) => {
       console.error(`Action ${payload.type} failed:`, error);
@@ -347,10 +373,16 @@ class RealtimeManager {
   // The server includes the selection set in the connect snapshot, so this
   // no longer asks it anything: it replays the manager's cached copy to
   // subscribers, covering boards that (re)mount between broadcasts.
+  // Deferred by a microtask: the board calls this from a mount effect that
+  // runs BEFORE its subscribe effect, so a synchronous replay would fire
+  // into a not-yet-registered listener and be lost (the old WS round-trip
+  // hid this ordering by being async).
   sendRequestSelectedQuestions() {
-    this.notifySubscribers({
-      type: 'selected_questions_update',
-      data: Array.from(this.selectedQuestions)
+    queueMicrotask(() => {
+      this.notifySubscribers({
+        type: 'selected_questions_update',
+        data: Array.from(this.selectedQuestions)
+      });
     });
   }
 

@@ -13,7 +13,9 @@ const { handleAction } = require('./actions');
 // as idle, surfaces dead connections on write, and - unlike an SSE comment
 // frame, which never reaches client JS - feeds the client-side watchdog. 15s
 // (down from 30s) leaves several flushes of margin under Cloudflare's idle cap.
-const KEEPALIVE_INTERVAL_MS = 15000;
+// SSE_PING_MS override exists for testing (e.g. crank it up to simulate a
+// silent/zombie stream and exercise the client-side recovery paths)
+const KEEPALIVE_INTERVAL_MS = Number(process.env.SSE_PING_MS) || 15000;
 
 class SseManager {
   constructor() {
