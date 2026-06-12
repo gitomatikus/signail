@@ -128,6 +128,26 @@ class WebSocketManager {
     this.send({ type: 'secret_assign', data: { questionId, targetUserId, selectorUserId } });
   }
 
+  sendKaraokeAssign(questionId, targetUserId, selectorUserId = null) {
+    this.send({ type: 'karaoke_assign', data: { questionId, targetUserId, selectorUserId } });
+  }
+
+  sendKaraokeStart(questionId, performanceId, durationMs) {
+    this.send({ type: 'karaoke_start', data: { questionId, performanceId, durationMs } });
+  }
+
+  sendKaraokeChunk(questionId, performanceId, chunk) {
+    this.send({ type: 'karaoke_chunk', data: { questionId, performanceId, ...chunk } });
+  }
+
+  sendKaraokeEnd(questionId, performanceId) {
+    this.send({ type: 'karaoke_end', data: { questionId, performanceId } });
+  }
+
+  sendKaraokeSync(questionId) {
+    this.send({ type: 'karaoke_sync', data: { questionId } });
+  }
+
   sendClearSelectedQuestions() {
     this.send({ type: 'clear_selected_questions' });
   }

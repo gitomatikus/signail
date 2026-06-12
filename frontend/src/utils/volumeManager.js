@@ -24,6 +24,11 @@ const initializeElement = (el) => {
   if (!el || (el.tagName !== 'VIDEO' && el.tagName !== 'AUDIO')) {
     return;
   }
+  // The karaoke singer's source element feeds the recorded mix: its volume is
+  // pinned to 1 by the pipeline and must not follow the page volume
+  if (el.__karaokePinnedVolume) {
+    return;
+  }
 
   const targetVolume = getRememberedVolume();
   if (el.volume !== targetVolume) {
@@ -103,7 +108,7 @@ const setupEventListeners = () => {
       // Propagate the new volume to all other media elements currently in the DOM
       const elements = document.querySelectorAll('video, audio');
       elements.forEach((otherEl) => {
-        if (otherEl !== el) {
+        if (otherEl !== el && !otherEl.__karaokePinnedVolume) {
           otherEl.__programmaticChange = true;
           otherEl.volume = newVolume;
           otherEl.__programmaticChange = false;
@@ -125,6 +130,9 @@ export const setGlobalVolume = (value) => {
   const clamped = Math.min(1, Math.max(0, value));
   setRememberedVolume(clamped);
   document.querySelectorAll('video, audio').forEach((el) => {
+    if (el.__karaokePinnedVolume) {
+      return;
+    }
     el.__programmaticChange = true;
     el.volume = clamped;
     el.__programmaticChange = false;

@@ -58,10 +58,10 @@ const GameBoard = ({ isAdmin = false }) => {
         if (isAdmin) {
           navigate(`/game/${gameId}/question/${questionId}`);
         } else {
-          // Cat-in-the-bag: everyone joins the selection screen right away,
-          // without waiting for the admin to reveal the question
+          // Cat-in-the-bag and karaoke: everyone joins the selection screen
+          // right away, without waiting for the admin to reveal the question
           const q = findQuestionById(questionId);
-          if (q && q.type === 'secret') {
+          if (q && (q.type === 'secret' || q.type === 'karaoke')) {
             navigate(`/game/${gameId}/question/${questionId}`);
           }
         }

@@ -38,6 +38,11 @@ class Game {
     this.revealedAnswers = new Set();
     this.questionSelectors = new Map();
     this.secretAssignments = new Map();
+    // questionId -> { targetUserId, selectorUserId, performance }
+    // performance: { id, durationMs, ended, chunks: [{seq, t, b64}] }
+    // Chunks are an in-memory backlog so late joiners can catch up:
+    // MediaRecorder output is only decodable as a prefix-complete sequence.
+    this.karaoke = new Map();
     this.lastGreenFrameUser = null;
   }
 
@@ -116,10 +121,22 @@ class Game {
     this.broadcast({ type: 'clear_question_times' });
     this.questionSelectors.clear();
     this.secretAssignments.clear();
+    this.karaoke.clear();
     this.questionClicks.clear();
     this.questionAnswers.clear();
     this.revealedAnswers.clear();
     this.broadcastSelectedQuestions();
+  }
+
+  // Returning to the board ends any live performance: nobody can listen
+  // anymore, so the chunk backlog is just dead weight in memory
+  closeKaraokePerformances() {
+    for (const entry of this.karaoke.values()) {
+      if (entry.performance) {
+        entry.performance.ended = true;
+        entry.performance.chunks = [];
+      }
+    }
   }
 
   getSecretInfo(questionId) {

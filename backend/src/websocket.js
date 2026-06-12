@@ -171,6 +171,7 @@ class WebSocketManager {
     } else if (data.type === 'response_reveal') {
       game.broadcast({ type: 'response_reveal', data: data.data });
     } else if (data.type === 'return_to_game') {
+      game.closeKaraokePerformances();
       game.broadcast({ type: 'return_to_game' });
     } else if (data.type === 'elapsed_time') {
       const { questionId, userId } = data.data;
@@ -254,6 +255,109 @@ class WebSocketManager {
         game.broadcast({
           type: 'secret_assign',
           data: { questionId, targetUserId, selectorUserId: selectorUserId || null }
+        });
+      }
+    } else if (data.type === 'karaoke_assign') {
+      const { questionId, targetUserId, selectorUserId } = data.data;
+      const existing = game.karaoke.get(questionId);
+      // First assignment wins, but the host may re-assign as long as the
+      // performance hasn't started (e.g. the chosen player went offline)
+      const canAssign = !existing || (ws.isHost && !existing.performance);
+      if (targetUserId && canAssign) {
+        game.karaoke.set(questionId, {
+          targetUserId,
+          selectorUserId: selectorUserId || (existing ? existing.selectorUserId : null),
+          performance: existing ? existing.performance : null
+        });
+        game.broadcast({
+          type: 'karaoke_assign',
+          data: { questionId, targetUserId, selectorUserId: selectorUserId || null }
+        });
+      }
+    } else if (data.type === 'karaoke_start') {
+      // The assigned singer (re)starts streaming. A restart (page refresh
+      // mid-song) replaces the performance: new id, fresh chunk backlog —
+      // listeners reset their decoders when the performance id changes.
+      const { questionId, performanceId, durationMs } = data.data;
+      const entry = game.karaoke.get(questionId);
+      const sender = game.onlineUsers.get(ws);
+      if (entry && performanceId && sender && sender.id === entry.targetUserId) {
+        const numericDuration = Number(durationMs);
+        entry.performance = {
+          id: performanceId,
+          // Number(null) is 0 - only a real positive length counts
+          durationMs: Number.isFinite(numericDuration) && numericDuration > 0 ? numericDuration : null,
+          ended: false,
+          chunks: []
+        };
+        game.broadcast({
+          type: 'karaoke_start',
+          data: { questionId, performanceId, durationMs: entry.performance.durationMs }
+        });
+      }
+    } else if (data.type === 'karaoke_chunk') {
+      // Mixed track+voice audio from the singer: store for late joiners and
+      // relay to everyone else. ~4KB per 250ms chunk; the size cap only
+      // guards against something pathological.
+      const { questionId, performanceId, seq, t, b64 } = data.data;
+      const entry = game.karaoke.get(questionId);
+      const perf = entry && entry.performance;
+      const sender = game.onlineUsers.get(ws);
+      if (perf && perf.id === performanceId && !perf.ended
+        && sender && sender.id === entry.targetUserId
+        && typeof b64 === 'string' && b64.length > 0 && b64.length <= 400000
+        && Number.isFinite(Number(seq))) {
+        const chunk = { seq: Number(seq), t: Number(t) || 0, b64 };
+        perf.chunks.push(chunk);
+        const message = JSON.stringify({
+          type: 'karaoke_chunk',
+          data: { questionId, performanceId, ...chunk }
+        });
+        game.sockets.forEach((client) => {
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(message);
+          }
+        });
+      }
+    } else if (data.type === 'karaoke_end') {
+      // Singer's media ended (or the host cut the performance short)
+      const { questionId, performanceId } = data.data;
+      const entry = game.karaoke.get(questionId);
+      const perf = entry && entry.performance;
+      const sender = game.onlineUsers.get(ws);
+      const mayEnd = ws.isHost || (sender && entry && sender.id === entry.targetUserId);
+      if (perf && perf.id === performanceId && !perf.ended && mayEnd) {
+        perf.ended = true;
+        perf.chunks = []; // nobody needs the backlog after the performance
+        game.broadcast({ type: 'karaoke_end', data: { questionId, performanceId } });
+      }
+    } else if (data.type === 'karaoke_sync') {
+      // A (re)joining client catches up: current assignment/performance state,
+      // then the full chunk backlog so its decoder gets a valid stream prefix
+      const { questionId } = data.data || {};
+      const entry = game.karaoke.get(questionId);
+      const perf = entry ? entry.performance : null;
+      ws.send(JSON.stringify({
+        type: 'karaoke_state',
+        data: {
+          questionId,
+          targetUserId: entry ? entry.targetUserId : null,
+          // Before any assignment the question selector is the one allowed
+          // to pick the singer (plus the host) - same idea as cat-in-the-bag
+          selectorUserId: (entry && entry.selectorUserId)
+            || game.questionSelectors.get(questionId)
+            || null,
+          performance: perf
+            ? { id: perf.id, durationMs: perf.durationMs, ended: perf.ended }
+            : null
+        }
+      }));
+      if (perf && !perf.ended) {
+        perf.chunks.forEach((chunk) => {
+          ws.send(JSON.stringify({
+            type: 'karaoke_chunk',
+            data: { questionId, performanceId: perf.id, ...chunk }
+          }));
         });
       }
     } else if (data.type === 'request_selected_questions') {

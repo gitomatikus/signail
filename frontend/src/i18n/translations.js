@@ -136,6 +136,29 @@ export const translations = {
     "question.waitingChoice": "Waiting for the answerer to be chosen...",
     "question.secretAnswering": "🐱 Cat in the bag — {name} answers",
     "question.waitingReveal": "Waiting for the host to show the question...",
+    "question.karaokeTitle": "Karaoke!",
+    "question.karaokeChooseSinger": "Choose who sings:",
+    "question.karaokeSinging": "🎤 Karaoke — {name} sings",
+    "question.karaokeYourTurn": "You're up!",
+    "question.karaokeHeadphones":
+      "Put on headphones — everyone will hear exactly what you hear, plus your voice",
+    "question.karaokeMuteDiscord":
+      "Mute your mic in Discord — the game streams your voice to everyone",
+    "question.karaokeMicAsk":
+      "The browser will ask for microphone access when you start",
+    "question.karaokeStart": "Start performance",
+    "question.karaokeRestart": "Restart performance",
+    "question.karaokeOnAir": "On air",
+    "question.karaokeMicMissing":
+      "Microphone unavailable — streaming the track without your voice",
+    "question.karaokeWaitingStart": "Waiting for {name} to start singing...",
+    "question.karaokeClickToListen": "🔊 Click to listen",
+    "question.karaokeEndPerformance": "End performance",
+    "question.karaokeDone": "The performance is over",
+    "question.karaokeUnsupported":
+      "This browser can't stream karaoke — use desktop Chrome, Edge or Firefox",
+    "question.karaokeStartFailed":
+      "Couldn't start the performance — check the microphone and try again",
     "question.correctAnswer": "Correct answer:",
     "question.answerHostOnly": "Answer (host only):",
     "question.yourAnswer": "Your answer:",
@@ -309,6 +332,29 @@ export const translations = {
     "question.selectorChoosing": "{name} обирає, хто відповідатиме...",
     "question.waitingChoice": "Очікуємо вибору, хто відповідатиме...",
     "question.secretAnswering": "🐱 Кіт у мішку — відповідає {name}",
+    "question.karaokeTitle": "Караоке!",
+    "question.karaokeChooseSinger": "Оберіть, хто співатиме:",
+    "question.karaokeSinging": "🎤 Караоке — співає {name}",
+    "question.karaokeYourTurn": "Твій вихід!",
+    "question.karaokeHeadphones":
+      "Одягни навушники — всі почують саме те, що чуєш ти, плюс твій голос",
+    "question.karaokeMuteDiscord":
+      "Заглуши мікрофон у Discord — гра сама транслює твій голос усім",
+    "question.karaokeMicAsk":
+      "Браузер попросить доступ до мікрофона, коли почнеш",
+    "question.karaokeStart": "Почати виступ",
+    "question.karaokeRestart": "Перезапустити виступ",
+    "question.karaokeOnAir": "В ефірі",
+    "question.karaokeMicMissing":
+      "Мікрофон недоступний — транслюється лише мінусовка, без голосу",
+    "question.karaokeWaitingStart": "Чекаємо, поки {name} почне співати...",
+    "question.karaokeClickToListen": "🔊 Натисни, щоб слухати",
+    "question.karaokeEndPerformance": "Завершити виступ",
+    "question.karaokeDone": "Виступ завершено",
+    "question.karaokeUnsupported":
+      "Цей браузер не вміє стрімити караоке — потрібен десктопний Chrome, Edge або Firefox",
+    "question.karaokeStartFailed":
+      "Не вдалося почати виступ — перевір мікрофон і спробуй ще раз",
     "question.waitingReveal": "Очікуємо, поки ведучий покаже питання...",
     "question.correctAnswer": "Правильна відповідь:",
     "question.answerHostOnly": "Відповідь (бачить лише ведучий):",

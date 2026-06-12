@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import wsManager from '../utils/websocket';
 import OnlineUsers from '../components/OnlineUsers';
+import KaraokeQuestion from '../components/KaraokeQuestion';
 import ProgressiveImage from '../components/ProgressiveImage';
 import ImageLightbox from '../components/ImageLightbox';
 import Settings from '../components/Settings';
@@ -159,6 +160,8 @@ const QuestionPage = () => {
   const [clickedIndices, setClickedIndices] = useState(new Set());
   const [secretSelectorId, setSecretSelectorId] = useState(null);
   const [secretTargetId, setSecretTargetId] = useState(null);
+  const [karaokeSelectorId, setKaraokeSelectorId] = useState(null);
+  const [karaokeTargetId, setKaraokeTargetId] = useState(null);
   const [clicksLeftMap, setClicksLeftMap] = useState({});
   const [numberAnswers, setNumberAnswers] = useState({});
   const [answersRevealed, setAnswersRevealed] = useState(false);
@@ -332,6 +335,26 @@ const QuestionPage = () => {
         if (data.data.selectorUserId) {
           setSecretSelectorId(data.data.selectorUserId);
         }
+      } else if (data.type === 'karaoke_assign' && data.data.questionId === parseInt(questionId)) {
+        setKaraokeTargetId(data.data.targetUserId);
+        if (data.data.selectorUserId) {
+          setKaraokeSelectorId(data.data.selectorUserId);
+        }
+      } else if (data.type === 'karaoke_state' && data.data.questionId === parseInt(questionId)) {
+        // KaraokeQuestion requests this on mount; assignment state lives here
+        // so OnlineUsers can highlight the singer and show award buttons
+        if (data.data.targetUserId) {
+          setKaraokeTargetId(prev => prev || data.data.targetUserId);
+        }
+        if (data.data.selectorUserId) {
+          setKaraokeSelectorId(prev => prev || data.data.selectorUserId);
+        }
+      } else if (data.type === 'karaoke_start' && data.data.questionId === parseInt(questionId)) {
+        // Everyone's countdown follows the performance length
+        const durationMs = Number(data.data.durationMs);
+        if (Number.isFinite(durationMs) && durationMs > 0) {
+          setTimer(Math.ceil(durationMs / 1000));
+        }
       } else if (data.type === 'cat_clicks' && data.data.questionId === parseInt(questionId)) {
         // Each client is authoritative for its own clicks; ignore the echo of our own reports
         if (data.data.userId !== currentUserId) {
@@ -403,6 +426,8 @@ const QuestionPage = () => {
         setClickedIndices(new Set());
         setSecretSelectorId(null);
         setSecretTargetId(null);
+        setKaraokeSelectorId(null);
+        setKaraokeTargetId(null);
         setClicksLeftMap({});
         setNumberAnswers({});
         setAnswersRevealed(false);
@@ -544,6 +569,9 @@ const QuestionPage = () => {
   // players get a volume slider (their only media control)
   const questionHasMedia = useMemo(() => {
     if (!question) return false;
+    // Karaoke always carries audio: the slider is the listener's loudness and
+    // the singer's private monitor volume
+    if (question.type === 'karaoke') return true;
     const chunks = [
       ...(question.rules || []).map(r => r.content),
       ...(question.after_round || []).map(r => r.content),
@@ -570,6 +598,11 @@ const QuestionPage = () => {
     }
     if (question.type === 'progressive-reveal') {
       return question.duration || 60;
+    }
+    if (question.type === 'karaoke') {
+      // Placeholder while the singer gets ready; karaoke_start resets the
+      // countdown to the actual track length
+      return 120;
     }
     if (!question.rules || question.rules.length === 0) return 15;
     return question.rules.reduce((sum, rule) => sum + (rule.duration || 15), 0);
@@ -603,8 +636,8 @@ const QuestionPage = () => {
   // Add keyboard event listener for space and right arrow
   useEffect(() => {
     const handleKeyPress = (event) => {
-      if (['find-a-cat', 'close-enough', 'choice', 'text-answer'].includes(question?.type)) {
-        return; // These types answer by clicking/typing, not by racing on the spacebar
+      if (['find-a-cat', 'close-enough', 'choice', 'text-answer', 'karaoke'].includes(question?.type)) {
+        return; // These types answer by clicking/typing/singing, not by racing on the spacebar
       }
       if (event.code !== 'Space' && event.code !== 'ArrowRight') {
         return;
@@ -1687,9 +1720,48 @@ const QuestionPage = () => {
     return playField;
   };
 
+  const renderKaraokeContent = () => {
+    const playField = (
+      <KaraokeQuestion
+        question={question}
+        isAdmin={isAdmin}
+        currentUserId={currentUserId}
+        onlineUsers={onlineUsers}
+        isQuestionRevealed={isQuestionRevealed}
+        targetId={karaokeTargetId}
+        selectorId={karaokeSelectorId}
+        volume={mediaVolume}
+        cardStyle={cardStyle}
+        themeHeaderStyle={themeHeaderStyle}
+      />
+    );
+
+    const afterRoundRules = question.after_round || [];
+    if (showAfterRound && afterRoundRules.length > 0) {
+      const lastRuleIndex = Math.min(currentAfterRoundIndex, afterRoundRules.length - 1);
+      const answerCard = renderRuleCard(afterRoundRules[lastRuleIndex], t('question.answerLabel'));
+      // The host gets the same question | answer design as normal questions
+      if (isAdmin && isQuestionRevealed) {
+        return renderHostQuestionAnswer(playField, answerCard);
+      }
+      // Players keep the performance on screen with the answer below it
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: '16px' }}>
+          {playField}
+          {answerCard}
+        </div>
+      );
+    }
+
+    return playField;
+  };
+
   const renderContent = () => {
     if (question.type === 'find-a-cat') {
       return renderFindACatContent();
+    }
+    if (question.type === 'karaoke') {
+      return renderKaraokeContent();
     }
     if (question.type === 'secret') {
       return renderSecretContent();
@@ -2068,7 +2140,13 @@ const QuestionPage = () => {
           userTimes={userTimes}
           isAdmin={isAdmin}
           question={question}
-          secretTargetId={question?.type === 'secret' ? secretTargetId : null}
+          secretTargetId={
+            question?.type === 'secret'
+              ? secretTargetId
+              : question?.type === 'karaoke'
+                ? karaokeTargetId // the singer gets the same highlight + award buttons
+                : null
+          }
           clicksLeftMap={clicksLeftMap}
           numberAnswers={numberAnswers}
           answersRevealed={answersRevealed}
