@@ -66,9 +66,13 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
       setDownloadProgress(null);
       // If the server rotated the cache key (new pack uploaded / cache
       // cleared), the cached pack and answered questions were just wiped -
-      // drop them from state too so we fall through to a fresh fetch
-      const cacheChanged = await checkCacheVersion(gameId);
-      const cachedPack = await indexedDBService.getPack(`pack-${gameId}`);
+      // drop them from state too so we fall through to a fresh fetch.
+      // The check and the read run concurrently: the check only decides
+      // whether the cached pack may be used, not whether it can be read
+      const [cacheChanged, cachedPack] = await Promise.all([
+        checkCacheVersion(gameId),
+        indexedDBService.getPack(`pack-${gameId}`)
+      ]);
 
       if (cachedPack && !cacheChanged) {
         setPack(cachedPack);

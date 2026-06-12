@@ -1,7 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { indexedDBService } from '../services/indexedDB';
-import { checkCacheVersion } from '../services/cacheVersion';
 import wsManager from '../utils/websocket';
 import OnlineUsers from '../components/OnlineUsers';
 import ProgressiveImage from '../components/ProgressiveImage';
@@ -129,12 +127,22 @@ const QuestionPage = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   // The game host is the admin of their own game; everyone else is a player
-  const { gameId, isHost, onlineUsers } = useGame();
+  const { gameId, isHost, onlineUsers, pack, packLoading, downloadProgress } = useGame();
   const isAdmin = isHost;
   const isReadOnly = !isHost;
   const boardPath = `/game/${gameId}`;
-  const [question, setQuestion] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // The question comes straight from the in-memory pack (GameContext loads it
+  // once per game entry), so rendering needs no per-question I/O at all
+  const { question, themeName, roundIndex } = useMemo(() => {
+    const qid = parseInt(questionId);
+    for (let r = 0; r < (pack?.rounds.length || 0); r++) {
+      for (const theme of pack.rounds[r].themes) {
+        const q = theme.questions.find(item => item.id === qid);
+        if (q) return { question: q, themeName: theme.name || '', roundIndex: r };
+      }
+    }
+    return { question: null, themeName: '', roundIndex: null };
+  }, [pack, questionId]);
   const [isQuestionRevealed, setIsQuestionRevealed] = useState(false);
   const [isAnswerRevealed, setIsAnswerRevealed] = useState(false);
   const [isResponseRevealed, setIsResponseRevealed] = useState(false);
@@ -142,11 +150,6 @@ const QuestionPage = () => {
   const [currentRuleIndex, setCurrentRuleIndex] = useState(0);
   const [showAfterRound, setShowAfterRound] = useState(false);
   const [currentAfterRoundIndex, setCurrentAfterRoundIndex] = useState(0);
-  const [currentRoundIndex, setCurrentRoundIndex] = useState(() => {
-    const savedRoundIndex = localStorage.getItem(`currentRoundIndex-${gameId}`);
-    return savedRoundIndex ? parseInt(savedRoundIndex) : 0;
-  });
-  const [themeName, setThemeName] = useState('');
   const [timer, setTimer] = useState(15);
   const [startTime, setStartTime] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(null);
@@ -183,135 +186,97 @@ const QuestionPage = () => {
   // Media we auto-paused because a buzz is pending; resumed once every buzz
   // is judged wrong
   const autoPausedMediaRef = useRef(new Set());
+  // Bumped whenever in-flight state-restore responses must be discarded (the
+  // question changed underneath them, or the host reset the question state)
+  const hydrationEpochRef = useRef(0);
 
   useEffect(() => {
-    const loadQuestion = async () => {
+    // The question changed: state-restore responses still in flight belong to
+    // the previous question and must not be applied
+    hydrationEpochRef.current += 1;
+    const epoch = hydrationEpochRef.current;
+
+    // Any scroll position carried over from the board would push the
+    // question media below the fold on small screens
+    window.scrollTo(0, 0);
+    setClicksLeftMap({}); // Click budgets are per-question; drop stale entries
+    setNumberAnswers({});
+    setAnswersRevealed(false);
+    setAnswerInput('');
+    setSelectedOptions(new Set());
+    setTextAnswerInput('');
+    setPastedImage(null);
+    setRedJudgedUsers(new Set());
+    setHostTab('question');
+    setHostAnswerSeen(false);
+    adminPausedMediaRef.current = false;
+    autoPausedMediaRef.current.clear();
+
+    if (!pack) {
+      // Direct load/refresh: GameContext is still fetching the pack
+      return;
+    }
+    if (!question) {
+      // Stale URL (pack replaced or bad id): nothing to show here
+      navigate(boardPath);
+      return;
+    }
+
+    localStorage.setItem(`currentRoundIndex-${gameId}`, roundIndex.toString());
+
+    // Restore server-side question state (buzz times, submissions, secret
+    // assignment, click budgets) in the background - rendering doesn't wait,
+    // the question itself is already in memory. Responses only fill in
+    // underneath whatever already arrived via the socket or the player's own
+    // actions: live data wins over the fetched snapshot.
+    const hydrate = async (path, apply) => {
       try {
-        setLoading(true);
-        // Any scroll position carried over from the board would push the
-        // question media below the fold on small screens
-        window.scrollTo(0, 0);
-        setThemeName('');
-        setClicksLeftMap({}); // Click budgets are per-question; drop stale entries
-        setNumberAnswers({});
-        setAnswersRevealed(false);
-        setAnswerInput('');
-        setSelectedOptions(new Set());
-        setTextAnswerInput('');
-        setPastedImage(null);
-        setRedJudgedUsers(new Set());
-        setHostTab('question');
-        setHostAnswerSeen(false);
-        adminPausedMediaRef.current = false;
-        autoPausedMediaRef.current.clear();
-        // Stale cache (new pack uploaded / cache cleared): this question may
-        // no longer exist, so go back to the board and load everything fresh
-        const cacheChanged = await checkCacheVersion(gameId);
-        if (cacheChanged) {
-          navigate(boardPath);
-          return;
-        }
-        const pack = await indexedDBService.getPack(`pack-${gameId}`);
-        if (!pack) {
-          throw new Error('Pack not found');
-        }
-        let foundQuestion = null;
-        let foundRoundIndex = 0;
-        let foundThemeName = '';
-
-        // Search through rounds to find the question and its round index
-        for (let roundIndex = 0; roundIndex < pack.rounds.length; roundIndex++) {
-          const round = pack.rounds[roundIndex];
-          for (const theme of round.themes) {
-            const q = theme.questions.find(q => q.id === parseInt(questionId));
-            if (q) {
-              foundQuestion = q;
-              foundRoundIndex = roundIndex;
-              foundThemeName = theme.name || '';
-              break;
-            }
-          }
-          if (foundQuestion) break;
-        }
-
-        if (!foundQuestion) {
-          throw new Error('Question not found');
-        }
-
-        setQuestion(foundQuestion);
-        setCurrentRoundIndex(foundRoundIndex);
-        setThemeName(foundThemeName);
-        localStorage.setItem(`currentRoundIndex-${gameId}`, foundRoundIndex.toString());
-
-        // For cat-in-the-bag, restore who selected it and who answers it (survives refresh).
-        // Must happen before the times fetch: assigning the target resets userTimes.
-        if (foundQuestion.type === 'secret') {
-          try {
-            const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${questionId}/secret`);
-            const result = await response.json();
-            if (result.status === 'success') {
-              setSecretSelectorId(result.data.selectorId || null);
-              setSecretTargetId(result.data.assignment?.targetUserId || null);
-              if (result.data.revealed) {
-                setIsQuestionRevealed(true);
-              }
-            }
-          } catch (error) {
-            console.error('Error fetching secret question info:', error);
-          }
-        }
-
-        // For submission-based types (close-enough numbers, choice picks, text
-        // answers), restore submissions (masked until reveal; own value included)
-        if (['close-enough', 'choice', 'text-answer'].includes(foundQuestion.type)) {
-          try {
-            const storedUser = localStorage.getItem('user');
-            const myId = storedUser ? JSON.parse(storedUser).id : null;
-            const query = myId ? `?userId=${encodeURIComponent(myId)}` : '';
-            const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${questionId}/answers${query}`);
-            const result = await response.json();
-            if (result.status === 'success') {
-              setNumberAnswers(result.data.answers || {});
-              setAnswersRevealed(!!result.data.revealed);
-            }
-          } catch (error) {
-            console.error('Error fetching question answers:', error);
-          }
-        }
-
-        // For find-a-cat with a click limit, restore remaining clicks (survives refresh)
-        if (foundQuestion.type === 'find-a-cat' && foundQuestion.max_clicks > 0) {
-          try {
-            const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${questionId}/clicks`);
-            const result = await response.json();
-            if (result.status === 'success') {
-              setClicksLeftMap(result.data);
-            }
-          } catch (error) {
-            console.error('Error fetching question clicks:', error);
-          }
-        }
-
-        // Fetch existing times for this question
-        try {
-          const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${questionId}/times`);
-          const result = await response.json();
-          if (result.status === 'success') {
-            setUserTimes(result.data);
-          }
-        } catch (error) {
-          console.error('Error fetching question times:', error);
+        const response = await fetch(`${config.apiUrl}/api/games/${gameId}/questions/${questionId}${path}`);
+        const result = await response.json();
+        if (hydrationEpochRef.current === epoch && result.status === 'success') {
+          apply(result.data);
         }
       } catch (error) {
-        console.error('Error loading question:', error);
-        navigate(boardPath);
-      } finally {
-        setLoading(false);
+        console.error(`Error fetching question state (${path}):`, error);
       }
     };
-    loadQuestion();
+
+    // For cat-in-the-bag, restore who selected it and who answers it (survives refresh)
+    if (question.type === 'secret') {
+      hydrate('/secret', (data) => {
+        setSecretSelectorId(prev => prev || data.selectorId || null);
+        setSecretTargetId(prev => prev || data.assignment?.targetUserId || null);
+        if (data.revealed) {
+          setIsQuestionRevealed(true);
+        }
+      });
+    }
+
+    // For submission-based types (close-enough numbers, choice picks, text
+    // answers), restore submissions (masked until reveal; own value included)
+    if (['close-enough', 'choice', 'text-answer'].includes(question.type)) {
+      const storedUser = localStorage.getItem('user');
+      const myId = storedUser ? JSON.parse(storedUser).id : null;
+      const query = myId ? `?userId=${encodeURIComponent(myId)}` : '';
+      hydrate(`/answers${query}`, (data) => {
+        setNumberAnswers(prev => ({ ...(data.answers || {}), ...prev }));
+        setAnswersRevealed(prev => prev || !!data.revealed);
+      });
+    }
+
+    // For find-a-cat with a click limit, restore remaining clicks (survives refresh)
+    if (question.type === 'find-a-cat' && question.max_clicks > 0) {
+      hydrate('/clicks', (data) => {
+        setClicksLeftMap(prev => ({ ...data, ...prev }));
+      });
+    }
+
+    // Restore times recorded before a refresh/rejoin
+    hydrate('/times', (data) => {
+      setUserTimes(prev => ({ ...data, ...prev }));
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [questionId, navigate, isAdmin, gameId]);
+  }, [questionId, pack, navigate, gameId]);
 
   useEffect(() => {
     // Apply an admin playback command to the matching media element.
@@ -429,6 +394,9 @@ const QuestionPage = () => {
           applyMediaControl(data.data);
         }
       } else if (data.type === 'clear_question_times') {
+        // The host reset the question: a state-restore response still in
+        // flight is now stale and must not resurrect the cleared state
+        hydrationEpochRef.current += 1;
         setUserTimes({});
         setElapsedTime(null);
         setHasRecordedTime(false);
@@ -658,7 +626,8 @@ const QuestionPage = () => {
           return;
         }
       }
-      if (((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) &&
+      if (startTime &&
+        ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) &&
         !hasRecordedTime &&
         !userTimes[currentUserId]) {
         const endTime = Date.now();
@@ -681,7 +650,12 @@ const QuestionPage = () => {
   // Start timer when question is revealed or when non-admin user sees the question
   // For cat-in-the-bag, wait until a player is chosen and the admin shows the question
   useEffect(() => {
-    if (question?.type === 'secret' && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
+    // The buzz clock starts only once there is question content on screen -
+    // on a hard refresh the pack may still be loading
+    if (!question) {
+      return;
+    }
+    if (question.type === 'secret' && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
       return;
     }
     if ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) {
@@ -692,7 +666,7 @@ const QuestionPage = () => {
       setUserTimes({}); // Reset all user times when starting new question
       setClickedIndices(new Set()); // Reset clicked indices for new question!
     }
-  }, [isQuestionRevealed, isAnswerRevealed, isAdmin, secretTargetId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [question, isQuestionRevealed, isAnswerRevealed, isAdmin, secretTargetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync clickedIndices when page is loaded/refreshed and user has already recorded time
   useEffect(() => {
@@ -748,7 +722,9 @@ const QuestionPage = () => {
     }
   };
 
-  if (loading) {
+  // Only a direct load/refresh waits here (the pack is being read from
+  // IndexedDB or re-downloaded); in-game navigation renders instantly
+  if (packLoading || !question) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
         <div style={{
@@ -761,7 +737,11 @@ const QuestionPage = () => {
           marginBottom: '1rem'
         }} />
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-        <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '1.25rem' }}>{t('common.loading')}</div>
+        <div style={{ color: 'var(--text-primary)', fontWeight: '600', fontSize: '1.25rem' }}>
+          {typeof downloadProgress === 'number' && downloadProgress >= 0
+            ? `${t('common.loading')} ${downloadProgress}%`
+            : t('common.loading')}
+        </div>
       </div>
     );
   }
