@@ -27,8 +27,63 @@ export const isKaraokeStreamingSupported = () =>
 // ---------- Lyrics (plain text or LRC "[mm:ss.xx] line") ----------
 
 const LRC_TIME_RE = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
+// Enhanced-LRC inline word stamps: "[mm:ss.xx]<mm:ss.xx>Some <mm:ss.xx>words"
+const WORD_TIME_RE = /<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>/g;
 
-// -> [{ timeMs, text }] sorted by time; [] when nothing parses as LRC
+const matchToMs = (match) => {
+  const minutes = parseInt(match[1], 10);
+  const seconds = parseInt(match[2], 10);
+  const fracRaw = match[3] || '';
+  const fracMs = fracRaw.length === 0 ? 0
+    : fracRaw.length === 1 ? parseInt(fracRaw, 10) * 100
+      : fracRaw.length === 2 ? parseInt(fracRaw, 10) * 10
+        : parseInt(fracRaw.slice(0, 3), 10);
+  return (minutes * 60 + seconds) * 1000 + fracMs;
+};
+
+// Line content -> [{ timeMs|null, endMs|null, text }]: a <..> stamp times the
+// word that follows it; words without a stamp carry null and ride along
+// visually. A2 ends: two stamps with no word between ("word<..> <..>next")
+// or a trailing stamp close the previous word at that time.
+const parseLineWords = (content) => {
+  const words = [];
+  let pending = null;
+  let sliceStart = 0;
+  const pushSegment = (segment) => {
+    for (const part of segment.split(/\s+/)) {
+      if (!part) continue;
+      words.push({ timeMs: pending, endMs: null, text: part });
+      pending = null;
+    }
+  };
+  WORD_TIME_RE.lastIndex = 0;
+  let match;
+  while ((match = WORD_TIME_RE.exec(content)) !== null) {
+    pushSegment(content.slice(sliceStart, match.index));
+    const ms = matchToMs(match);
+    const prevChar = match.index > 0 ? content[match.index - 1] : '';
+    const lastEndOpen = words.length > 0 && words[words.length - 1].endMs === null;
+    if (pending !== null && lastEndOpen) {
+      words[words.length - 1].endMs = pending;
+      pending = ms;
+    } else if (prevChar && prevChar !== '>' && !/\s/.test(prevChar) && lastEndOpen) {
+      // Glued onto the word ("word<mm:ss.xx>"): its end, even when
+      // untimed words follow
+      words[words.length - 1].endMs = ms;
+    } else {
+      pending = ms;
+    }
+    sliceStart = WORD_TIME_RE.lastIndex;
+  }
+  pushSegment(content.slice(sliceStart));
+  if (pending !== null && words.length > 0 && words[words.length - 1].endMs === null) {
+    words[words.length - 1].endMs = pending; // trailing tag ends the last word
+  }
+  return words;
+};
+
+// -> [{ timeMs, text, words|null }] sorted by time; [] when nothing parses
+// as LRC. `words` is only set when the line carries enhanced-LRC stamps.
 export const parseLrc = (text) => {
   const lines = [];
   for (const raw of String(text || '').split(/\r?\n/)) {
@@ -39,20 +94,15 @@ export const parseLrc = (text) => {
     while ((match = LRC_TIME_RE.exec(raw)) !== null) {
       // Timestamps must form a contiguous prefix ("[00:12.00][00:24.00]text")
       if (match.index !== tailStart) break;
-      const minutes = parseInt(match[1], 10);
-      const seconds = parseInt(match[2], 10);
-      const fracRaw = match[3] || '';
-      const fracMs = fracRaw.length === 0 ? 0
-        : fracRaw.length === 1 ? parseInt(fracRaw, 10) * 100
-          : fracRaw.length === 2 ? parseInt(fracRaw, 10) * 10
-            : parseInt(fracRaw.slice(0, 3), 10);
-      times.push((minutes * 60 + seconds) * 1000 + fracMs);
+      times.push(matchToMs(match));
       tailStart = LRC_TIME_RE.lastIndex;
     }
     if (times.length === 0) continue; // plain line or [ti:...] metadata tag
-    const content = raw.slice(tailStart).trim();
+    const words = parseLineWords(raw.slice(tailStart));
+    const content = words.map((w) => w.text).join(' ');
+    const hasWordTimes = words.some((w) => w.timeMs !== null);
     for (const timeMs of times) {
-      lines.push({ timeMs, text: content });
+      lines.push({ timeMs, text: content, words: hasWordTimes ? words : null });
     }
   }
   return lines.sort((a, b) => a.timeMs - b.timeMs);

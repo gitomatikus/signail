@@ -12,6 +12,129 @@ import {
 } from '../utils/karaoke';
 import { useTranslation } from '../i18n/LanguageContext';
 
+// First stamped word in `line` at or after `fromIdx`, else `fallback` -
+// a word's fill ends where the next stamped word begins
+const nextTimedStart = (line, fromIdx, fallback) => {
+  for (let j = fromIdx; j < line.words.length; j++) {
+    if (line.words[j].timeMs !== null) return line.words[j].timeMs;
+  }
+  return fallback;
+};
+
+const renderKaraokeWord = (line, word, wi, nowMs, nextLineTimeMs) => {
+  const fallbackEnd = nextLineTimeMs !== null && nextLineTimeMs > line.timeMs
+    ? nextLineTimeMs
+    : (word.timeMs ?? line.timeMs) + 1000;
+  let progress;
+  if (word.timeMs !== null) {
+    const startMs = word.timeMs;
+    // An explicit A2 end tag gives the word its own sweep length;
+    // otherwise it fills until the next stamped word begins
+    const endMs = word.endMs !== null && word.endMs !== undefined
+      ? Math.max(startMs + 40, word.endMs)
+      : Math.max(startMs + 120, nextTimedStart(line, wi + 1, fallbackEnd));
+    progress = Math.min(1, Math.max(0, (nowMs - startMs) / (endMs - startMs)));
+  } else {
+    // Unstamped words light up when the next stamped word is reached
+    progress = nowMs >= nextTimedStart(line, wi + 1, fallbackEnd) ? 1 : 0;
+  }
+  const style = {};
+  if (progress >= 1) {
+    style.color = 'var(--accent)';
+    style.textShadow = '0 0 18px var(--accent-glow)';
+  } else if (progress <= 0) {
+    style.color = 'var(--text-secondary)';
+    style.opacity = 0.85;
+  } else {
+    const pct = (progress * 100).toFixed(1);
+    style.backgroundImage = `linear-gradient(90deg, var(--accent) ${pct}%, var(--text-secondary) ${pct}%)`;
+    style.WebkitBackgroundClip = 'text';
+    style.backgroundClip = 'text';
+    style.WebkitTextFillColor = 'transparent';
+    style.color = 'transparent';
+    style.filter = 'drop-shadow(0 0 10px var(--accent-glow))';
+  }
+  return <span key={wi} style={style}>{word.text}</span>;
+};
+
+// Timed lyrics display. Runs its own rAF clock (smoothed against the chunky
+// 250ms track time of the listener stream) so the per-word karaoke fill of
+// enhanced-LRC lines sweeps smoothly; line-level LRC keeps the old behavior.
+const KaraokeLyrics = ({ lines, getTimeMs }) => {
+  const [nowMs, setNowMs] = useState(null);
+
+  useEffect(() => {
+    let raf;
+    let est = null;
+    let lastWall = performance.now();
+    const tick = () => {
+      const wall = performance.now();
+      const dt = wall - lastWall;
+      lastWall = wall;
+      const raw = getTimeMs();
+      if (raw === null || raw === undefined) {
+        est = null;
+      } else if (est === null || raw < est - 600) {
+        est = raw; // first sample, seek or restart
+      } else {
+        // Advance on the wall clock, snap up to fresher samples, and freeze
+        // at most 450ms past the last sample (chunk cadence is 250ms)
+        est = Math.min(Math.max(est + dt, raw), raw + 450);
+      }
+      // Quantized so React re-renders ~25fps instead of every frame
+      setNowMs(est === null ? null : Math.round(est / 40) * 40);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [getTimeMs]);
+
+  const idx = currentLrcIndex(lines, nowMs ?? -1);
+  const start = Math.max(0, Math.min(idx - 2, lines.length - 7));
+  const visible = lines.slice(start, start + 7);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%', maxWidth: '760px', minHeight: '13rem', justifyContent: 'center' }}>
+      {visible.map((line, i) => {
+        const globalIdx = start + i;
+        const isCurrent = globalIdx === idx;
+        const lineStyle = {
+          fontSize: isCurrent ? '1.7rem' : '1.15rem',
+          fontWeight: isCurrent ? '800' : '500',
+          color: isCurrent ? 'var(--accent)' : 'var(--text-secondary)',
+          opacity: isCurrent ? 1 : 0.75,
+          textShadow: isCurrent ? '0 0 18px var(--accent-glow)' : 'none',
+          transition: 'all 0.25s',
+          textAlign: 'center'
+        };
+        if (!isCurrent || !line.words || nowMs === null) {
+          return (
+            <div key={`${line.timeMs}-${globalIdx}`} style={lineStyle}>
+              {line.text || '♪'}
+            </div>
+          );
+        }
+        const nextLineTimeMs = globalIdx + 1 < lines.length ? lines[globalIdx + 1].timeMs : null;
+        return (
+          <div
+            key={`${line.timeMs}-${globalIdx}`}
+            style={{
+              ...lineStyle,
+              textShadow: 'none',
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              columnGap: '0.45em',
+              rowGap: '0.1em'
+            }}
+          >
+            {line.words.map((word, wi) => renderKaraokeWord(line, word, wi, nowMs, nextLineTimeMs))}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 // One karaoke performance: the assigned singer plays the track locally, the
 // browser mixes it with their microphone and streams the mix in chunks over
 // the websocket; everyone else plays that stream. Lyrics (and the local muted
@@ -36,7 +159,6 @@ const KaraokeQuestion = ({
   const [isStreaming, setIsStreaming] = useState(false); // singer: my pipeline is live
   const [micActive, setMicActive] = useState(true);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
-  const [trackTimeMs, setTrackTimeMs] = useState(null);
   const [error, setError] = useState(null);
 
   const isSinger = !!currentUserId && currentUserId === targetId;
@@ -179,16 +301,15 @@ const KaraokeQuestion = ({
 
   // ---------- track clock (lyrics + video sync) ----------
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (isSinger && isStreaming && singerMediaRef.current) {
-        setTrackTimeMs(Math.round(singerMediaRef.current.currentTime * 1000));
-      } else if (!isSinger && playerRef.current) {
-        setTrackTimeMs(playerRef.current.player.getTrackTimeMs());
-      }
-    }, 250);
-    return () => clearInterval(interval);
-  }, [isSinger, isStreaming]);
+  // KaraokeLyrics polls these every frame; refs keep their identity stable
+  const getSingerTimeMs = useCallback(() => {
+    const el = singerMediaRef.current;
+    return el ? el.currentTime * 1000 : null;
+  }, []);
+  const getListenerTimeMs = useCallback(() => {
+    const active = playerRef.current;
+    return active ? active.player.getTrackTimeMs() : null;
+  }, []);
 
   // Listeners watch their own local copy of the video, muted, nudged to the
   // audio they are hearing - eyes tolerate the small drift, ears would not
@@ -306,31 +427,11 @@ const KaraokeQuestion = ({
   const renderLyrics = () => {
     if (!question.lyrics) return null;
     if (lrcLines.length > 0) {
-      const idx = currentLrcIndex(lrcLines, trackTimeMs ?? -1);
-      const start = Math.max(0, Math.min(idx - 2, lrcLines.length - 7));
-      const visible = lrcLines.slice(start, start + 7);
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%', maxWidth: '760px', minHeight: '13rem', justifyContent: 'center' }}>
-          {visible.map((line, i) => {
-            const isCurrent = start + i === idx;
-            return (
-              <div
-                key={`${line.timeMs}-${start + i}`}
-                style={{
-                  fontSize: isCurrent ? '1.7rem' : '1.15rem',
-                  fontWeight: isCurrent ? '800' : '500',
-                  color: isCurrent ? 'var(--accent)' : 'var(--text-secondary)',
-                  opacity: isCurrent ? 1 : 0.75,
-                  textShadow: isCurrent ? '0 0 18px var(--accent-glow)' : 'none',
-                  transition: 'all 0.25s',
-                  textAlign: 'center'
-                }}
-              >
-                {line.text || '♪'}
-              </div>
-            );
-          })}
-        </div>
+        <KaraokeLyrics
+          lines={lrcLines}
+          getTimeMs={isSinger ? getSingerTimeMs : getListenerTimeMs}
+        />
       );
     }
     return (
