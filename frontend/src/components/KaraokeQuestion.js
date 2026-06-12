@@ -339,10 +339,19 @@ const KaraokeQuestion = ({
   const finishPerformance = useCallback(() => {
     const performanceId = perfIdRef.current;
     if (!performanceId) return;
-    stopPipeline();
-    // The recorder's final chunk is converted+sent async; give it a moment
-    // before karaoke_end makes the server drop further chunks
-    setTimeout(() => wsManager.sendKaraokeEnd(questionId, performanceId), 800);
+    const pipeline = pipelineRef.current;
+    // The mix runs voiceSyncMs behind the element clock, so at 'ended' the
+    // last stretch of the song (and the final sung note) is still inside the
+    // delay line - keep recording until it drains. The recorder's final chunk
+    // is then converted+sent async; give it a moment before karaoke_end makes
+    // the server drop further chunks.
+    const drainMs = (pipeline && pipeline.voiceSyncMs ? pipeline.voiceSyncMs : 0) + 300;
+    setTimeout(() => {
+      if (pipelineRef.current === pipeline) {
+        stopPipeline();
+      }
+      setTimeout(() => wsManager.sendKaraokeEnd(questionId, performanceId), 800);
+    }, drainMs);
   }, [questionId, stopPipeline]);
 
   useEffect(() => {

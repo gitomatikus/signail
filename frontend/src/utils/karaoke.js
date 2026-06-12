@@ -7,6 +7,12 @@
 // perfect sync no matter how bad the network latency is; the whole show is
 // just uniformly a little behind, which nobody can perceive.
 //
+// The one lag that is NOT uniform sits inside the mix itself: the singer
+// hears the track only after the output latency and their voice spends the
+// input latency coming back through the mic, so a naive mix carries the
+// voice a few hundred ms behind the track. The track branch is delayed by
+// an estimate of that round trip to line the two up (see Singer side).
+//
 // Listeners feed the chunks into MediaSource Extensions. Chunks are only
 // decodable as a prefix-complete sequence (the first one carries the WebM
 // header), which is why the server keeps a backlog for late joiners.
@@ -16,6 +22,10 @@ const CHUNK_MS = 250;
 // Playback may fall behind the live edge after a stall; beyond this we jump
 const MAX_LIVE_LAG_S = 2.5;
 const LIVE_EDGE_OFFSET_S = 0.4;
+// Voice-vs-track alignment inside the mix (see Singer side below)
+const MAX_VOICE_SYNC_S = 1.5;
+const FALLBACK_MIC_LATENCY_S = 0.08;
+const VOICE_SYNC_OVERRIDE_KEY = 'karaokeVoiceSyncMs';
 
 export const isKaraokeStreamingSupported = () =>
   typeof window.MediaRecorder !== 'undefined'
@@ -165,7 +175,10 @@ export const isVideoMedia = (mediaDataUrl) =>
 
 // createMediaElementSource may only ever be called once per element, and the
 // element goes permanently silent if its AudioContext is closed - so the
-// context+graph live on the element and survive pipeline restarts.
+// context+graph live on the element and survive pipeline restarts. Only the
+// permanent nodes are cached; the mix chain is rebuilt per performance in
+// startSingerPipeline (a reused delay line would replay the tail of the
+// previous attempt into a restart).
 const getElementGraph = (mediaEl) => {
   if (!mediaEl.__karaokeGraph) {
     const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
@@ -176,15 +189,29 @@ const getElementGraph = (mediaEl) => {
     const monitorGain = ctx.createGain();
     source.connect(monitorGain);
     monitorGain.connect(ctx.destination);
-    // Mix destination: track + mic, encoded and streamed to everyone
-    const mixDest = ctx.createMediaStreamDestination();
-    const trackGain = ctx.createGain();
-    trackGain.gain.value = 0.85; // headroom so the voice sits on top
-    source.connect(trackGain);
-    trackGain.connect(mixDest);
-    mediaEl.__karaokeGraph = { ctx, monitorGain, mixDest };
+    mediaEl.__karaokeGraph = { ctx, source, monitorGain };
   }
   return mediaEl.__karaokeGraph;
+};
+
+// The track enters the mix digitally (zero latency), but the singer only
+// hears it after the output latency, and their answer to it spends the input
+// latency travelling back through the mic stack - so in a naive mix every
+// sung note lands outLat+inLat behind the track moment it belongs to
+// (~150ms wired, easily 0.5s on Bluetooth) and listeners hear the singer
+// permanently late. Delaying the track branch by that estimate lines the
+// two back up.
+const estimateVoiceSyncS = (ctx, micStream) => {
+  let inputLatencyS = FALLBACK_MIC_LATENCY_S;
+  const track = micStream.getAudioTracks()[0];
+  const reported = track && track.getSettings ? track.getSettings().latency : undefined;
+  if (typeof reported === 'number' && Number.isFinite(reported)) {
+    // Browsers tend to report the requested ideal rather than the real
+    // capture latency - never trust a value below the realistic floor
+    inputLatencyS = Math.max(reported, FALLBACK_MIC_LATENCY_S);
+  }
+  const outputLatencyS = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+  return Math.min(MAX_VOICE_SYNC_S, outputLatencyS + inputLatencyS);
 };
 
 // Builds the mix graph around mediaEl and starts streaming. The element's own
@@ -195,8 +222,7 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
   if (!isKaraokeStreamingSupported()) {
     throw new Error('karaoke-unsupported');
   }
-  const graph = getElementGraph(mediaEl);
-  const { ctx, monitorGain, mixDest } = graph;
+  const { ctx, source, monitorGain } = getElementGraph(mediaEl);
 
   // The volume manager must not touch this element: its volume scales the
   // samples entering the graph, i.e. the recorded mix for everyone
@@ -224,9 +250,35 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
       }
     });
     micSource = ctx.createMediaStreamSource(micStream);
-    micSource.connect(mixDest);
   } catch (e) {
     console.warn('Karaoke: microphone unavailable, streaming track only', e);
+  }
+
+  // No mic means no voice to align. Otherwise the estimate can be overridden
+  // (in ms) from localStorage for setups that defy estimation.
+  let voiceSyncS = micSource ? estimateVoiceSyncS(ctx, micStream) : 0;
+  if (micSource) {
+    try {
+      const overrideMs = parseFloat(window.localStorage.getItem(VOICE_SYNC_OVERRIDE_KEY));
+      if (Number.isFinite(overrideMs)) {
+        voiceSyncS = Math.min(MAX_VOICE_SYNC_S, Math.max(0, overrideMs / 1000));
+      }
+    } catch (e) { /* storage blocked - keep the estimate */ }
+    console.info(`Karaoke: track delayed ${Math.round(voiceSyncS * 1000)}ms to align the voice (override: localStorage.${VOICE_SYNC_OVERRIDE_KEY})`);
+  }
+  const voiceSyncMs = Math.round(voiceSyncS * 1000);
+
+  // Mix destination: delayed track + mic, encoded and streamed to everyone
+  const mixDest = ctx.createMediaStreamDestination();
+  const trackGain = ctx.createGain();
+  trackGain.gain.value = 0.85; // headroom so the voice sits on top
+  const trackDelay = ctx.createDelay(MAX_VOICE_SYNC_S);
+  trackDelay.delayTime.value = voiceSyncS;
+  source.connect(trackGain);
+  trackGain.connect(trackDelay);
+  trackDelay.connect(mixDest);
+  if (micSource) {
+    micSource.connect(mixDest);
   }
 
   const recorder = new MediaRecorder(mixDest.stream, {
@@ -240,7 +292,8 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
   let conversionChain = Promise.resolve();
   recorder.ondataavailable = (event) => {
     if (!event.data || event.data.size === 0) return;
-    const t = Math.round((mediaEl.currentTime || 0) * 1000);
+    // On the delayed clock: the track position the mix actually contains now
+    const t = Math.max(0, Math.round((mediaEl.currentTime || 0) * 1000 - voiceSyncMs));
     const mySeq = seq++;
     conversionChain = conversionChain
       .then(() => blobToBase64(event.data))
@@ -251,6 +304,7 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
 
   return {
     micActive: !!micStream,
+    voiceSyncMs,
     setMonitorVolume: (value) => {
       monitorGain.gain.value = Math.min(1, Math.max(0, value));
     },
@@ -262,6 +316,7 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
           recorder.stop(); // flushes a final dataavailable with the tail
         }
       } catch (e) { /* already gone */ }
+      try { source.disconnect(trackGain); } catch (e) { /* detached */ }
       if (micSource) {
         try { micSource.disconnect(); } catch (e) { /* detached */ }
       }

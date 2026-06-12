@@ -2031,8 +2031,10 @@ const QuestionPage = () => {
           )}
         </div>
       </div>
-      {/* Players have no native media controls, so give them a volume slider */}
-      {!isAdmin && questionHasMedia && (
+      {/* Players have no native media controls, so give them a volume slider.
+          Karaoke streams play through a hidden element with no controls at
+          all, so there the host needs the slider too. */}
+      {(!isAdmin || question.type === 'karaoke') && questionHasMedia && (
         <div className="glass-panel" style={{
           display: 'flex',
           alignItems: 'center',
