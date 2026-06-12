@@ -10,7 +10,10 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
   const location = useLocation();
   const { t } = useTranslation();
   const isQuestionPage = location.pathname.includes('/question/');
-  const { gameId, gameInfo } = useGame() || {};
+  const { gameId, gameInfo, user: contextUser } = useGame() || {};
+  // The board page renders this list without a currentUserId prop — fall
+  // back to the logged-in user so the own-card badge shows everywhere
+  const myUserId = currentUserId ?? contextUser?.id ?? null;
 
   const [updatedUsers, setUpdatedUsers] = useState(new Set());
   const [penalizedUsers, setPenalizedUsers] = useState(new Set());
@@ -135,9 +138,11 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
   return (
     <div style={{
       width: '100%',
+      boxSizing: 'border-box',
       display: 'flex',
       justifyContent: 'center',
-      gap: '2rem',
+      // Tight gap so 9+ players and the host fit in a single row on a desktop
+      gap: '0.75rem',
       flexWrap: 'wrap',
       minHeight: '250px',
       alignItems: 'flex-start',
@@ -298,7 +303,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             key={user.id || user.name}
             className="fade-in"
             style={{
-              width: '140px',
+              width: '124px',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -391,6 +396,24 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               textShadow: '0 2px 4px rgba(0,0,0,0.3)'
             }}>
               {user.name}
+              {myUserId && user.id === myUserId && (
+                <span style={{
+                  display: 'inline-block',
+                  verticalAlign: 'middle',
+                  marginLeft: '6px',
+                  fontSize: '0.6rem',
+                  fontWeight: '700',
+                  letterSpacing: '0.1em',
+                  lineHeight: 1.4,
+                  color: 'var(--on-primary)',
+                  background: 'var(--primary)',
+                  borderRadius: '9999px',
+                  padding: '1px 7px',
+                  textShadow: 'none'
+                }}>
+                  {t('users.you')}
+                </span>
+              )}
             </span>
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
@@ -593,13 +616,13 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
           style={{
             display: 'flex',
             alignItems: 'flex-start',
-            gap: '2rem',
             borderLeft: '2px solid var(--glass-border)',
-            paddingLeft: '2rem'
+            paddingLeft: '0.75rem',
+            marginLeft: '0.25rem'
           }}
         >
           <div style={{
-            width: '140px',
+            width: '124px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',

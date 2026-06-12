@@ -278,12 +278,18 @@ const GameBoard = ({ isAdmin = false }) => {
             const isAnswered = selectedQuestions.has(question.id);
             const isLocked = !isAnswered && selectedQuestionId && question.id !== selectedQuestionId;
             const isDisabled = isLocked || isAnswered;
+            // The tile being played right now: the server marks it answered
+            // immediately on selection, so without this it would gray out and
+            // become indistinguishable from every other closed tile
+            const isCurrent = question.id === selectedQuestionId;
             // Row color variant (used by the Party Mix theme); answered tiles
             // drop it so the dimmed state always wins
             const rowVariant = ` board-cell--r${rowIdx % 6}`;
-            const cellClass = isAnswered
-              ? 'board-cell board-cell--answered'
-              : `board-cell${rowVariant}${isLocked ? ' board-cell--locked' : ''}`;
+            const cellClass = isCurrent
+              ? `board-cell board-cell--current${rowVariant}`
+              : isAnswered
+                ? 'board-cell board-cell--answered'
+                : `board-cell${rowVariant}${isLocked ? ' board-cell--locked' : ''}`;
 
             return (
               <div

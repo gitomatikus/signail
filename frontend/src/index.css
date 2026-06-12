@@ -761,6 +761,34 @@ html[data-theme="daylight"] .board-theme {
     box-shadow: none;
 }
 
+/* The tile being played right now: keeps its color and pulses so everyone
+   can see which question was picked while the rest of the board dims */
+.board-cell--current {
+    cursor: default;
+    border-color: var(--accent);
+    animation: cellCurrentPulse 1.5s ease-in-out infinite;
+    z-index: 1;
+}
+
+.board-cell--current:hover {
+    transform: none;
+    filter: none;
+}
+
+@keyframes cellCurrentPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent-glow),
+            inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    }
+
+    50% {
+        box-shadow: 0 0 0 4px var(--accent), 0 0 28px var(--accent-glow),
+            inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    }
+}
+
 /* Party Mix only: each theme row cycles through its own tile color.
    GameBoard drops the row class once a tile is answered, so these never
    fight the answered state. */
@@ -1004,8 +1032,15 @@ input[type="range"].volume-slider::-moz-range-track {
     height: clamp(140px, 24vh, 400px) !important;
 }
 
-.host-split-view .question-content img {
+/* Every question image opens full-size in the lightbox. Choice option
+   images are the exception: clicking them picks the answer, so they keep
+   the option card's cursor. */
+.question-content img {
     cursor: zoom-in;
+}
+
+.choice-options-grid .question-content img {
+    cursor: inherit;
 }
 
 .host-split-view .question-content audio {

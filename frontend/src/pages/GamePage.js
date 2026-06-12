@@ -19,7 +19,8 @@ const GamePage = () => {
       <div style={{ width: '100%', maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
         <GameBoard isAdmin={isHost} />
       </div>
-      <div style={{ width: '100%', maxWidth: 1200, margin: 0, padding: 0, lineHeight: 1 }}>
+      {/* Full width: the player list uses the page sides so a long row fits */}
+      <div style={{ width: '100%', margin: 0, padding: 0, lineHeight: 1 }}>
         <OnlineUsers users={onlineUsers} isAdmin={isHost} />
       </div>
     </div>

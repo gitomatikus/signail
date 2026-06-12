@@ -11,6 +11,13 @@ import { useTranslation } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import { THEMES, getTheme, applyTheme } from '../utils/theme';
 import { HOST_LAYOUTS, getHostLayout, setHostLayout } from '../utils/hostLayout';
+import {
+  TEXT_SUBMIT_MODES,
+  getTextSubmitMode,
+  setTextSubmitMode,
+  isAutoSubmitSingleChoice,
+  setAutoSubmitSingleChoice
+} from '../utils/answerSettings';
 import EditProfileModal from './EditProfileModal';
 
 const Settings = ({ onClose, isAdmin = false }) => {
@@ -27,6 +34,8 @@ const Settings = ({ onClose, isAdmin = false }) => {
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [theme, setTheme] = useState(() => getTheme());
   const [hostLayout, setHostLayoutChoice] = useState(() => getHostLayout());
+  const [textSubmitMode, setTextSubmitModeChoice] = useState(() => getTextSubmitMode());
+  const [autoChoice, setAutoChoice] = useState(() => isAutoSubmitSingleChoice());
 
   const handleThemeChange = (e) => {
     const id = e.target.value;
@@ -70,6 +79,18 @@ const Settings = ({ onClose, isAdmin = false }) => {
     const next = !hideHost;
     setHideHost(next);
     setHostHidden(next);
+  };
+
+  const handleTextSubmitModeChange = (e) => {
+    const mode = e.target.value;
+    setTextSubmitModeChoice(mode);
+    setTextSubmitMode(mode);
+  };
+
+  const handleToggleAutoChoice = () => {
+    const next = !autoChoice;
+    setAutoChoice(next);
+    setAutoSubmitSingleChoice(next);
   };
 
   // Leaving just disconnects: GameProvider tears the socket down on unmount
@@ -238,6 +259,54 @@ const Settings = ({ onClose, isAdmin = false }) => {
                 checked={hideHost}
                 onChange={handleToggleHideHost}
                 style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+            </label>
+          )}
+
+          {!isAdmin && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              padding: '0.75rem 1rem',
+              background: 'var(--surface-soft)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '8px',
+              color: 'var(--text-primary)'
+            }}>
+              <span>{t('settings.textSubmit')}</span>
+              <select
+                value={textSubmitMode}
+                onChange={handleTextSubmitModeChange}
+                style={{ width: 'auto', padding: '8px 12px', fontSize: '0.9rem' }}
+              >
+                {TEXT_SUBMIT_MODES.map(mode => (
+                  <option key={mode} value={mode}>{t(`settings.textSubmit.${mode}`)}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {!isAdmin && (
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              padding: '0.75rem 1rem',
+              background: 'var(--surface-soft)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '8px',
+              color: 'var(--text-primary)',
+              cursor: 'pointer'
+            }}>
+              <span>{t('settings.autoChoice')}</span>
+              <input
+                type="checkbox"
+                checked={autoChoice}
+                onChange={handleToggleAutoChoice}
+                style={{ width: '18px', height: '18px', cursor: 'pointer', flexShrink: 0 }}
               />
             </label>
           )}

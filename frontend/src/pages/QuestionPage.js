@@ -11,6 +11,7 @@ import Logo from '../components/Logo';
 import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
 import { getHostLayout, HOST_LAYOUT_EVENT } from '../utils/hostLayout';
+import { getTextSubmitMode, isAutoSubmitSingleChoice } from '../utils/answerSettings';
 import { compressImageToDataUrl } from '../utils/compressImage';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -637,6 +638,19 @@ const QuestionPage = () => {
       if (['find-a-cat', 'close-enough', 'choice', 'text-answer'].includes(question?.type)) {
         return; // These types answer by clicking/typing, not by racing on the spacebar
       }
+      if (event.code !== 'Space' && event.code !== 'ArrowRight') {
+        return;
+      }
+      // Typing a space in a field or activating a focused button must keep
+      // its normal meaning — the buzz keys only apply outside form controls
+      const target = event.target;
+      if (target instanceof HTMLElement && (
+        ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName) || target.isContentEditable
+      )) {
+        return;
+      }
+      // Space pages the window down by default; buzzing must not scroll
+      event.preventDefault();
       if (question?.type === 'secret') {
         // Only the chosen player can answer a cat-in-the-bag question,
         // and only after the admin has shown the question
@@ -644,8 +658,7 @@ const QuestionPage = () => {
           return;
         }
       }
-      if ((event.code === 'Space' || event.code === 'ArrowRight') &&
-        ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) &&
+      if (((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) &&
         !hasRecordedTime &&
         !userTimes[currentUserId]) {
         const endTime = Date.now();
@@ -1325,8 +1338,28 @@ const QuestionPage = () => {
     wsManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
   };
 
+  const submitChoicePicks = (picks) => {
+    if (!currentUserId || picks.length === 0) {
+      return;
+    }
+    if (answersRevealed || numberAnswers[currentUserId] !== undefined) {
+      return;
+    }
+    const sorted = [...picks].sort((a, b) => a - b);
+    setNumberAnswers(prev => ({ ...prev, [currentUserId]: sorted }));
+    wsManager.sendNumberAnswer(parseInt(questionId), currentUserId, sorted);
+    recordAnswerTime();
+  };
+
   const handleToggleOption = (idx) => {
     if (answersRevealed || (currentUserId && numberAnswers[currentUserId] !== undefined)) {
+      return;
+    }
+    // Opt-in setting: a single-choice pick is the whole answer, so send it
+    // right away instead of waiting for the Confirm button
+    if (!question.multiple && isAutoSubmitSingleChoice()) {
+      setSelectedOptions(new Set([idx]));
+      submitChoicePicks([idx]);
       return;
     }
     setSelectedOptions(prev => {
@@ -1346,16 +1379,7 @@ const QuestionPage = () => {
   };
 
   const handleConfirmChoice = () => {
-    if (!currentUserId || selectedOptions.size === 0) {
-      return;
-    }
-    if (answersRevealed || numberAnswers[currentUserId] !== undefined) {
-      return;
-    }
-    const picks = [...selectedOptions].sort((a, b) => a - b);
-    setNumberAnswers(prev => ({ ...prev, [currentUserId]: picks }));
-    wsManager.sendNumberAnswer(parseInt(questionId), currentUserId, picks);
-    recordAnswerTime();
+    submitChoicePicks([...selectedOptions]);
   };
 
   const renderChoiceContent = () => {
@@ -1558,6 +1582,16 @@ const QuestionPage = () => {
                     value={textAnswerInput}
                     onChange={(e) => setTextAnswerInput(e.target.value)}
                     onPaste={handleTextPaste}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      const mode = getTextSubmitMode();
+                      const sendOnPlainEnter = mode === 'enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey;
+                      const sendOnCtrlEnter = mode === 'ctrl-enter' && (e.ctrlKey || e.metaKey);
+                      if (sendOnPlainEnter || sendOnCtrlEnter) {
+                        e.preventDefault();
+                        handleSubmitTextAnswer();
+                      }
+                    }}
                     placeholder={t('question.textPlaceholder')}
                     rows={3}
                     style={{
@@ -1695,11 +1729,15 @@ const QuestionPage = () => {
     return renderNormalContent();
   };
 
-  // Scaled-down images in the host split view open full-size in the lightbox
-  const handleSplitImageClick = (e) => {
-    if (e.target.tagName === 'IMG' && e.target.closest('.question-content')) {
-      setLightboxImage(e.target.currentSrc || e.target.src);
-    }
+  // Any question-content image opens full-size in the lightbox (players too).
+  // Choice options are excluded — clicking those means picking the answer.
+  // Find-a-cat and progressive-reveal play fields don't render inside
+  // .question-content, so their gameplay clicks are naturally unaffected.
+  const handleQuestionImageClick = (e) => {
+    if (e.target.tagName !== 'IMG') return;
+    if (!e.target.closest('.question-content')) return;
+    if (e.target.closest('.choice-options-grid')) return;
+    setLightboxImage(e.target.currentSrc || e.target.src);
   };
 
   const hostTabButtonStyle = (active) => ({
@@ -1760,7 +1798,6 @@ const QuestionPage = () => {
           gap: '16px',
           alignItems: 'stretch'
         }}
-        onClick={handleSplitImageClick}
       >
         {questionCard}
         {answerCard}
@@ -1983,7 +2020,7 @@ const QuestionPage = () => {
         maxWidth: 'min(1600px, 100%)',
         margin: '0 auto 20px auto'
       }}>
-        <div style={boardGridStyle}>
+        <div style={boardGridStyle} onClick={handleQuestionImageClick}>
           {renderContent()}
         </div>
       </div>
@@ -2042,8 +2079,8 @@ const QuestionPage = () => {
           </button>
         )}
       </div>
-      {/* Online users below the board */}
-      <div style={{ width: '100%', maxWidth: 1200, margin: 0, padding: 0, lineHeight: 1 }}>
+      {/* Online users below the board — full width so a long row fits */}
+      <div style={{ width: '100%', margin: 0, padding: 0, lineHeight: 1 }}>
         <OnlineUsers
           users={onlineUsers}
           elapsedTime={elapsedTime}

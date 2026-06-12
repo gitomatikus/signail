@@ -27,7 +27,7 @@ const Avatar = ({ src, alt, size = 72 }) => {
 const Lobby = () => {
   const navigate = useNavigate();
   const { t, tp } = useTranslation();
-  const { gameId, isHost, gameInfo, onlineUsers, startGame, packLoading, downloadProgress } = useGame();
+  const { gameId, isHost, gameInfo, onlineUsers, startGame, packLoading, downloadProgress, user } = useGame();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const handleDelete = async () => {
@@ -145,7 +145,26 @@ const Lobby = () => {
             {onlineUsers.map(player => (
               <div key={player.id} className="fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', width: '90px' }}>
                 <Avatar src={player.imageUrl} alt={player.name} />
-                <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem', wordBreak: 'break-word' }}>{player.name}</span>
+                <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem', wordBreak: 'break-word' }}>
+                  {player.name}
+                  {user && player.id === user.id && (
+                    <span style={{
+                      display: 'inline-block',
+                      verticalAlign: 'middle',
+                      marginLeft: '5px',
+                      fontSize: '0.55rem',
+                      fontWeight: '700',
+                      letterSpacing: '0.1em',
+                      lineHeight: 1.4,
+                      color: 'var(--on-primary)',
+                      background: 'var(--primary)',
+                      borderRadius: '9999px',
+                      padding: '1px 6px'
+                    }}>
+                      {t('users.you')}
+                    </span>
+                  )}
+                </span>
               </div>
             ))}
           </div>
