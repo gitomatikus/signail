@@ -72,7 +72,7 @@ const MicCheckSetting = () => {
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState('idle');
   const [beat, setBeat] = useState(null);
-  const [progress, setProgress] = useState({ detected: 0, total: 8, estimateMs: null });
+  const [progress, setProgress] = useState({ detected: 0, total: 10, estimateMs: null });
   const [error, setError] = useState(null);
   const [calibration, setCalibration] = useState(() => getVoiceSyncCalibration());
   const [nudgeMs, setNudgeMs] = useState(() => {
@@ -175,8 +175,8 @@ const MicCheckSetting = () => {
     abortRef.current = controller;
     setExpanded(true);
     setStatus('running');
-    setBeat({ phase: 'ready', index: 0, total: 4 });
-    setProgress({ detected: 0, total: 8, estimateMs: null });
+    setBeat({ phase: 'ready', index: 0, total: 10 });
+    setProgress({ detected: 0, total: 10, estimateMs: null });
     setError(null);
     setRecording(null);
     try {
@@ -295,9 +295,7 @@ const MicCheckSetting = () => {
               borderRadius: '8px'
             }}>
               <div style={{ fontWeight: '700' }}>
-                {beat && beat.phase === 'measure'
-                  ? t('question.micCheckClap')
-                  : t('question.micCheckListen')}
+                {t('question.micCheckClap')}
               </div>
               <div style={{
                 width: '64px',
@@ -311,11 +309,7 @@ const MicCheckSetting = () => {
                 fontWeight: '900',
                 fontSize: '1.3rem'
               }}>
-                {beat && beat.phase === 'measure'
-                  ? beat.index + 1
-                  : beat && beat.phase === 'count-in'
-                    ? beat.total - beat.index
-                    : '...'}
+                {beat && beat.phase === 'measure' ? beat.index + 1 : '...'}
               </div>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                 {t('question.micCheckProgress', { count: progress.detected, total: progress.total })}

@@ -25,12 +25,24 @@ const LIVE_EDGE_OFFSET_S = 0.4;
 // Voice-vs-track alignment inside the mix (see Singer side below)
 const MAX_VOICE_SYNC_S = 1.5;
 const FALLBACK_MIC_LATENCY_S = 0.08;
+// Listener mix balance: mic loudness differs wildly between users, so the
+// track gain chases the measured voice level instead of using a fixed ratio
+// (see startSingerPipeline) - the singer must stay on top of the music.
+const TRACK_DUCK_RATIO = 0.8;   // track level target relative to the voice
+const TRACK_GAIN_MAX = 0.85;    // ceiling: the old fixed mix value
+const TRACK_GAIN_MIN = 0.25;    // floor: the music must stay audible
+const TRACK_GAIN_START = 0.6;   // until the first sung phrase is measured
+const DUCK_UPDATE_MS = 250;
+const DUCK_EMA_ALPHA = 0.15;    // ~1.7s level memory at the update rate
+const DUCK_SMOOTHING_S = 0.6;   // gain ramp time constant
+const VOICE_GATE_RMS = 0.015;   // quieter mic frames don't count as singing
+const TRACK_GATE_RMS = 0.005;   // ignore silent track passages
 const VOICE_SYNC_OVERRIDE_KEY = 'karaokeVoiceSyncMs';
 const VOICE_SYNC_CALIBRATION_KEY = 'karaokeVoiceSyncCalibration';
 export const VOICE_SYNC_CHANGE_EVENT = 'karaoke-voice-sync-change';
 const MIC_CHECK_INTERVAL_S = 1;
-const MIC_CHECK_COUNT_IN_BEATS = 4;
-const MIC_CHECK_MEASURED_BEATS = 8;
+const MIC_CHECK_BEATS = 10;
+const MIC_CHECK_MIN_SAMPLES = 3;
 const MIC_CHECK_MAX_DELTA_S = 0.8;
 const MIC_CHECK_DEBOUNCE_S = 0.3;
 
@@ -307,25 +319,26 @@ const matchOnsetsToClicks = (clickTimes, onsetTimes, maxDeltaS = MIC_CHECK_MAX_D
 };
 
 // Pure robust aggregation, exported so the timing policy can be tested without
-// a microphone. Times are AudioContext seconds.
+// a microphone. Times are AudioContext seconds. Every tick counts (a slow
+// first reaction is rejected statistically by the MAD filter, not by rule)
+// and MIC_CHECK_MIN_SAMPLES matched ticks are enough to accept the run.
 export const aggregateMicCheckSamples = (clickTimes, onsetTimes) => {
   const matched = matchOnsetsToClicks(clickTimes, onsetTimes);
-  const settled = matched.filter(sample => sample.clickIndex > 0);
-  if (settled.length < 3) {
+  if (matched.length < MIC_CHECK_MIN_SAMPLES) {
     throw new MicCheckError('no-onsets');
   }
-  const initialMedian = median(settled.map(sample => sample.deltaMs));
-  const mad = median(settled.map(sample => Math.abs(sample.deltaMs - initialMedian))) || 0;
+  const initialMedian = median(matched.map(sample => sample.deltaMs));
+  const mad = median(matched.map(sample => Math.abs(sample.deltaMs - initialMedian))) || 0;
   const outlierLimitMs = Math.max(30, mad * 2);
-  const samples = settled.filter(sample =>
+  const samples = matched.filter(sample =>
     Math.abs(sample.deltaMs - initialMedian) <= outlierLimitMs
   );
-  if (samples.length < 3) {
+  if (samples.length < MIC_CHECK_MIN_SAMPLES) {
     throw new MicCheckError('no-onsets');
   }
   const latencyMs = median(samples.map(sample => sample.deltaMs));
   const finalMad = median(samples.map(sample => Math.abs(sample.deltaMs - latencyMs))) || 0;
-  const coverage = Math.min(1, samples.length / Math.max(1, clickTimes.length - 1));
+  const coverage = Math.min(1, samples.length / Math.max(1, clickTimes.length));
   const stability = Math.max(0, 1 - finalMad / 90);
   const confidence = Math.round(coverage * stability * 100) / 100;
   return {
@@ -419,6 +432,9 @@ const scheduleMicCheckClick = (ctx, time) => {
   return oscillator;
 };
 
+// Speaker bleed (the mic hearing the ticks directly) is deliberately NOT
+// guarded against: those onsets measure the pure device round trip with no
+// human reaction in the loop, which is exactly the latency being calibrated.
 export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     throw new MicCheckError('mic-denied');
@@ -475,7 +491,7 @@ export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
   const oscillators = [];
   const firstClickTime = ctx.currentTime + 0.8;
   const allClickTimes = Array.from(
-    { length: MIC_CHECK_COUNT_IN_BEATS + MIC_CHECK_MEASURED_BEATS },
+    { length: MIC_CHECK_BEATS },
     (_, index) => firstClickTime + index * MIC_CHECK_INTERVAL_S
   );
   allClickTimes.forEach(time => oscillators.push(scheduleMicCheckClick(ctx, time)));
@@ -546,36 +562,18 @@ export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
       wasAbove = above;
 
       while (beatCursor < allClickTimes.length && now >= allClickTimes[beatCursor]) {
-        const measuredIndex = beatCursor - MIC_CHECK_COUNT_IN_BEATS;
         if (onBeat) {
           onBeat({
-            phase: measuredIndex < 0 ? 'count-in' : 'measure',
-            index: measuredIndex < 0 ? beatCursor : measuredIndex,
-            total: measuredIndex < 0 ? MIC_CHECK_COUNT_IN_BEATS : MIC_CHECK_MEASURED_BEATS,
+            phase: 'measure',
+            index: beatCursor,
+            total: MIC_CHECK_BEATS,
             scheduledTime: allClickTimes[beatCursor]
           });
         }
         beatCursor += 1;
       }
 
-      if (beatCursor === MIC_CHECK_COUNT_IN_BEATS && now >= allClickTimes[MIC_CHECK_COUNT_IN_BEATS] - 0.12) {
-        const bleedSamples = matchOnsetsToClicks(
-          allClickTimes.slice(0, MIC_CHECK_COUNT_IN_BEATS),
-          onsetTimes
-        );
-        if (bleedSamples.length >= 2) {
-          const bleedMedian = median(bleedSamples.map(sample => sample.deltaMs));
-          const bleedMad = median(bleedSamples.map(sample => Math.abs(sample.deltaMs - bleedMedian))) || 0;
-          if (bleedMad < 80) {
-            fail('headphone-bleed');
-            return;
-          }
-        }
-      }
-
-      const measuredClicks = allClickTimes.slice(MIC_CHECK_COUNT_IN_BEATS);
-      const measuredOnsets = onsetTimes.filter(time => time >= measuredClicks[0]);
-      const provisional = matchOnsetsToClicks(measuredClicks, measuredOnsets);
+      const provisional = matchOnsetsToClicks(allClickTimes, onsetTimes);
       const estimateMs = provisional.length
         ? Math.round(median(provisional.map(sample => sample.deltaMs)))
         : null;
@@ -584,26 +582,26 @@ export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
         lastProgressKey = progressKey;
         onProgress({
           detected: provisional.length,
-          total: MIC_CHECK_MEASURED_BEATS,
+          total: MIC_CHECK_BEATS,
           estimateMs
         });
       }
 
       if (now >= allClickTimes[allClickTimes.length - 1] + MIC_CHECK_MAX_DELTA_S + 0.1) {
         try {
-          const result = aggregateMicCheckSamples(measuredClicks, measuredOnsets);
+          const result = aggregateMicCheckSamples(allClickTimes, onsetTimes);
           finished = true;
           stopRecording().then(recordingBlob => resolve({
             ...result,
             recordingBlob,
             preview: {
               firstBeatOffsetMs: Math.round(
-                (allClickTimes[MIC_CHECK_COUNT_IN_BEATS] - recordingStartedAt) * 1000
+                (allClickTimes[0] - recordingStartedAt) * 1000
               ),
-              beatCount: MIC_CHECK_MEASURED_BEATS,
+              beatCount: MIC_CHECK_BEATS,
               intervalMs: MIC_CHECK_INTERVAL_S * 1000,
               durationMs: Math.round(
-                (MIC_CHECK_MEASURED_BEATS - 1) * MIC_CHECK_INTERVAL_S * 1000
+                (MIC_CHECK_BEATS - 1) * MIC_CHECK_INTERVAL_S * 1000
                 + MIC_CHECK_MAX_DELTA_S * 1000
                 + 200
               )
@@ -780,10 +778,26 @@ const estimateVoiceSyncS = (ctx, micStream) => {
   return Math.min(MAX_VOICE_SYNC_S, outputLatencyS + inputLatencyS);
 };
 
+// Pure mix policy, exported for tests: where the track gain should sit for
+// the given (gated, smoothed) voice and track levels - a touch below the
+// voice, but clamped so the music neither vanishes nor exceeds the ceiling.
+export const computeTrackDuckGain = (voiceRms, trackRms) => {
+  if (!Number.isFinite(voiceRms) || voiceRms <= 0
+    || !Number.isFinite(trackRms) || trackRms <= 0) {
+    return TRACK_GAIN_MAX;
+  }
+  return Math.min(
+    TRACK_GAIN_MAX,
+    Math.max(TRACK_GAIN_MIN, (voiceRms * TRACK_DUCK_RATIO) / trackRms)
+  );
+};
+
 // Builds the mix graph around mediaEl and starts streaming. The element's own
 // volume is pinned to 1 (it feeds the recording!); local loudness goes through
-// the monitor gain instead. Mic failure is tolerated: the game must go on,
-// the stream just carries the bare track and the caller shows a warning.
+// the monitor gain instead. The track is auto-ducked under the measured voice
+// level so listeners hear the singer over the music regardless of mic gain.
+// Mic failure is tolerated: the game must go on, the stream just carries the
+// bare track and the caller shows a warning.
 export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) => {
   if (!isKaraokeStreamingSupported()) {
     throw new Error('karaoke-unsupported');
@@ -832,22 +846,68 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
   }
   const voiceSyncMs = Math.round(voiceSyncS * 1000);
 
-  // Mix destination: delayed track + mic, encoded and streamed to everyone
+  // Mix destination: delayed track + mic, encoded and streamed to everyone.
+  // The gain sits after the delay line so duck moves apply immediately.
   const mixDest = ctx.createMediaStreamDestination();
   const trackGain = ctx.createGain();
-  trackGain.gain.value = 0.85; // headroom so the voice sits on top
+  trackGain.gain.value = micSource ? TRACK_GAIN_START : TRACK_GAIN_MAX;
   const trackDelay = ctx.createDelay(MAX_VOICE_SYNC_S);
   trackDelay.delayTime.value = voiceSyncS;
-  source.connect(trackGain);
-  trackGain.connect(trackDelay);
-  trackDelay.connect(mixDest);
+  source.connect(trackDelay);
+  trackDelay.connect(trackGain);
+  trackGain.connect(mixDest);
   if (micSource) {
     micSource.connect(mixDest);
   }
 
+  // Auto-duck: track both levels (the track is tapped pre-gain, so the
+  // measurement is independent of the duck itself - no feedback loop) and
+  // chase the voice with smoothed gain moves. The voice level only updates
+  // on frames loud enough to be singing, so pauses between phrases hold the
+  // last balance instead of pumping the music back up.
+  let duckTimer = null;
+  let trackAnalyser = null;
+  if (micSource) {
+    const micAnalyser = ctx.createAnalyser();
+    micAnalyser.fftSize = 1024;
+    micAnalyser.smoothingTimeConstant = 0;
+    micSource.connect(micAnalyser);
+    trackAnalyser = ctx.createAnalyser();
+    trackAnalyser.fftSize = 1024;
+    trackAnalyser.smoothingTimeConstant = 0;
+    source.connect(trackAnalyser);
+    const micBuffer = new Float32Array(micAnalyser.fftSize);
+    const trackBuffer = new Float32Array(trackAnalyser.fftSize);
+    let voiceLevel = null;
+    let trackLevel = null;
+    duckTimer = setInterval(() => {
+      micAnalyser.getFloatTimeDomainData(micBuffer);
+      trackAnalyser.getFloatTimeDomainData(trackBuffer);
+      const micRms = computeRms(micBuffer);
+      const trackRms = computeRms(trackBuffer);
+      if (micRms >= VOICE_GATE_RMS) {
+        voiceLevel = voiceLevel === null
+          ? micRms
+          : voiceLevel + (micRms - voiceLevel) * DUCK_EMA_ALPHA;
+      }
+      if (trackRms >= TRACK_GATE_RMS) {
+        trackLevel = trackLevel === null
+          ? trackRms
+          : trackLevel + (trackRms - trackLevel) * DUCK_EMA_ALPHA;
+      }
+      if (voiceLevel !== null && trackLevel !== null) {
+        trackGain.gain.setTargetAtTime(
+          computeTrackDuckGain(voiceLevel, trackLevel),
+          ctx.currentTime,
+          DUCK_SMOOTHING_S
+        );
+      }
+    }, DUCK_UPDATE_MS);
+  }
+
   const recorder = new MediaRecorder(mixDest.stream, {
     mimeType: RECORDER_MIME,
-    audioBitsPerSecond: 96000
+    audioBitsPerSecond: 192000
   });
   let seq = 0;
   let stopped = false;
@@ -875,12 +935,16 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
     stop: () => {
       if (stopped) return;
       stopped = true;
+      if (duckTimer !== null) clearInterval(duckTimer);
       try {
         if (recorder.state !== 'inactive') {
           recorder.stop(); // flushes a final dataavailable with the tail
         }
       } catch (e) { /* already gone */ }
-      try { source.disconnect(trackGain); } catch (e) { /* detached */ }
+      try { source.disconnect(trackDelay); } catch (e) { /* detached */ }
+      if (trackAnalyser) {
+        try { source.disconnect(trackAnalyser); } catch (e) { /* detached */ }
+      }
       if (micSource) {
         try { micSource.disconnect(); } catch (e) { /* detached */ }
       }

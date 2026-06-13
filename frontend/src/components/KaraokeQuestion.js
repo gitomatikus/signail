@@ -260,7 +260,7 @@ const KaraokeQuestion = ({
   const [error, setError] = useState(null);
   const [micCheckStatus, setMicCheckStatus] = useState('idle');
   const [micCheckBeat, setMicCheckBeat] = useState(null);
-  const [micCheckProgress, setMicCheckProgress] = useState({ detected: 0, total: 8, estimateMs: null });
+  const [micCheckProgress, setMicCheckProgress] = useState({ detected: 0, total: 10, estimateMs: null });
   const [micCheckError, setMicCheckError] = useState(null);
   const [micCheckRecording, setMicCheckRecording] = useState(null);
   const [micCheckPreviewReady, setMicCheckPreviewReady] = useState(false);
@@ -709,8 +709,8 @@ const KaraokeQuestion = ({
     const controller = new AbortController();
     micCheckAbortRef.current = controller;
     setMicCheckStatus('running');
-    setMicCheckBeat({ phase: 'ready', index: 0, total: 4 });
-    setMicCheckProgress({ detected: 0, total: 8, estimateMs: null });
+    setMicCheckBeat({ phase: 'ready', index: 0, total: 10 });
+    setMicCheckProgress({ detected: 0, total: 10, estimateMs: null });
     setMicCheckError(null);
     if (micCheckPreviewRef.current) {
       micCheckPreviewRef.current.destroy();
@@ -1096,9 +1096,7 @@ const KaraokeQuestion = ({
                   gap: '0.85rem'
                 }}>
                   <div style={{ fontSize: '1.15rem', fontWeight: '700' }}>
-                    {micCheckBeat && micCheckBeat.phase === 'measure'
-                      ? t('question.micCheckClap')
-                      : t('question.micCheckListen')}
+                    {t('question.micCheckClap')}
                   </div>
                   <div
                     key={micCheckBeat ? `${micCheckBeat.phase}-${micCheckBeat.index}` : 'waiting'}
@@ -1121,9 +1119,7 @@ const KaraokeQuestion = ({
                   >
                     {micCheckBeat && micCheckBeat.phase === 'measure'
                       ? micCheckBeat.index + 1
-                      : micCheckBeat && micCheckBeat.phase === 'count-in'
-                        ? micCheckBeat.total - micCheckBeat.index
-                        : '...'}
+                      : '...'}
                   </div>
                   <style>{'@keyframes micCheckBeatPulse { 0% { transform: scale(0.72); opacity: 0.65; } 45% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }'}</style>
                   <div style={{ color: 'var(--text-secondary)' }}>

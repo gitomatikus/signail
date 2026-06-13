@@ -2,6 +2,7 @@ import {
   MicCheckError,
   aggregateMicCheckSamples,
   clearVoiceSyncOverride,
+  computeTrackDuckGain,
   createKaraokeRecordingBlob,
   createMicCheckPreview,
   createMicCheckWaveform,
@@ -14,7 +15,7 @@ import {
 } from './karaoke';
 
 describe('aggregateMicCheckSamples', () => {
-  test('drops the settling beat and a large outlier', () => {
+  test('drops outliers, including a slow first reaction', () => {
     const clicks = Array.from({ length: 8 }, (_, index) => index + 10);
     const deltasMs = [120, 318, 322, 319, 650, 325, 321, 317];
     const onsets = clicks.map((click, index) => click + deltasMs[index] / 1000);
@@ -24,6 +25,20 @@ describe('aggregateMicCheckSamples', () => {
     expect(result.latencyMs).toBe(320);
     expect(result.samples).toHaveLength(6);
     expect(result.confidence).toBeGreaterThan(0.7);
+  });
+
+  test('accepts three claps out of ten ticks, first tick included', () => {
+    const clicks = Array.from({ length: 10 }, (_, index) => index + 10);
+    const onsets = [
+      clicks[0] + 0.30,
+      clicks[5] + 0.31,
+      clicks[9] + 0.32
+    ];
+
+    const result = aggregateMicCheckSamples(clicks, onsets);
+
+    expect(result.latencyMs).toBe(310);
+    expect(result.samples).toHaveLength(3);
   });
 
   test('reports low confidence for sparse, inconsistent claps', () => {
@@ -40,10 +55,12 @@ describe('aggregateMicCheckSamples', () => {
     expect(result.confidence).toBeLessThan(0.6);
   });
 
-  test('throws a typed error when too few beats are heard', () => {
-    expect(() => aggregateMicCheckSamples([1, 2, 3, 4], [2.2]))
+  test('throws a typed error when fewer than three beats are heard', () => {
+    const clicks = Array.from({ length: 10 }, (_, index) => index + 10);
+    const onsets = [clicks[2] + 0.3, clicks[7] + 0.3];
+    expect(() => aggregateMicCheckSamples(clicks, onsets))
       .toThrow(expect.objectContaining({ code: 'no-onsets' }));
-    expect(() => aggregateMicCheckSamples([1, 2, 3, 4], [2.2]))
+    expect(() => aggregateMicCheckSamples(clicks, onsets))
       .toThrow(MicCheckError);
   });
 });
@@ -64,6 +81,26 @@ describe('detectOnsetsInBuffer', () => {
     expect(onsets).toHaveLength(2);
     expect(onsets[0]).toBeCloseTo(0.4, 1);
     expect(onsets[1]).toBeCloseTo(1.2, 1);
+  });
+});
+
+describe('computeTrackDuckGain', () => {
+  test('keeps the track a touch below the voice level', () => {
+    expect(computeTrackDuckGain(0.1, 0.16)).toBeCloseTo(0.5);
+  });
+
+  test('clamps to the audible floor for quiet mics', () => {
+    expect(computeTrackDuckGain(0.01, 0.3)).toBe(0.25);
+  });
+
+  test('clamps to the headroom ceiling for loud mics', () => {
+    expect(computeTrackDuckGain(0.5, 0.1)).toBe(0.85);
+  });
+
+  test('falls back to the ceiling without valid measurements', () => {
+    expect(computeTrackDuckGain(0, 0.2)).toBe(0.85);
+    expect(computeTrackDuckGain(NaN, 0.2)).toBe(0.85);
+    expect(computeTrackDuckGain(0.2, 0)).toBe(0.85);
   });
 });
 

@@ -4,6 +4,7 @@ import config from '../config';
 import { getHostToken, removeHostToken, saveGamePassword } from '../services/gameAuth';
 import { useTranslation } from '../i18n/LanguageContext';
 import Logo from '../components/Logo';
+import MicCheckSetting from '../components/MicCheckSetting';
 
 const Avatar = ({ src, alt, size = 40 }) => {
   const style = {
@@ -161,6 +162,8 @@ const HomePage = ({ user, onRequestLogin }) => {
         >
           {t('home.packEditorLink')}
         </a>
+
+        <MicCheckSetting />
 
         {error && (
           <div style={{
