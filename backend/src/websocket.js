@@ -366,13 +366,13 @@ class WebSocketManager {
         data: Array.from(game.selectedQuestions)
       }));
     } else if (data.type === 'clear_cache') {
+      if (!ws.isHost) return;
       game.resetQuestionState();
       game.persistentUsers.forEach(userData => {
         userData.score = 0;
       });
       game.userScores.clear();
       game.broadcastOnlineUsers();
-      game.regenerateCacheKey();
     } else if (data.type === 'update_score') {
       const { userId, score } = data.data;
       const userData = game.persistentUsers.get(userId);

@@ -8,7 +8,14 @@ import {
   hasLrcTimestamps,
   currentLrcIndex,
   dataUrlToObjectUrl,
-  isVideoMedia
+  isVideoMedia,
+  runMicCheck,
+  getVoiceSyncCalibration,
+  setVoiceSyncOverride,
+  clearVoiceSyncOverride,
+  createKaraokeRecordingBlob,
+  createMicCheckPreview,
+  VOICE_SYNC_CHANGE_EVENT
 } from '../utils/karaoke';
 import { useTranslation } from '../i18n/LanguageContext';
 
@@ -55,6 +62,97 @@ const renderKaraokeWord = (line, word, wi, nowMs, nextLineTimeMs) => {
     style.filter = 'drop-shadow(0 0 10px var(--accent-glow))';
   }
   return <span key={wi} style={style}>{word.text}</span>;
+};
+
+const formatDuration = (milliseconds) => {
+  const totalSeconds = Math.max(0, Math.floor((milliseconds || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
+};
+
+const MicCheckTimeline = ({
+  waveform,
+  beatCount,
+  intervalMs,
+  durationMs,
+  playheadMs,
+  label
+}) => {
+  const width = 1000;
+  const height = 150;
+  const centerY = 78;
+  const waveformHeight = 54;
+  const barWidth = width / Math.max(1, waveform.length);
+  return (
+    <div style={{
+      width: '100%',
+      padding: '0.55rem',
+      borderRadius: '10px',
+      background: 'rgba(0, 0, 0, 0.2)',
+      border: '1px solid var(--glass-border)'
+    }}>
+      <svg
+        role="img"
+        aria-label={label}
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        style={{ display: 'block', width: '100%', height: '130px' }}
+      >
+        <line
+          x1="0"
+          x2={width}
+          y1={centerY}
+          y2={centerY}
+          stroke="var(--glass-border)"
+          strokeWidth="2"
+        />
+        {waveform.map((amplitude, index) => {
+          const barHeight = Math.max(2, amplitude * waveformHeight);
+          return (
+            <rect
+              key={index}
+              x={index * barWidth}
+              y={centerY - barHeight / 2}
+              width={Math.max(1, barWidth * 0.72)}
+              height={barHeight}
+              rx="1"
+              fill="var(--accent)"
+              opacity="0.78"
+            />
+          );
+        })}
+        {Array.from({ length: beatCount }, (_, index) => {
+          const x = durationMs > 0 ? index * intervalMs / durationMs * width : 0;
+          return (
+            <g key={index}>
+              <line
+                x1={x}
+                x2={x}
+                y1="12"
+                y2={height - 12}
+                stroke="var(--accent)"
+                strokeWidth="5"
+                opacity="0.92"
+              />
+              <circle cx={x} cy="12" r="7" fill="var(--accent)" />
+            </g>
+          );
+        })}
+        {playheadMs !== null && (
+          <line
+            x1={Math.min(width, Math.max(0, playheadMs / durationMs * width))}
+            x2={Math.min(width, Math.max(0, playheadMs / durationMs * width))}
+            y1="0"
+            y2={height}
+            stroke="#ffffff"
+            strokeWidth="3"
+            opacity="0.9"
+          />
+        )}
+      </svg>
+    </div>
+  );
 };
 
 // Timed lyrics display. Runs its own rAF clock (smoothed against the chunky
@@ -160,16 +258,46 @@ const KaraokeQuestion = ({
   const [micActive, setMicActive] = useState(true);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [error, setError] = useState(null);
+  const [micCheckStatus, setMicCheckStatus] = useState('idle');
+  const [micCheckBeat, setMicCheckBeat] = useState(null);
+  const [micCheckProgress, setMicCheckProgress] = useState({ detected: 0, total: 8, estimateMs: null });
+  const [micCheckError, setMicCheckError] = useState(null);
+  const [micCheckRecording, setMicCheckRecording] = useState(null);
+  const [micCheckPreviewReady, setMicCheckPreviewReady] = useState(false);
+  const [micCheckPreviewPlaying, setMicCheckPreviewPlaying] = useState(false);
+  const [micCheckWaveform, setMicCheckWaveform] = useState([]);
+  const [micCheckPlayheadMs, setMicCheckPlayheadMs] = useState(0);
+  const [calibration, setCalibration] = useState(() => getVoiceSyncCalibration());
+  const [nudgeMs, setNudgeMs] = useState(() =>
+    calibration ? calibration.latencyMs - calibration.measuredLatencyMs : 0
+  );
+  const [hostRecording, setHostRecording] = useState({
+    status: 'idle',
+    performanceId: null,
+    elapsedMs: 0,
+    durationMs: null,
+    bytes: 0,
+    url: null
+  });
 
   const isSinger = !!currentUserId && currentUserId === targetId;
 
   const singerMediaRef = useRef(null);
   const listenerAudioRef = useRef(null);
+  const recordingAudioRef = useRef(null);
   const listenerVideoRef = useRef(null);
   const pipelineRef = useRef(null);
   const playerRef = useRef(null); // { perfId, player }
   const perfIdRef = useRef(null); // performance id of MY active pipeline (singer)
+  const micCheckAbortRef = useRef(null);
+  const micCheckPreviewRef = useRef(null);
+  const micCheckPlayheadRafRef = useRef(null);
+  const calibrationRef = useRef(calibration);
   const pendingChunksRef = useRef(new Map()); // perfId -> chunks before the player exists
+  const hostRecordingChunksRef = useRef(new Map());
+  const hostRecordingPerfRef = useRef(null);
+  const hostRecordingDurationRef = useRef(null);
+  const hostRecordingUrlRef = useRef(null);
   const volumeRef = useRef(volume);
 
   // Created in an effect (not useMemo) so a StrictMode remount mints a fresh
@@ -212,11 +340,149 @@ const KaraokeQuestion = ({
     setIsStreaming(false);
   }, []);
 
+  const beginHostRecording = useCallback((performanceId, durationMs) => {
+    if (!isAdmin) return;
+    if (hostRecordingUrlRef.current) {
+      URL.revokeObjectURL(hostRecordingUrlRef.current);
+      hostRecordingUrlRef.current = null;
+    }
+    hostRecordingChunksRef.current.clear();
+    hostRecordingPerfRef.current = performanceId;
+    hostRecordingDurationRef.current = durationMs;
+    setHostRecording({
+      status: 'recording',
+      performanceId,
+      elapsedMs: 0,
+      durationMs,
+      bytes: 0,
+      url: null
+    });
+  }, [isAdmin]);
+
+  const captureHostRecordingChunk = useCallback((performanceId, chunk) => {
+    if (!isAdmin || !chunk || hostRecordingPerfRef.current !== performanceId) return;
+    const chunks = hostRecordingChunksRef.current;
+    if (chunks.has(chunk.seq)) return;
+    chunks.set(chunk.seq, chunk);
+    const chunkBytes = Math.floor((chunk.b64.length * 3) / 4);
+    setHostRecording(prev => ({
+      status: 'recording',
+      performanceId,
+      elapsedMs: Math.max(prev.performanceId === performanceId ? prev.elapsedMs : 0, chunk.t || 0),
+      durationMs: prev.performanceId === performanceId
+        ? prev.durationMs
+        : hostRecordingDurationRef.current,
+      bytes: (prev.performanceId === performanceId ? prev.bytes : 0) + chunkBytes,
+      url: null
+    }));
+  }, [isAdmin]);
+
+  const finishHostRecording = useCallback((performanceId) => {
+    if (!isAdmin || hostRecordingPerfRef.current !== performanceId) return;
+    const blob = createKaraokeRecordingBlob([...hostRecordingChunksRef.current.values()]);
+    if (blob.size === 0) {
+      setHostRecording(prev => ({ ...prev, status: 'empty' }));
+      return;
+    }
+    if (hostRecordingUrlRef.current) URL.revokeObjectURL(hostRecordingUrlRef.current);
+    const url = URL.createObjectURL(blob);
+    hostRecordingUrlRef.current = url;
+    setHostRecording(prev => ({
+      ...prev,
+      status: 'ready',
+      elapsedMs: prev.durationMs || prev.elapsedMs,
+      bytes: blob.size,
+      url
+    }));
+  }, [isAdmin]);
+
   // Everything down on unmount / question change
   useEffect(() => () => {
+    if (micCheckAbortRef.current) micCheckAbortRef.current.abort();
+    if (micCheckPreviewRef.current) micCheckPreviewRef.current.destroy();
+    if (micCheckPlayheadRafRef.current) cancelAnimationFrame(micCheckPlayheadRafRef.current);
+    if (hostRecordingUrlRef.current) URL.revokeObjectURL(hostRecordingUrlRef.current);
     stopPipeline();
     destroyListenerPlayer();
   }, [questionId, stopPipeline, destroyListenerPlayer]);
+
+  useEffect(() => {
+    calibrationRef.current = calibration;
+  }, [calibration]);
+
+  useEffect(() => {
+    const syncCalibration = () => {
+      const saved = getVoiceSyncCalibration();
+      setCalibration(saved);
+      setNudgeMs(saved ? saved.latencyMs - saved.measuredLatencyMs : 0);
+      if (micCheckPreviewRef.current && saved) {
+        micCheckPreviewRef.current.setVoiceSyncMs(saved.latencyMs);
+        setMicCheckWaveform(micCheckPreviewRef.current.getWaveform());
+      }
+    };
+    window.addEventListener(VOICE_SYNC_CHANGE_EVENT, syncCalibration);
+    return () => window.removeEventListener(VOICE_SYNC_CHANGE_EVENT, syncCalibration);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (micCheckPreviewRef.current) {
+      micCheckPreviewRef.current.destroy();
+      micCheckPreviewRef.current = null;
+    }
+    setMicCheckPreviewReady(false);
+    setMicCheckPreviewPlaying(false);
+    setMicCheckWaveform([]);
+    setMicCheckPlayheadMs(0);
+    if (!micCheckRecording) return undefined;
+    createMicCheckPreview({
+      ...micCheckRecording.preview,
+      recordingBlob: micCheckRecording.blob,
+      voiceSyncMs: calibrationRef.current ? calibrationRef.current.latencyMs : 0,
+      volume: volumeRef.current,
+      onEnded: () => {
+        setMicCheckPreviewPlaying(false);
+        setMicCheckPlayheadMs(0);
+      }
+    }).then((preview) => {
+      if (cancelled) {
+        if (preview) preview.destroy();
+        return;
+      }
+      micCheckPreviewRef.current = preview;
+      setMicCheckPreviewReady(!!preview);
+      setMicCheckWaveform(preview ? preview.getWaveform() : []);
+    }).catch((previewError) => {
+      console.warn('Karaoke: mic check preview unavailable', previewError);
+    });
+    return () => {
+      cancelled = true;
+      if (micCheckPreviewRef.current) {
+        micCheckPreviewRef.current.destroy();
+        micCheckPreviewRef.current = null;
+      }
+    };
+  }, [micCheckRecording]);
+
+  useEffect(() => {
+    if (!micCheckPreviewPlaying) return undefined;
+    const updatePlayhead = () => {
+      const preview = micCheckPreviewRef.current;
+      if (!preview || !preview.isPlaying()) {
+        setMicCheckPreviewPlaying(false);
+        return;
+      }
+      setMicCheckPlayheadMs(preview.getPositionMs());
+      micCheckPlayheadRafRef.current = requestAnimationFrame(updatePlayhead);
+    };
+    micCheckPlayheadRafRef.current = requestAnimationFrame(updatePlayhead);
+    return () => {
+      if (micCheckPlayheadRafRef.current) {
+        cancelAnimationFrame(micCheckPlayheadRafRef.current);
+        micCheckPlayheadRafRef.current = null;
+      }
+    };
+  }, [micCheckPreviewPlaying]);
 
   // The page volume slider drives the singer's private monitor loudness
   // (their media element itself is pinned to 1 - it feeds the recording)
@@ -225,6 +491,15 @@ const KaraokeQuestion = ({
     if (pipelineRef.current) {
       pipelineRef.current.setMonitorVolume(volume);
     }
+    if (micCheckPreviewRef.current) {
+      micCheckPreviewRef.current.setVolume(volume);
+    }
+    [listenerAudioRef.current, recordingAudioRef.current].forEach((el) => {
+      if (!el) return;
+      el.__programmaticChange = true;
+      el.volume = Math.min(1, Math.max(0, volume));
+      el.__programmaticChange = false;
+    });
   }, [volume]);
 
   // Listeners attach an MSE player to the hidden audio element as soon as a
@@ -263,11 +538,19 @@ const KaraokeQuestion = ({
       if (data.type === 'karaoke_state') {
         if (data.data.performance) {
           setPerformance(data.data.performance);
+          if (isAdmin && hostRecordingPerfRef.current !== data.data.performance.id) {
+            const syncedPerformance = data.data.performance;
+            beginHostRecording(syncedPerformance.id, syncedPerformance.durationMs);
+            if (syncedPerformance.ended) {
+              setHostRecording(prev => ({ ...prev, status: 'empty' }));
+            }
+          }
         }
       } else if (data.type === 'karaoke_start') {
         const { performanceId, durationMs } = data.data;
         setPerformance({ id: performanceId, durationMs, ended: false });
         setError(null);
+        beginHostRecording(performanceId, durationMs);
       } else if (data.type === 'karaoke_chunk') {
         const { performanceId, seq, t: chunkT, b64 } = data.data;
         const chunk = { seq, t: chunkT, b64 };
@@ -282,6 +565,7 @@ const KaraokeQuestion = ({
             pendingChunksRef.current.set(performanceId, stash);
           }
         }
+        captureHostRecordingChunk(performanceId, chunk);
       } else if (data.type === 'karaoke_end') {
         const { performanceId } = data.data;
         setPerformance(prev => (prev && prev.id === performanceId ? { ...prev, ended: true } : prev));
@@ -294,10 +578,18 @@ const KaraokeQuestion = ({
           const el = singerMediaRef.current;
           if (el && !el.paused) el.pause();
         }
+        finishHostRecording(performanceId);
       }
     });
     return unsubscribe;
-  }, [questionId, stopPipeline]);
+  }, [
+    questionId,
+    stopPipeline,
+    isAdmin,
+    beginHostRecording,
+    captureHostRecordingChunk,
+    finishHostRecording
+  ]);
 
   // ---------- track clock (lyrics + video sync) ----------
 
@@ -385,10 +677,14 @@ const KaraokeQuestion = ({
       const performanceId = `${currentUserId}-${Date.now()}`;
 
       stopPipeline(); // restart replaces any previous attempt
+      beginHostRecording(performanceId, durationMs);
       const pipeline = await startSingerPipeline({
         mediaEl,
         monitorVolume: volumeRef.current,
-        onChunk: (chunk) => wsManager.sendKaraokeChunk(questionId, performanceId, chunk)
+        onChunk: (chunk) => {
+          captureHostRecordingChunk(performanceId, chunk);
+          wsManager.sendKaraokeChunk(questionId, performanceId, chunk);
+        }
       });
       perfIdRef.current = performanceId;
       pipelineRef.current = pipeline;
@@ -404,6 +700,101 @@ const KaraokeQuestion = ({
         ? t('question.karaokeUnsupported')
         : t('question.karaokeStartFailed'));
     }
+  };
+
+  const handleMicCheck = async () => {
+    const mediaEl = singerMediaRef.current;
+    if (!mediaEl) return;
+    if (micCheckAbortRef.current) micCheckAbortRef.current.abort();
+    const controller = new AbortController();
+    micCheckAbortRef.current = controller;
+    setMicCheckStatus('running');
+    setMicCheckBeat({ phase: 'ready', index: 0, total: 4 });
+    setMicCheckProgress({ detected: 0, total: 8, estimateMs: null });
+    setMicCheckError(null);
+    if (micCheckPreviewRef.current) {
+      micCheckPreviewRef.current.destroy();
+      micCheckPreviewRef.current = null;
+      setMicCheckPreviewReady(false);
+      setMicCheckPreviewPlaying(false);
+    }
+    setMicCheckRecording(null);
+    try {
+      const result = await runMicCheck({
+        mediaEl,
+        signal: controller.signal,
+        onBeat: beat => setMicCheckBeat(beat),
+        onProgress: progress => setMicCheckProgress(progress)
+      });
+      const latencyMs = setVoiceSyncOverride(result.latencyMs, {
+        measuredLatencyMs: result.latencyMs,
+        source: 'mic-check',
+        confidence: result.confidence
+      });
+      setCalibration({
+        latencyMs,
+        measuredLatencyMs: result.latencyMs,
+        calibratedAt: new Date().toISOString(),
+        source: 'mic-check',
+        confidence: result.confidence
+      });
+      setNudgeMs(0);
+      if (result.recordingBlob && result.recordingBlob.size > 0 && result.preview) {
+        setMicCheckRecording({
+          blob: result.recordingBlob,
+          preview: result.preview
+        });
+      }
+      setMicCheckStatus('done');
+      setMicCheckBeat(null);
+    } catch (e) {
+      if (e && e.code === 'aborted') return;
+      setMicCheckStatus('error');
+      setMicCheckBeat(null);
+      setMicCheckError(e && e.code ? e.code : 'mic-denied');
+    } finally {
+      if (micCheckAbortRef.current === controller) {
+        micCheckAbortRef.current = null;
+      }
+    }
+  };
+
+  const handleNudge = (value) => {
+    const nextNudge = Number(value);
+    const measuredLatencyMs = calibration ? calibration.measuredLatencyMs : 0;
+    const latencyMs = setVoiceSyncOverride(measuredLatencyMs + nextNudge, {
+      measuredLatencyMs,
+      source: 'mic-check',
+      confidence: calibration ? calibration.confidence : undefined
+    });
+    setNudgeMs(latencyMs - measuredLatencyMs);
+    setCalibration(prev => ({ ...prev, latencyMs }));
+    if (micCheckPreviewRef.current) {
+      micCheckPreviewRef.current.setVoiceSyncMs(latencyMs);
+      setMicCheckWaveform(micCheckPreviewRef.current.getWaveform());
+    }
+  };
+
+  const handleResetCalibration = () => {
+    clearVoiceSyncOverride();
+    setCalibration(null);
+    setNudgeMs(0);
+    setMicCheckStatus('idle');
+    setMicCheckError(null);
+    setMicCheckRecording(null);
+  };
+
+  const handleMicCheckPreview = async () => {
+    const preview = micCheckPreviewRef.current;
+    if (!preview) return;
+    if (preview.isPlaying()) {
+      preview.stop();
+      setMicCheckPreviewPlaying(false);
+      setMicCheckPlayheadMs(preview.getPositionMs());
+      return;
+    }
+    await preview.play();
+    setMicCheckPreviewPlaying(true);
   };
 
   const handleHostEnd = () => {
@@ -456,6 +847,104 @@ const KaraokeQuestion = ({
         textAlign: 'center'
       }}>
         {question.lyrics}
+      </div>
+    );
+  };
+
+  const renderHostRecordingPanel = () => {
+    if (!isAdmin || hostRecording.status === 'idle') return null;
+    const progress = hostRecording.status === 'ready'
+      ? 100
+      : Math.min(100, hostRecording.durationMs
+        ? (hostRecording.elapsedMs / hostRecording.durationMs) * 100
+        : 0);
+    return (
+      <div style={{
+        width: '100%',
+        maxWidth: '680px',
+        padding: '1rem 1.2rem',
+        borderRadius: '14px',
+        border: '1px solid var(--glass-border)',
+        background: 'var(--bg-dark)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.75rem',
+        margin: '1rem auto 0'
+      }}>
+        <style>{'@keyframes karaokePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }'}</style>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '1rem',
+          fontWeight: '700'
+        }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {hostRecording.status === 'recording' && (
+              <span style={{
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                background: '#ef4444',
+                animation: 'karaokePulse 1.2s ease-in-out infinite'
+              }} />
+            )}
+            {hostRecording.status === 'recording'
+              ? t('question.karaokeRecording')
+              : hostRecording.status === 'ready'
+                ? t('question.karaokeRecordingReady')
+                : t('question.karaokeRecordingEmpty')}
+          </span>
+          <span style={{ color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+            {formatDuration(hostRecording.elapsedMs)}
+            {hostRecording.durationMs ? ` / ${formatDuration(hostRecording.durationMs)}` : ''}
+          </span>
+        </div>
+        <div style={{
+          height: '8px',
+          borderRadius: '999px',
+          overflow: 'hidden',
+          background: 'var(--track)'
+        }}>
+          <div style={{
+            height: '100%',
+            width: `${progress}%`,
+            background: 'var(--primary)',
+            transition: 'width 250ms linear'
+          }} />
+        </div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+          {t('question.karaokeRecordingSize', {
+            size: (hostRecording.bytes / (1024 * 1024)).toFixed(1)
+          })}
+        </div>
+        {hostRecording.status === 'ready' && hostRecording.url && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+            <audio
+              ref={recordingAudioRef}
+              src={hostRecording.url}
+              controls
+              preload="metadata"
+              onLoadedMetadata={event => {
+                event.currentTarget.volume = Math.min(1, Math.max(0, volume));
+              }}
+              style={{ width: '100%' }}
+            />
+            <a
+              className="btn-primary"
+              href={hostRecording.url}
+              download={`karaoke-${questionId}-${hostRecording.performanceId}.webm`}
+              style={{
+                alignSelf: 'center',
+                padding: '0.65rem 1.4rem',
+                fontSize: '0.95rem',
+                textDecoration: 'none'
+              }}
+            >
+              {t('question.karaokeDownloadRecording')}
+            </a>
+          </div>
+        )}
       </div>
     );
   };
@@ -570,9 +1059,157 @@ const KaraokeQuestion = ({
                 <div style={noticeStyle}><span>🔇</span><span>{t('question.karaokeMuteDiscord')}</span></div>
                 <div style={noticeStyle}><span>🎙️</span><span>{t('question.karaokeMicAsk')}</span></div>
               </div>
-              <button className="btn-primary" style={{ padding: '0.9rem 2.5rem', fontSize: '1.15rem' }} onClick={handleStart}>
-                {live ? t('question.karaokeRestart') : t('question.karaokeStart')}
-              </button>
+              {!calibration && micCheckStatus === 'idle' && (
+                <div style={{ color: '#fbbf24', fontWeight: '700', fontSize: '0.95rem' }}>
+                  {t('question.micCheckRecommended')}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button
+                  className="btn-primary"
+                  style={{ padding: '0.9rem 2rem', fontSize: '1.1rem' }}
+                  onClick={handleMicCheck}
+                  disabled={micCheckStatus === 'running'}
+                >
+                  {calibration ? t('question.micCheckRedo') : t('question.micCheckButton')}
+                </button>
+                <button
+                  className="btn-primary"
+                  style={{ padding: '0.9rem 2rem', fontSize: '1.1rem' }}
+                  onClick={handleStart}
+                  disabled={micCheckStatus === 'running'}
+                >
+                  {live ? t('question.karaokeRestart') : t('question.karaokeStart')}
+                </button>
+              </div>
+
+              {micCheckStatus === 'running' && (
+                <div style={{
+                  width: '100%',
+                  padding: '1.25rem',
+                  borderRadius: '16px',
+                  border: '1px solid var(--glass-border)',
+                  background: 'var(--bg-dark)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '0.85rem'
+                }}>
+                  <div style={{ fontSize: '1.15rem', fontWeight: '700' }}>
+                    {micCheckBeat && micCheckBeat.phase === 'measure'
+                      ? t('question.micCheckClap')
+                      : t('question.micCheckListen')}
+                  </div>
+                  <div
+                    key={micCheckBeat ? `${micCheckBeat.phase}-${micCheckBeat.index}` : 'waiting'}
+                    aria-label={t('question.micCheckBeat')}
+                    style={{
+                      width: '92px',
+                      height: '92px',
+                      borderRadius: '50%',
+                      background: 'var(--accent)',
+                      boxShadow: '0 0 32px var(--accent-glow)',
+                      transform: micCheckBeat ? 'scale(1)' : 'scale(0.72)',
+                      transition: 'transform 120ms ease-out',
+                      animation: micCheckBeat ? 'micCheckBeatPulse 420ms ease-out' : 'none',
+                      display: 'grid',
+                      placeItems: 'center',
+                      color: 'var(--bg-darker)',
+                      fontSize: '1.6rem',
+                      fontWeight: '900'
+                    }}
+                  >
+                    {micCheckBeat && micCheckBeat.phase === 'measure'
+                      ? micCheckBeat.index + 1
+                      : micCheckBeat && micCheckBeat.phase === 'count-in'
+                        ? micCheckBeat.total - micCheckBeat.index
+                        : '...'}
+                  </div>
+                  <style>{'@keyframes micCheckBeatPulse { 0% { transform: scale(0.72); opacity: 0.65; } 45% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }'}</style>
+                  <div style={{ color: 'var(--text-secondary)' }}>
+                    {t('question.micCheckProgress', {
+                      count: micCheckProgress.detected,
+                      total: micCheckProgress.total
+                    })}
+                    {micCheckProgress.estimateMs !== null
+                      ? ` · ${micCheckProgress.estimateMs} ms`
+                      : ''}
+                  </div>
+                </div>
+              )}
+
+              {calibration && micCheckStatus !== 'running' && (
+                <div style={{
+                  width: '100%',
+                  padding: '1rem 1.25rem',
+                  borderRadius: '14px',
+                  border: '1px solid var(--glass-border)',
+                  background: 'var(--bg-dark)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem'
+                }}>
+                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: 'var(--accent)' }}>
+                    {t('question.micCheckResult', { ms: calibration.latencyMs })}
+                  </div>
+                  {calibration.confidence !== undefined && calibration.confidence < 0.6 && (
+                    <div style={{ color: '#fbbf24' }}>{t('question.micCheckLowConfidence')}</div>
+                  )}
+                  {micCheckRecording && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        {t('question.micCheckPlayback')}
+                      </span>
+                      <button
+                        type="button"
+                        className="mic-check-preview-btn"
+                        disabled={!micCheckPreviewReady}
+                        onClick={handleMicCheckPreview}
+                      >
+                        <span aria-hidden="true">{micCheckPreviewPlaying ? '■' : '▶'}</span>
+                        {micCheckPreviewPlaying
+                          ? t('question.micCheckStopPreview')
+                          : t('question.micCheckPlayPreview')}
+                      </button>
+                      {micCheckPreviewReady && micCheckRecording.preview && (
+                        <MicCheckTimeline
+                          waveform={micCheckWaveform}
+                          beatCount={micCheckRecording.preview.beatCount}
+                          intervalMs={micCheckRecording.preview.intervalMs}
+                          durationMs={micCheckRecording.preview.durationMs}
+                          playheadMs={micCheckPlayheadMs}
+                          label={t('question.micCheckWaveform')}
+                        />
+                      )}
+                    </div>
+                  )}
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      {t('question.micCheckNudge', { value: nudgeMs > 0 ? `+${nudgeMs}` : nudgeMs })}
+                    </span>
+                    <input
+                      type="range"
+                      className="volume-slider"
+                      min="-200"
+                      max="200"
+                      step="10"
+                      value={nudgeMs}
+                      onChange={event => handleNudge(event.target.value)}
+                      style={{ width: '100%', background: 'var(--glass-border)' }}
+                    />
+                  </label>
+                  <button type="button" className="mic-check-reset-btn" onClick={handleResetCalibration}>
+                    <span aria-hidden="true">↺</span>
+                    {t('question.micCheckReset')}
+                  </button>
+                </div>
+              )}
+
+              {micCheckStatus === 'error' && (
+                <div style={{ color: '#ef4444', fontSize: '1rem' }}>
+                  {t(`question.micCheckError.${micCheckError}`)}
+                </div>
+              )}
               {error && <div style={{ color: '#ef4444', fontSize: '1rem' }}>{error}</div>}
             </div>
           )}
@@ -604,6 +1241,7 @@ const KaraokeQuestion = ({
               {t('question.karaokeDone')}
             </div>
           )}
+          {renderHostRecordingPanel()}
         </div>
       </div>
     );
@@ -651,6 +1289,7 @@ const KaraokeQuestion = ({
                 {t('question.karaokeDone')}
               </div>
             )}
+            {renderHostRecordingPanel()}
             {isAdmin && live && (
               <button className="btn-danger" style={{ padding: '0.6rem 1.5rem', fontSize: '1rem' }} onClick={handleHostEnd}>
                 {t('question.karaokeEndPerformance')}

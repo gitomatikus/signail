@@ -26,6 +26,21 @@ const LIVE_EDGE_OFFSET_S = 0.4;
 const MAX_VOICE_SYNC_S = 1.5;
 const FALLBACK_MIC_LATENCY_S = 0.08;
 const VOICE_SYNC_OVERRIDE_KEY = 'karaokeVoiceSyncMs';
+const VOICE_SYNC_CALIBRATION_KEY = 'karaokeVoiceSyncCalibration';
+export const VOICE_SYNC_CHANGE_EVENT = 'karaoke-voice-sync-change';
+const MIC_CHECK_INTERVAL_S = 1;
+const MIC_CHECK_COUNT_IN_BEATS = 4;
+const MIC_CHECK_MEASURED_BEATS = 8;
+const MIC_CHECK_MAX_DELTA_S = 0.8;
+const MIC_CHECK_DEBOUNCE_S = 0.3;
+
+export class MicCheckError extends Error {
+  constructor(code) {
+    super(code);
+    this.name = 'MicCheckError';
+    this.code = code;
+  }
+}
 
 export const isKaraokeStreamingSupported = () =>
   typeof window.MediaRecorder !== 'undefined'
@@ -154,6 +169,21 @@ const base64ToBytes = (b64) => {
   return bytes;
 };
 
+// The streamed chunks are already one MediaRecorder WebM sequence. Keeping
+// them byte-for-byte preserves the exact mixed track+voice audio the audience
+// heard; sorting and deduping also makes reconnect backlog overlap harmless.
+export const createKaraokeRecordingBlob = (chunks) => {
+  const bySequence = new Map();
+  (chunks || []).forEach((chunk) => {
+    if (!chunk || !Number.isFinite(Number(chunk.seq)) || typeof chunk.b64 !== 'string') return;
+    bySequence.set(Number(chunk.seq), chunk);
+  });
+  const bytes = [...bySequence.values()]
+    .sort((a, b) => Number(a.seq) - Number(b.seq))
+    .map(chunk => base64ToBytes(chunk.b64));
+  return new Blob(bytes, { type: RECORDER_MIME });
+};
+
 // Karaoke media in packs is a base64 data URL; element src and MSE work much
 // better with a Blob URL (no megabytes-long attribute value). Falls back to
 // the original string if it isn't a data URL.
@@ -192,6 +222,542 @@ const getElementGraph = (mediaEl) => {
     mediaEl.__karaokeGraph = { ctx, source, monitorGain };
   }
   return mediaEl.__karaokeGraph;
+};
+
+const clampVoiceSyncMs = (value) =>
+  Math.round(Math.min(MAX_VOICE_SYNC_S * 1000, Math.max(0, Number(value) || 0)));
+
+export const getVoiceSyncOverride = () => {
+  try {
+    const value = parseFloat(window.localStorage.getItem(VOICE_SYNC_OVERRIDE_KEY));
+    return Number.isFinite(value) ? clampVoiceSyncMs(value) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const getVoiceSyncCalibration = () => {
+  const latencyMs = getVoiceSyncOverride();
+  if (latencyMs === null) return null;
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(VOICE_SYNC_CALIBRATION_KEY));
+    return {
+      latencyMs,
+      measuredLatencyMs: Number.isFinite(stored && stored.measuredLatencyMs)
+        ? clampVoiceSyncMs(stored.measuredLatencyMs)
+        : latencyMs,
+      calibratedAt: stored && stored.calibratedAt ? stored.calibratedAt : null,
+      source: stored && stored.source ? stored.source : 'manual',
+      ...(Number.isFinite(stored && stored.confidence) ? { confidence: stored.confidence } : {})
+    };
+  } catch (e) {
+    return { latencyMs, measuredLatencyMs: latencyMs, calibratedAt: null, source: 'manual' };
+  }
+};
+
+export const setVoiceSyncOverride = (latencyMs, metadata = {}) => {
+  const clamped = clampVoiceSyncMs(latencyMs);
+  try {
+    window.localStorage.setItem(VOICE_SYNC_OVERRIDE_KEY, String(clamped));
+    window.localStorage.setItem(VOICE_SYNC_CALIBRATION_KEY, JSON.stringify({
+      measuredLatencyMs: clampVoiceSyncMs(metadata.measuredLatencyMs ?? clamped),
+      calibratedAt: metadata.calibratedAt || new Date().toISOString(),
+      source: metadata.source || 'manual',
+      ...(Number.isFinite(metadata.confidence) ? { confidence: metadata.confidence } : {})
+    }));
+  } catch (e) { /* storage blocked - this session will keep the UI value only */ }
+  window.dispatchEvent(new CustomEvent(VOICE_SYNC_CHANGE_EVENT));
+  return clamped;
+};
+
+export const clearVoiceSyncOverride = () => {
+  try {
+    window.localStorage.removeItem(VOICE_SYNC_OVERRIDE_KEY);
+    window.localStorage.removeItem(VOICE_SYNC_CALIBRATION_KEY);
+  } catch (e) { /* storage blocked */ }
+  window.dispatchEvent(new CustomEvent(VOICE_SYNC_CHANGE_EVENT));
+};
+
+const median = (values) => {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+};
+
+const matchOnsetsToClicks = (clickTimes, onsetTimes, maxDeltaS = MIC_CHECK_MAX_DELTA_S) => {
+  const unused = new Set(onsetTimes.map((_, index) => index));
+  return clickTimes.map((clickTime, clickIndex) => {
+    let bestIndex = null;
+    let bestDelta = Infinity;
+    onsetTimes.forEach((onsetTime, onsetIndex) => {
+      if (!unused.has(onsetIndex)) return;
+      const delta = onsetTime - clickTime;
+      if (delta >= 0 && delta <= maxDeltaS && delta < bestDelta) {
+        bestDelta = delta;
+        bestIndex = onsetIndex;
+      }
+    });
+    if (bestIndex === null) return null;
+    unused.delete(bestIndex);
+    return { clickIndex, clickTime, onsetTime: onsetTimes[bestIndex], deltaMs: bestDelta * 1000 };
+  }).filter(Boolean);
+};
+
+// Pure robust aggregation, exported so the timing policy can be tested without
+// a microphone. Times are AudioContext seconds.
+export const aggregateMicCheckSamples = (clickTimes, onsetTimes) => {
+  const matched = matchOnsetsToClicks(clickTimes, onsetTimes);
+  const settled = matched.filter(sample => sample.clickIndex > 0);
+  if (settled.length < 3) {
+    throw new MicCheckError('no-onsets');
+  }
+  const initialMedian = median(settled.map(sample => sample.deltaMs));
+  const mad = median(settled.map(sample => Math.abs(sample.deltaMs - initialMedian))) || 0;
+  const outlierLimitMs = Math.max(30, mad * 2);
+  const samples = settled.filter(sample =>
+    Math.abs(sample.deltaMs - initialMedian) <= outlierLimitMs
+  );
+  if (samples.length < 3) {
+    throw new MicCheckError('no-onsets');
+  }
+  const latencyMs = median(samples.map(sample => sample.deltaMs));
+  const finalMad = median(samples.map(sample => Math.abs(sample.deltaMs - latencyMs))) || 0;
+  const coverage = Math.min(1, samples.length / Math.max(1, clickTimes.length - 1));
+  const stability = Math.max(0, 1 - finalMad / 90);
+  const confidence = Math.round(coverage * stability * 100) / 100;
+  return {
+    latencyMs: clampVoiceSyncMs(latencyMs),
+    confidence,
+    samples
+  };
+};
+
+export const computeRms = (samples) => {
+  if (!samples || samples.length === 0) return 0;
+  let sumSquares = 0;
+  for (let i = 0; i < samples.length; i++) {
+    sumSquares += samples[i] * samples[i];
+  }
+  return Math.sqrt(sumSquares / samples.length);
+};
+
+// Testable counterpart to the live rAF detector. It scans short windows and
+// applies the same rising-edge threshold and debounce policy.
+export const detectOnsetsInBuffer = (
+  samples,
+  sampleRate,
+  threshold,
+  windowSize = 256,
+  debounceS = MIC_CHECK_DEBOUNCE_S
+) => {
+  const onsets = [];
+  let wasAbove = false;
+  let lastOnsetS = -Infinity;
+  for (let offset = 0; offset < samples.length; offset += windowSize) {
+    const rms = computeRms(samples.subarray(offset, Math.min(samples.length, offset + windowSize)));
+    const timeS = offset / sampleRate;
+    const above = rms >= threshold;
+    if (above && !wasAbove && timeS - lastOnsetS >= debounceS) {
+      onsets.push(timeS);
+      lastOnsetS = timeS;
+    }
+    wasAbove = above;
+  }
+  return onsets;
+};
+
+export const getMicCheckVoiceOffsetMs = (firstBeatOffsetMs, positionMs, voiceSyncMs) =>
+  Math.max(0, Number(firstBeatOffsetMs) + Number(positionMs) + Number(voiceSyncMs));
+
+export const createMicCheckWaveform = (
+  audioBuffer,
+  firstBeatOffsetMs,
+  durationMs,
+  voiceSyncMs,
+  pointCount = 180
+) => {
+  if (!audioBuffer || !audioBuffer.length || !audioBuffer.sampleRate || pointCount <= 0) return [];
+  const sourceStart = Math.round(
+    getMicCheckVoiceOffsetMs(firstBeatOffsetMs, 0, voiceSyncMs)
+    * audioBuffer.sampleRate / 1000
+  );
+  const sourceLength = Math.round(durationMs * audioBuffer.sampleRate / 1000);
+  const channelData = Array.from(
+    { length: audioBuffer.numberOfChannels || 1 },
+    (_, channel) => audioBuffer.getChannelData(channel)
+  );
+  const values = Array.from({ length: pointCount }, (_, index) => {
+    const start = sourceStart + Math.floor(index * sourceLength / pointCount);
+    const end = sourceStart + Math.floor((index + 1) * sourceLength / pointCount);
+    const stride = Math.max(1, Math.floor((end - start) / 80));
+    let peak = 0;
+    channelData.forEach((samples) => {
+      for (let sample = start; sample < end && sample < samples.length; sample += stride) {
+        if (sample >= 0) peak = Math.max(peak, Math.abs(samples[sample]));
+      }
+    });
+    return peak;
+  });
+  const max = Math.max(...values, 0.001);
+  return values.map(value => Math.min(1, value / max));
+};
+
+const scheduleMicCheckClick = (ctx, time) => {
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+  oscillator.frequency.value = 1000;
+  gain.gain.setValueAtTime(0.0001, time);
+  gain.gain.exponentialRampToValueAtTime(0.32, time + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.03);
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.start(time);
+  oscillator.stop(time + 0.035);
+  return oscillator;
+};
+
+export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new MicCheckError('mic-denied');
+  }
+  const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextImpl) throw new MicCheckError('mic-denied');
+  const ownsContext = !mediaEl;
+  const ctx = mediaEl ? getElementGraph(mediaEl).ctx : new AudioContextImpl();
+  if (ctx.state === 'suspended') {
+    await ctx.resume();
+  }
+
+  let micStream;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      }
+    });
+  } catch (e) {
+    throw new MicCheckError('mic-denied');
+  }
+
+  const micSource = ctx.createMediaStreamSource(micStream);
+  const analyser = ctx.createAnalyser();
+  analyser.smoothingTimeConstant = 0;
+  analyser.fftSize = 1024;
+  micSource.connect(analyser);
+  const recordingChunks = [];
+  let recorder = null;
+  let recordingStartedAt = ctx.currentTime;
+  if (typeof MediaRecorder !== 'undefined') {
+    const options = MediaRecorder.isTypeSupported
+      && MediaRecorder.isTypeSupported(RECORDER_MIME)
+      ? { mimeType: RECORDER_MIME }
+      : undefined;
+    try {
+      recorder = new MediaRecorder(micStream, options);
+      recorder.addEventListener('dataavailable', event => {
+        if (event.data && event.data.size > 0) recordingChunks.push(event.data);
+      });
+      recorder.start();
+      recordingStartedAt = ctx.currentTime;
+    } catch (e) {
+      recorder = null;
+    }
+  }
+
+  const buffer = new Float32Array(analyser.fftSize);
+  const noiseSamples = [];
+  const onsetTimes = [];
+  const oscillators = [];
+  const firstClickTime = ctx.currentTime + 0.8;
+  const allClickTimes = Array.from(
+    { length: MIC_CHECK_COUNT_IN_BEATS + MIC_CHECK_MEASURED_BEATS },
+    (_, index) => firstClickTime + index * MIC_CHECK_INTERVAL_S
+  );
+  allClickTimes.forEach(time => oscillators.push(scheduleMicCheckClick(ctx, time)));
+
+  let raf = null;
+  let beatCursor = 0;
+  let wasAbove = false;
+  let lastOnsetTime = -Infinity;
+  let lastProgressKey = '';
+  let finished = false;
+  let cleaned = false;
+
+  const stopRecording = () => new Promise((resolve) => {
+    if (!recorder || recorder.state === 'inactive') {
+      resolve(recordingChunks.length
+        ? new Blob(recordingChunks, { type: recorder ? recorder.mimeType : RECORDER_MIME })
+        : null);
+      return;
+    }
+    recorder.addEventListener('stop', () => {
+      resolve(new Blob(recordingChunks, { type: recorder.mimeType || RECORDER_MIME }));
+    }, { once: true });
+    recorder.stop();
+  });
+
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    if (raf !== null) cancelAnimationFrame(raf);
+    try { micSource.disconnect(); } catch (e) { /* detached */ }
+    try { analyser.disconnect(); } catch (e) { /* detached */ }
+    micStream.getTracks().forEach(track => track.stop());
+    if (!finished) {
+      oscillators.forEach(oscillator => {
+        try { oscillator.stop(); } catch (e) { /* already stopped */ }
+      });
+    }
+    if (ownsContext && ctx.state !== 'closed') {
+      ctx.close().catch(() => {});
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    const fail = (code) => {
+      stopRecording();
+      cleanup();
+      reject(new MicCheckError(code));
+    };
+    const tick = () => {
+      if (signal && signal.aborted) {
+        fail('aborted');
+        return;
+      }
+
+      const now = ctx.currentTime;
+      analyser.getFloatTimeDomainData(buffer);
+      const rms = computeRms(buffer);
+      if (now < firstClickTime - 0.1) {
+        noiseSamples.push(rms);
+      }
+      const noiseFloor = median(noiseSamples) || 0;
+      const threshold = Math.max(0.012, noiseFloor * 4);
+      const above = rms >= threshold;
+      if (above && !wasAbove && now - lastOnsetTime >= MIC_CHECK_DEBOUNCE_S) {
+        onsetTimes.push(now);
+        lastOnsetTime = now;
+      }
+      wasAbove = above;
+
+      while (beatCursor < allClickTimes.length && now >= allClickTimes[beatCursor]) {
+        const measuredIndex = beatCursor - MIC_CHECK_COUNT_IN_BEATS;
+        if (onBeat) {
+          onBeat({
+            phase: measuredIndex < 0 ? 'count-in' : 'measure',
+            index: measuredIndex < 0 ? beatCursor : measuredIndex,
+            total: measuredIndex < 0 ? MIC_CHECK_COUNT_IN_BEATS : MIC_CHECK_MEASURED_BEATS,
+            scheduledTime: allClickTimes[beatCursor]
+          });
+        }
+        beatCursor += 1;
+      }
+
+      if (beatCursor === MIC_CHECK_COUNT_IN_BEATS && now >= allClickTimes[MIC_CHECK_COUNT_IN_BEATS] - 0.12) {
+        const bleedSamples = matchOnsetsToClicks(
+          allClickTimes.slice(0, MIC_CHECK_COUNT_IN_BEATS),
+          onsetTimes
+        );
+        if (bleedSamples.length >= 2) {
+          const bleedMedian = median(bleedSamples.map(sample => sample.deltaMs));
+          const bleedMad = median(bleedSamples.map(sample => Math.abs(sample.deltaMs - bleedMedian))) || 0;
+          if (bleedMad < 80) {
+            fail('headphone-bleed');
+            return;
+          }
+        }
+      }
+
+      const measuredClicks = allClickTimes.slice(MIC_CHECK_COUNT_IN_BEATS);
+      const measuredOnsets = onsetTimes.filter(time => time >= measuredClicks[0]);
+      const provisional = matchOnsetsToClicks(measuredClicks, measuredOnsets);
+      const estimateMs = provisional.length
+        ? Math.round(median(provisional.map(sample => sample.deltaMs)))
+        : null;
+      const progressKey = `${provisional.length}:${estimateMs}`;
+      if (onProgress && progressKey !== lastProgressKey) {
+        lastProgressKey = progressKey;
+        onProgress({
+          detected: provisional.length,
+          total: MIC_CHECK_MEASURED_BEATS,
+          estimateMs
+        });
+      }
+
+      if (now >= allClickTimes[allClickTimes.length - 1] + MIC_CHECK_MAX_DELTA_S + 0.1) {
+        try {
+          const result = aggregateMicCheckSamples(measuredClicks, measuredOnsets);
+          finished = true;
+          stopRecording().then(recordingBlob => resolve({
+            ...result,
+            recordingBlob,
+            preview: {
+              firstBeatOffsetMs: Math.round(
+                (allClickTimes[MIC_CHECK_COUNT_IN_BEATS] - recordingStartedAt) * 1000
+              ),
+              beatCount: MIC_CHECK_MEASURED_BEATS,
+              intervalMs: MIC_CHECK_INTERVAL_S * 1000,
+              durationMs: Math.round(
+                (MIC_CHECK_MEASURED_BEATS - 1) * MIC_CHECK_INTERVAL_S * 1000
+                + MIC_CHECK_MAX_DELTA_S * 1000
+                + 200
+              )
+            }
+          }));
+          cleanup();
+        } catch (e) {
+          stopRecording();
+          cleanup();
+          reject(e);
+        }
+        return;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  });
+};
+
+export const createMicCheckPreview = async ({
+  recordingBlob,
+  firstBeatOffsetMs,
+  beatCount,
+  intervalMs,
+  durationMs,
+  voiceSyncMs,
+  volume = 1,
+  onEnded
+}) => {
+  const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextImpl || !recordingBlob) return null;
+  const ctx = new AudioContextImpl();
+  const recordingBuffer = await ctx.decodeAudioData(await recordingBlob.arrayBuffer());
+  const output = ctx.createGain();
+  output.gain.value = Math.min(1, Math.max(0, volume));
+  output.connect(ctx.destination);
+
+  let currentVoiceSyncMs = voiceSyncMs;
+  let startedAt = null;
+  let positionMs = 0;
+  let voiceSource = null;
+  let clickNodes = [];
+  let endTimer = null;
+  let scheduleVersion = 0;
+  let destroyed = false;
+
+  const stopNodes = () => {
+    if (voiceSource) {
+      try { voiceSource.stop(); } catch (e) { /* already stopped */ }
+      voiceSource = null;
+    }
+    clickNodes.forEach(({ oscillator }) => {
+      try { oscillator.stop(); } catch (e) { /* already stopped */ }
+    });
+    clickNodes = [];
+    if (endTimer !== null) {
+      clearTimeout(endTimer);
+      endTimer = null;
+    }
+  };
+
+  const getPositionMs = () => startedAt === null
+    ? positionMs
+    : Math.min(durationMs, positionMs + (ctx.currentTime - startedAt) * 1000);
+
+  const schedule = async (fromMs) => {
+    if (destroyed) return;
+    const version = ++scheduleVersion;
+    stopNodes();
+    positionMs = Math.min(durationMs, Math.max(0, fromMs));
+    if (positionMs >= durationMs) positionMs = 0;
+    if (ctx.state === 'suspended') await ctx.resume();
+    if (destroyed || version !== scheduleVersion) return;
+    const startAt = ctx.currentTime + 0.03;
+    startedAt = startAt;
+
+    const voiceOffsetMs = getMicCheckVoiceOffsetMs(
+      firstBeatOffsetMs,
+      positionMs,
+      currentVoiceSyncMs
+    );
+    if (voiceOffsetMs < recordingBuffer.duration * 1000) {
+      voiceSource = ctx.createBufferSource();
+      voiceSource.buffer = recordingBuffer;
+      voiceSource.connect(output);
+      voiceSource.start(startAt, voiceOffsetMs / 1000);
+    }
+
+    for (let index = 0; index < beatCount; index++) {
+      const beatAtMs = index * intervalMs;
+      if (beatAtMs < positionMs) continue;
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const time = startAt + (beatAtMs - positionMs) / 1000;
+      oscillator.frequency.value = 1000;
+      gain.gain.setValueAtTime(0.0001, time);
+      gain.gain.exponentialRampToValueAtTime(0.32, time + 0.002);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.03);
+      oscillator.connect(gain);
+      gain.connect(output);
+      oscillator.start(time);
+      oscillator.stop(time + 0.035);
+      clickNodes.push({ oscillator, gain });
+    }
+
+    endTimer = setTimeout(() => {
+      stopNodes();
+      positionMs = 0;
+      startedAt = null;
+      if (onEnded) onEnded();
+    }, Math.max(0, durationMs - positionMs) + 50);
+  };
+
+  return {
+    durationMs,
+    beatCount,
+    intervalMs,
+    play: () => schedule(getPositionMs()),
+    stop: () => {
+      scheduleVersion += 1;
+      positionMs = getPositionMs();
+      startedAt = null;
+      stopNodes();
+    },
+    restart: () => schedule(0),
+    isPlaying: () => startedAt !== null,
+    getPositionMs,
+    getWaveform: (pointCount) => createMicCheckWaveform(
+      recordingBuffer,
+      firstBeatOffsetMs,
+      durationMs,
+      currentVoiceSyncMs,
+      pointCount
+    ),
+    setVoiceSyncMs: (nextVoiceSyncMs) => {
+      if (destroyed) return;
+      currentVoiceSyncMs = nextVoiceSyncMs;
+      if (startedAt !== null) schedule(getPositionMs());
+    },
+    setVolume: (nextVolume) => {
+      if (destroyed) return;
+      output.gain.value = Math.min(1, Math.max(0, nextVolume));
+    },
+    destroy: () => {
+      if (destroyed) return;
+      destroyed = true;
+      scheduleVersion += 1;
+      stopNodes();
+      startedAt = null;
+      if (ctx.state !== 'closed') {
+        ctx.close().catch(() => {});
+      }
+    }
+  };
 };
 
 // The track enters the mix digitally (zero latency), but the singer only
@@ -258,12 +824,10 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
   // (in ms) from localStorage for setups that defy estimation.
   let voiceSyncS = micSource ? estimateVoiceSyncS(ctx, micStream) : 0;
   if (micSource) {
-    try {
-      const overrideMs = parseFloat(window.localStorage.getItem(VOICE_SYNC_OVERRIDE_KEY));
-      if (Number.isFinite(overrideMs)) {
-        voiceSyncS = Math.min(MAX_VOICE_SYNC_S, Math.max(0, overrideMs / 1000));
-      }
-    } catch (e) { /* storage blocked - keep the estimate */ }
+    const overrideMs = getVoiceSyncOverride();
+    if (overrideMs !== null) {
+      voiceSyncS = overrideMs / 1000;
+    }
     console.info(`Karaoke: track delayed ${Math.round(voiceSyncS * 1000)}ms to align the voice (override: localStorage.${VOICE_SYNC_OVERRIDE_KEY})`);
   }
   const voiceSyncMs = Math.round(voiceSyncS * 1000);

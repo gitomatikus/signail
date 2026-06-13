@@ -9,7 +9,7 @@ import { useTranslation } from '../i18n/LanguageContext';
 const GameBoard = ({ isAdmin = false }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { gameId, pack, packLoading, downloadProgress, loadPack } = useGame();
+  const { gameId, pack, packLoading, downloadProgress } = useGame();
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const [selectedQuestions, setSelectedQuestions] = useState(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -128,7 +128,6 @@ const GameBoard = ({ isAdmin = false }) => {
 
   const handleSettingsClose = () => {
     setSettingsOpen(false);
-    loadPack();
   };
 
   if (packLoading) {

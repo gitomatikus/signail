@@ -19,9 +19,10 @@ import {
   setAutoSubmitSingleChoice
 } from '../utils/answerSettings';
 import EditProfileModal from './EditProfileModal';
+import MicCheckSetting from './MicCheckSetting';
 
 const Settings = ({ onClose, isAdmin = false }) => {
-  const { gameId, gameInfo, user, onUpdateUser } = useGame() || {};
+  const { gameId, gameInfo, user, onUpdateUser, loadPack } = useGame() || {};
   const navigate = useNavigate();
   const { t, translateMessage } = useTranslation();
   const [editProfileOpen, setEditProfileOpen] = useState(false);
@@ -67,6 +68,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
       setIsClearingPack(true);
       setMessage(null);
       await indexedDBService.deletePack(`pack-${gameId}`);
+      await loadPack(gameInfo);
       setMessage({ text: t('settings.packCleared'), isError: false });
     } catch (error) {
       setMessage({ text: t('settings.errorClearingPack', { message: translateMessage(error.message) }), isError: true });
@@ -164,6 +166,8 @@ const Settings = ({ onClose, isAdmin = false }) => {
           minWidth: '320px',
           maxWidth: '500px',
           width: '90%',
+          maxHeight: '90vh',
+          overflowY: 'auto',
           border: '1px solid var(--glass-border)',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
         }}
@@ -214,6 +218,8 @@ const Settings = ({ onClose, isAdmin = false }) => {
               ))}
             </select>
           </div>
+
+          <MicCheckSetting />
 
           {isAdmin && (
             <div style={{
