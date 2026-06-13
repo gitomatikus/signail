@@ -156,6 +156,7 @@ export const translations = {
     "question.karaokeStart": "Start performance",
     "question.karaokeRestart": "Restart performance",
     "question.karaokeOnAir": "On air",
+    "question.karaokeCountdown": "Get ready...",
     "question.karaokeMicMissing":
       "Microphone unavailable — streaming the track without your voice",
     "question.karaokeWaitingStart": "Waiting for {name} to start singing...",
@@ -380,6 +381,7 @@ export const translations = {
     "question.karaokeStart": "Почати виступ",
     "question.karaokeRestart": "Перезапустити виступ",
     "question.karaokeOnAir": "В ефірі",
+    "question.karaokeCountdown": "Приготуйся...",
     "question.karaokeMicMissing":
       "Мікрофон недоступний — транслюється лише мінусовка, без голосу",
     "question.karaokeWaitingStart": "Чекаємо, поки {name} почне співати...",

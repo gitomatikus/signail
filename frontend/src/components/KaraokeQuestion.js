@@ -255,6 +255,7 @@ const KaraokeQuestion = ({
   // { id, durationMs, ended } - the latest performance announced for this question
   const [performance, setPerformance] = useState(null);
   const [isStreaming, setIsStreaming] = useState(false); // singer: my pipeline is live
+  const [startCountdown, setStartCountdown] = useState(null); // 3..1 shown before the track rolls
   const [micActive, setMicActive] = useState(true);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [error, setError] = useState(null);
@@ -289,6 +290,7 @@ const KaraokeQuestion = ({
   const pipelineRef = useRef(null);
   const playerRef = useRef(null); // { perfId, player }
   const perfIdRef = useRef(null); // performance id of MY active pipeline (singer)
+  const startCountdownRef = useRef(0); // generation guard: bumping cancels a pending countdown
   const micCheckAbortRef = useRef(null);
   const micCheckPreviewRef = useRef(null);
   const micCheckPlayheadRafRef = useRef(null);
@@ -333,6 +335,8 @@ const KaraokeQuestion = ({
   }, []);
 
   const stopPipeline = useCallback(() => {
+    startCountdownRef.current += 1; // a countdown still waiting must not play()
+    setStartCountdown(null);
     if (pipelineRef.current) {
       pipelineRef.current.stop();
       pipelineRef.current = null;
@@ -691,8 +695,19 @@ const KaraokeQuestion = ({
       setMicActive(pipeline.micActive);
       wsManager.sendKaraokeStart(questionId, performanceId, durationMs);
       mediaEl.currentTime = 0;
-      await mediaEl.play();
       setIsStreaming(true);
+      // 3-2-1 before the track rolls: gives the singer a moment to adapt and
+      // the listeners' players a head start on buffering. The mix is already
+      // on air (chunks must follow karaoke_start, the first one carries the
+      // WebM header), so the countdown simply rides the recording.
+      const generation = ++startCountdownRef.current;
+      for (let count = 3; count >= 1; count--) {
+        setStartCountdown(count);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (startCountdownRef.current !== generation) return; // restart/stop won
+      }
+      setStartCountdown(null);
+      await mediaEl.play();
     } catch (e) {
       console.error('Karaoke: failed to start performance', e);
       stopPipeline();
@@ -1223,6 +1238,32 @@ const KaraokeQuestion = ({
                 {t('question.karaokeOnAir')}
                 <style>{'@keyframes karaokePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }'}</style>
               </div>
+              {startCountdown !== null && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+                  <div style={{ fontSize: '1.15rem', fontWeight: '700' }}>
+                    {t('question.karaokeCountdown')}
+                  </div>
+                  <div
+                    key={startCountdown}
+                    style={{
+                      width: '92px',
+                      height: '92px',
+                      borderRadius: '50%',
+                      background: 'var(--accent)',
+                      boxShadow: '0 0 32px var(--accent-glow)',
+                      animation: 'karaokeCountPulse 420ms ease-out',
+                      display: 'grid',
+                      placeItems: 'center',
+                      color: 'var(--bg-darker)',
+                      fontSize: '2.2rem',
+                      fontWeight: '900'
+                    }}
+                  >
+                    {startCountdown}
+                  </div>
+                  <style>{'@keyframes karaokeCountPulse { 0% { transform: scale(0.72); opacity: 0.65; } 45% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }'}</style>
+                </div>
+              )}
               {!micActive && (
                 <div style={{ color: '#fbbf24', fontSize: '1rem' }}>
                   {t('question.karaokeMicMissing')}
