@@ -588,6 +588,8 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                       onClick={() => setLightboxSrc(submittedAnswer)}
                       style={{ maxWidth: '120px', maxHeight: '90px', borderRadius: '6px', display: 'block', cursor: 'zoom-in' }}
                     />
+                  ) : typeof submittedAnswer === 'string' && submittedAnswer.startsWith('data:audio') ? (
+                    <audio controls src={submittedAnswer} style={{ width: '130px', display: 'block' }} />
                   ) : (
                     <div style={{
                       fontSize: '0.9rem',

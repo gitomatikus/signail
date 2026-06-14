@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import LoginPage from './LoginPage';
 import LanguageSwitcher from './LanguageSwitcher';
 import EditProfileModal from './EditProfileModal';
+import MicCheckSetting from './MicCheckSetting';
 import { useTranslation } from '../i18n/LanguageContext';
 import { THEMES, getTheme, applyTheme } from '../utils/theme';
 
@@ -126,6 +127,7 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
                 <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{user.name}</span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>✏️</span>
               </div>
+              <MicCheckSetting variant="compact" />
               <button
                 onClick={handleLogout}
                 className="btn-ghost"

@@ -5,13 +5,13 @@ import OnlineUsers from '../components/OnlineUsers';
 import KaraokeQuestion from '../components/KaraokeQuestion';
 import ProgressiveImage from '../components/ProgressiveImage';
 import ImageLightbox from '../components/ImageLightbox';
+import AnswerComposer from '../components/AnswerComposer';
 import Settings from '../components/Settings';
 import Logo from '../components/Logo';
 import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
 import { getHostLayout, HOST_LAYOUT_EVENT } from '../utils/hostLayout';
-import { getTextSubmitMode, isAutoSubmitSingleChoice } from '../utils/answerSettings';
-import { compressImageToDataUrl } from '../utils/compressImage';
+import { isAutoSubmitSingleChoice } from '../utils/answerSettings';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
 
@@ -162,13 +162,14 @@ const QuestionPage = () => {
   const [secretTargetId, setSecretTargetId] = useState(null);
   const [karaokeSelectorId, setKaraokeSelectorId] = useState(null);
   const [karaokeTargetId, setKaraokeTargetId] = useState(null);
+  const [crocodileSelectorId, setCrocodileSelectorId] = useState(null);
+  const [crocodileTargetId, setCrocodileTargetId] = useState(null);
+  const [crocodileResponse, setCrocodileResponse] = useState(null);
   const [clicksLeftMap, setClicksLeftMap] = useState({});
   const [numberAnswers, setNumberAnswers] = useState({});
   const [answersRevealed, setAnswersRevealed] = useState(false);
   const [answerInput, setAnswerInput] = useState('');
   const [selectedOptions, setSelectedOptions] = useState(new Set());
-  const [textAnswerInput, setTextAnswerInput] = useState('');
-  const [pastedImage, setPastedImage] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [redJudgedUsers, setRedJudgedUsers] = useState(new Set());
   const [mediaVolume, setMediaVolume] = useState(() => getVolume());
@@ -207,8 +208,9 @@ const QuestionPage = () => {
     setAnswersRevealed(false);
     setAnswerInput('');
     setSelectedOptions(new Set());
-    setTextAnswerInput('');
-    setPastedImage(null);
+    setCrocodileSelectorId(null);
+    setCrocodileTargetId(null);
+    setCrocodileResponse(null);
     setRedJudgedUsers(new Set());
     setHostTab('question');
     setHostAnswerSeen(false);
@@ -249,6 +251,19 @@ const QuestionPage = () => {
       hydrate('/secret', (data) => {
         setSecretSelectorId(prev => prev || data.selectorId || null);
         setSecretTargetId(prev => prev || data.assignment?.targetUserId || null);
+        if (data.revealed) {
+          setIsQuestionRevealed(true);
+        }
+      });
+    }
+
+    // For crocodile, restore who picked the performer, who performs and their
+    // submitted response (survives refresh for everyone)
+    if (question.type === 'crocodile') {
+      hydrate('/crocodile', (data) => {
+        setCrocodileSelectorId(prev => prev || data.selectorId || null);
+        setCrocodileTargetId(prev => prev || data.targetUserId || null);
+        setCrocodileResponse(prev => prev || data.response || null);
         if (data.revealed) {
           setIsQuestionRevealed(true);
         }
@@ -349,6 +364,13 @@ const QuestionPage = () => {
         if (data.data.selectorUserId) {
           setKaraokeSelectorId(prev => prev || data.data.selectorUserId);
         }
+      } else if (data.type === 'crocodile_assign' && data.data.questionId === parseInt(questionId)) {
+        setCrocodileTargetId(data.data.targetUserId);
+        if (data.data.selectorUserId) {
+          setCrocodileSelectorId(data.data.selectorUserId);
+        }
+      } else if (data.type === 'crocodile_response' && data.data.questionId === parseInt(questionId)) {
+        setCrocodileResponse(data.data.value);
       } else if (data.type === 'karaoke_start' && data.data.questionId === parseInt(questionId)) {
         // Everyone's countdown follows the performance length
         const durationMs = Number(data.data.durationMs);
@@ -428,13 +450,14 @@ const QuestionPage = () => {
         setSecretTargetId(null);
         setKaraokeSelectorId(null);
         setKaraokeTargetId(null);
+        setCrocodileSelectorId(null);
+        setCrocodileTargetId(null);
+        setCrocodileResponse(null);
         setClicksLeftMap({});
         setNumberAnswers({});
         setAnswersRevealed(false);
         setAnswerInput('');
         setSelectedOptions(new Set());
-        setTextAnswerInput('');
-        setPastedImage(null);
         setRedJudgedUsers(new Set());
         setHostTab('question');
         setHostAnswerSeen(false);
@@ -488,6 +511,11 @@ const QuestionPage = () => {
     if (question?.type === 'secret' && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
       return;
     }
+    // Crocodile: the guess countdown only runs once the performer's response
+    // is on screen for everyone
+    if (question?.type === 'crocodile' && !crocodileResponse) {
+      return;
+    }
     // Progressive reveal: pause while any buzz awaits the admin's verdict
     if (question?.type === 'progressive-reveal'
       && Object.keys(userTimes).some(uid => !redJudgedUsers.has(uid))) {
@@ -506,7 +534,7 @@ const QuestionPage = () => {
 
       return () => clearInterval(interval);
     }
-  }, [isQuestionRevealed, isReadOnly, question, secretTargetId, userTimes, redJudgedUsers]);
+  }, [isQuestionRevealed, isReadOnly, question, secretTargetId, crocodileResponse, userTimes, redJudgedUsers]);
 
   // Question audio/video follows the reveal-image rule: while any buzz awaits
   // the admin's verdict, everything pauses; once every buzz is judged wrong,
@@ -599,6 +627,10 @@ const QuestionPage = () => {
     if (question.type === 'progressive-reveal') {
       return question.duration || 60;
     }
+    if (question.type === 'crocodile') {
+      // Guess countdown, only relevant once the response is shown
+      return question.duration || 30;
+    }
     if (question.type === 'karaoke') {
       // Placeholder while the singer gets ready; karaoke_start resets the
       // countdown to the actual track length
@@ -612,6 +644,14 @@ const QuestionPage = () => {
   useEffect(() => {
     setTimer(getInitialTimerValue(question));
   }, [questionId, isQuestionRevealed, question]);
+
+  // Crocodile: give the guessers a fresh countdown the moment the performer's
+  // response lands (that is when their buzz phase begins)
+  useEffect(() => {
+    if (question?.type === 'crocodile' && crocodileResponse) {
+      setTimer(getInitialTimerValue(question));
+    }
+  }, [crocodileResponse, question]);
 
   // Get current user from localStorage
   useEffect(() => {
@@ -659,6 +699,13 @@ const QuestionPage = () => {
           return;
         }
       }
+      if (question?.type === 'crocodile') {
+        // Only guessers buzz, and only once the performer's response is shown.
+        // The performer and the host never guess.
+        if (!crocodileResponse || isAdmin || currentUserId === crocodileTargetId) {
+          return;
+        }
+      }
       if (startTime &&
         ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) &&
         !hasRecordedTime &&
@@ -678,7 +725,7 @@ const QuestionPage = () => {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isQuestionRevealed, isAnswerRevealed, startTime, question, isAdmin, hasRecordedTime, questionId, currentUserId, userTimes, secretTargetId]);
+  }, [isQuestionRevealed, isAnswerRevealed, startTime, question, isAdmin, hasRecordedTime, questionId, currentUserId, userTimes, secretTargetId, crocodileResponse, crocodileTargetId]);
 
   // Start timer when question is revealed or when non-admin user sees the question
   // For cat-in-the-bag, wait until a player is chosen and the admin shows the question
@@ -691,6 +738,10 @@ const QuestionPage = () => {
     if (question.type === 'secret' && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
       return;
     }
+    // Crocodile: the buzz clock starts only once the performer's response is in
+    if (question.type === 'crocodile' && !crocodileResponse) {
+      return;
+    }
     if ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) {
       console.log('Starting timer at:', new Date().toISOString());
       setStartTime(Date.now());
@@ -699,7 +750,7 @@ const QuestionPage = () => {
       setUserTimes({}); // Reset all user times when starting new question
       setClickedIndices(new Set()); // Reset clicked indices for new question!
     }
-  }, [question, isQuestionRevealed, isAnswerRevealed, isAdmin, secretTargetId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [question, isQuestionRevealed, isAnswerRevealed, isAdmin, secretTargetId, crocodileResponse]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync clickedIndices when page is loaded/refreshed and user has already recorded time
   useEffect(() => {
@@ -713,7 +764,9 @@ const QuestionPage = () => {
     if (isAdmin && question) {
       wsManager.sendQuestionReveal(question.id);
       setIsQuestionRevealed(true);
-      if (question.type !== 'find-a-cat') {
+      // find-a-cat and crocodile reveal the answer in a separate step; every
+      // other type shows question + answer together
+      if (question.type !== 'find-a-cat' && question.type !== 'crocodile') {
         setIsAnswerRevealed(true);
         setShowAfterRound(true);
         setCurrentAfterRoundIndex(0);
@@ -1493,44 +1546,41 @@ const QuestionPage = () => {
     );
   };
 
-  // Keep pasted images well under the server's answer-size limit (8M chars,
-  // isValidAnswerValue in backend websocket.js), otherwise the submission is
-  // rejected silently and only its author would see it. The byte budget maps
-  // to the data-URL length the server sees: chars ≈ bytes * 4/3 + prefix.
-  const MAX_ANSWER_IMAGE_CHARS = 2000000;
-  const MAX_ANSWER_IMAGE_BYTES = Math.floor((MAX_ANSWER_IMAGE_CHARS - 100) * 3 / 4);
-
-  const handleTextPaste = async (e) => {
-    const item = Array.from(e.clipboardData?.items || [])
-      .find(i => i.kind === 'file' && i.type.startsWith('image/'));
-    if (!item) return;
-
-    e.preventDefault();
-    const file = item.getAsFile();
-    if (!file) return;
-
-    try {
-      const { dataUrl } = await compressImageToDataUrl(file, MAX_ANSWER_IMAGE_BYTES);
-      setPastedImage(dataUrl);
-    } catch (error) {
-      console.warn('Could not process pasted image:', error);
-    }
-  };
-
-  const handleSubmitTextAnswer = () => {
-    if (!currentUserId) {
+  // Record a text-field answer (text, image data URL or audio data URL). The
+  // composer in AnswerComposer builds the value; this just submits it.
+  const handleSubmitTextAnswer = (value) => {
+    if (!currentUserId || !value) {
       return;
     }
     if (answersRevealed || numberAnswers[currentUserId] !== undefined) {
       return;
     }
-    const value = pastedImage || textAnswerInput.trim();
-    if (!value) {
-      return;
-    }
     setNumberAnswers(prev => ({ ...prev, [currentUserId]: value }));
     wsManager.sendNumberAnswer(parseInt(questionId), currentUserId, value);
     recordAnswerTime();
+  };
+
+  // A submitted text-field value: an image, an audio clip, or plain text
+  const renderAnswerValue = (value, { imgMaxWidth = 300, imgMaxHeight = 200, audioWidth = 320 } = {}) => {
+    if (typeof value === 'string' && value.startsWith('data:image')) {
+      return (
+        <img
+          src={value}
+          alt="answer"
+          title={t('question.clickToEnlarge')}
+          onClick={() => setLightboxImage(value)}
+          style={{ maxWidth: imgMaxWidth, maxHeight: imgMaxHeight, borderRadius: '8px', cursor: 'zoom-in' }}
+        />
+      );
+    }
+    if (typeof value === 'string' && value.startsWith('data:audio')) {
+      return <audio controls src={value} style={{ maxWidth: audioWidth, width: '100%' }} />;
+    }
+    return (
+      <div style={{ fontSize: '1.2rem', color: 'var(--accent)', fontWeight: '700', wordBreak: 'break-word' }}>
+        {value === true ? '✓' : value}
+      </div>
+    );
   };
 
   const renderTextAnswerContent = () => {
@@ -1546,96 +1596,230 @@ const QuestionPage = () => {
             {hasSubmitted ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                 <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
-                {typeof myAnswer === 'string' && myAnswer.startsWith('data:image') ? (
-                  <img
-                    src={myAnswer}
-                    alt="answer"
-                    title={t('question.clickToEnlarge')}
-                    onClick={() => setLightboxImage(myAnswer)}
-                    style={{ maxWidth: '300px', maxHeight: '200px', borderRadius: '8px', cursor: 'zoom-in' }}
-                  />
-                ) : (
-                  <div style={{ fontSize: '1.2rem', color: 'var(--accent)', fontWeight: '700', wordBreak: 'break-word' }}>
-                    {myAnswer === true ? '✓' : myAnswer}
-                  </div>
-                )}
+                {renderAnswerValue(myAnswer)}
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', alignItems: 'center' }}>
-                {pastedImage ? (
-                  <div style={{ position: 'relative' }}>
-                    <img
-                      src={pastedImage}
-                      alt="pasted"
-                      title={t('question.clickToEnlarge')}
-                      onClick={() => setLightboxImage(pastedImage)}
-                      style={{ maxWidth: '300px', maxHeight: '200px', borderRadius: '8px', cursor: 'zoom-in' }}
-                    />
-                    <button
-                      onClick={() => setPastedImage(null)}
-                      style={{
-                        position: 'absolute',
-                        top: '-10px',
-                        right: '-10px',
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '50%',
-                        background: '#ef4444',
-                        color: '#fff',
-                        border: 'none',
-                        cursor: 'pointer',
-                        fontWeight: 'bold'
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ) : (
-                  <textarea
-                    value={textAnswerInput}
-                    onChange={(e) => setTextAnswerInput(e.target.value)}
-                    onPaste={handleTextPaste}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter') return;
-                      const mode = getTextSubmitMode();
-                      const sendOnPlainEnter = mode === 'enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey;
-                      const sendOnCtrlEnter = mode === 'ctrl-enter' && (e.ctrlKey || e.metaKey);
-                      if (sendOnPlainEnter || sendOnCtrlEnter) {
-                        e.preventDefault();
-                        handleSubmitTextAnswer();
-                      }
-                    }}
-                    placeholder={t('question.textPlaceholder')}
-                    rows={3}
-                    style={{
-                      width: '100%',
-                      maxWidth: '600px',
-                      fontSize: '1.1rem',
-                      padding: '0.75rem 1rem',
-                      borderRadius: '8px',
-                      border: '1px solid var(--glass-border)',
-                      background: 'var(--input-bg)',
-                      color: 'var(--text-primary)',
-                      resize: 'vertical',
-                      fontFamily: 'inherit'
-                    }}
-                  />
-                )}
-                <button
-                  onClick={handleSubmitTextAnswer}
-                  className="btn-primary"
-                  style={{
-                    ...buttonStyle,
-                    opacity: (pastedImage || textAnswerInput.trim()) ? 1 : 0.5
-                  }}
-                  disabled={!pastedImage && !textAnswerInput.trim()}
-                >
-                  {t('question.submitAnswer')}
-                </button>
-              </div>
+              <AnswerComposer
+                key={`text-answer-${questionId}`}
+                onSubmit={handleSubmitTextAnswer}
+                onPreviewImage={setLightboxImage}
+                submitLabel={t('question.submitAnswer')}
+                buttonStyle={buttonStyle}
+              />
             )}
           </div>
         )}
+      </div>
+    );
+  };
+
+  const handleCrocodileAssign = (targetUserId) => {
+    if (crocodileTargetId) {
+      return;
+    }
+    wsManager.sendCrocodileAssign(parseInt(questionId), targetUserId, crocodileSelectorId);
+  };
+
+  const handleSubmitCrocodileResponse = (value) => {
+    if (!value || currentUserId !== crocodileTargetId || crocodileResponse) {
+      return;
+    }
+    setCrocodileResponse(value); // optimistic; the broadcast echo is idempotent
+    wsManager.sendCrocodileResponse(parseInt(questionId), value);
+  };
+
+  // One candidate avatar in the crocodile picker (mirrors the cat-in-the-bag UI)
+  const renderCandidateCard = (u, canAssign, onPick) => (
+    <div
+      key={u.id}
+      onClick={canAssign ? () => onPick(u.id) : undefined}
+      style={{
+        cursor: canAssign ? 'pointer' : 'default',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '0.5rem',
+        padding: '0.75rem',
+        borderRadius: '12px',
+        border: '1px solid var(--glass-border)',
+        background: 'var(--bg-dark)',
+        transition: 'all 0.2s',
+        width: '110px'
+      }}
+      onMouseEnter={canAssign ? e => {
+        e.currentTarget.style.border = '1px solid var(--primary)';
+        e.currentTarget.style.boxShadow = '0 0 16px var(--primary-glow)';
+      } : undefined}
+      onMouseLeave={canAssign ? e => {
+        e.currentTarget.style.border = '1px solid var(--glass-border)';
+        e.currentTarget.style.boxShadow = 'none';
+      } : undefined}
+    >
+      {u.imageUrl && u.imageUrl.toLowerCase().endsWith('.mp4') ? (
+        <video
+          src={u.imageUrl}
+          style={{ width: '64px', height: '64px', borderRadius: '16px', objectFit: 'cover' }}
+          autoPlay loop muted playsInline
+        />
+      ) : (
+        <img
+          src={u.imageUrl}
+          alt={u.name}
+          style={{ width: '64px', height: '64px', borderRadius: '16px', objectFit: 'cover' }}
+        />
+      )}
+      <span style={{ fontSize: '1rem', fontWeight: '600', textAlign: 'center', wordBreak: 'break-word' }}>
+        {u.name}
+      </span>
+    </div>
+  );
+
+  const renderCrocodileResponseCard = () => (
+    <div style={cardStyle}>
+      <div style={cardBadgeStyle}>{t('question.crocodileResponseLabel')}</div>
+      {renderAnswerValue(crocodileResponse, { imgMaxWidth: 460, imgMaxHeight: 340, audioWidth: 420 })}
+    </div>
+  );
+
+  const renderCrocodileContent = () => {
+    const targetUser = onlineUsers.find(u => u.id === crocodileTargetId);
+    const selectorUser = onlineUsers.find(u => u.id === crocodileSelectorId);
+    // The selector picks who performs; admin can always assign as a host override.
+    // Unlike cat-in-the-bag, the selector may pick themselves.
+    const canAssign = isAdmin || (currentUserId && currentUserId === crocodileSelectorId);
+    const isPerformer = currentUserId && currentUserId === crocodileTargetId;
+
+    // PHASE 1: choose the performer
+    if (!crocodileTargetId) {
+      const pickerPanel = (
+        <div style={cardStyle}>
+          <div style={{ fontSize: '4rem', marginBottom: '0.5rem' }}>🐊</div>
+          <div style={{ fontSize: '2rem', fontWeight: '800', color: '#4ade80', marginBottom: '1rem', textShadow: '0 0 20px rgba(74, 222, 128, 0.4)' }}>
+            {t('question.crocodileTitle')}
+          </div>
+          <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+            {canAssign
+              ? t('question.chooseCrocodile')
+              : selectorUser
+                ? t('question.selectorChoosing', { name: selectorUser.name })
+                : t('question.waitingChoice')}
+          </div>
+          {/* Everyone is a candidate, including the selector; only the selector and admin can click */}
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {onlineUsers.map(u => renderCandidateCard(u, canAssign, handleCrocodileAssign))}
+          </div>
+        </div>
+      );
+
+      // Admin sees the question below the picker; players only see the panel
+      if (isAdmin) {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {pickerPanel}
+            {renderNormalContent()}
+          </div>
+        );
+      }
+      return pickerPanel;
+    }
+
+    const header = (
+      <div style={{
+        ...themeHeaderStyle,
+        color: '#4ade80',
+        textShadow: '0 0 20px rgba(74, 222, 128, 0.4)'
+      }}>
+        {t('question.crocodileAnswering', { name: targetUser ? targetUser.name : '...' })}
+      </div>
+    );
+
+    // PHASE 2: performer assigned, waiting for their response
+    if (!crocodileResponse) {
+      if (isPerformer) {
+        // Only the performer sees the question, plus the composer to respond
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {header}
+            {renderNormalContent()}
+            <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+              <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                {t('question.crocodileYourTurn')}
+              </div>
+              <AnswerComposer
+                key={`crocodile-${questionId}`}
+                onSubmit={handleSubmitCrocodileResponse}
+                onPreviewImage={setLightboxImage}
+                submitLabel={t('question.sendResponse')}
+                buttonStyle={buttonStyle}
+              />
+            </div>
+          </div>
+        );
+      }
+      if (isAdmin) {
+        // Host watches the prompt and waits for the response
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {header}
+            {renderNormalContent()}
+            <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem', color: 'var(--text-secondary)' }}>
+              {t('question.crocodileWaitingResponse', { name: targetUser ? targetUser.name : '...' })}
+            </div>
+          </div>
+        );
+      }
+      // Everyone else waits without seeing the question
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {header}
+          <div style={cardStyle}>
+            <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)' }}>
+              {t('question.crocodilePreparing', { name: targetUser ? targetUser.name : '...' })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // PHASE 3: response submitted — guessers buzz, host scores, answer revealed
+    const responseCard = renderCrocodileResponseCard();
+
+    // Performer and host also see the underlying question (and the answer once
+    // the host reveals it) through the normal content flow
+    if (isAdmin || isPerformer) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {header}
+          {responseCard}
+          {renderNormalContent()}
+        </div>
+      );
+    }
+
+    // Guessers: the response, a buzz prompt, and the answer card once revealed
+    const afterRoundRules = question.after_round || [];
+    const answerCard = (showAfterRound && afterRoundRules.length > 0)
+      ? renderRuleCard(afterRoundRules[Math.min(currentAfterRoundIndex, afterRoundRules.length - 1)], t('question.answerLabel'))
+      : null;
+    const hasBuzzed = hasRecordedTime || (currentUserId && userTimes[currentUserId] !== undefined);
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {header}
+        {responseCard}
+        {!answerCard && !hasBuzzed && (
+          <div className="glass-panel" style={{
+            padding: '1rem 2rem',
+            fontSize: '1.3rem',
+            fontWeight: '700',
+            color: 'var(--text-primary)',
+            textAlign: 'center',
+            border: '1px solid var(--glass-border)'
+          }}>
+            {t('question.pressSpace')}
+          </div>
+        )}
+        {answerCard}
       </div>
     );
   };
@@ -1777,6 +1961,9 @@ const QuestionPage = () => {
     }
     if (question.type === 'progressive-reveal') {
       return renderProgressiveRevealContent();
+    }
+    if (question.type === 'crocodile') {
+      return renderCrocodileContent();
     }
     return renderNormalContent();
   };

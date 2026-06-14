@@ -58,10 +58,10 @@ const GameBoard = ({ isAdmin = false }) => {
         if (isAdmin) {
           navigate(`/game/${gameId}/question/${questionId}`);
         } else {
-          // Cat-in-the-bag and karaoke: everyone joins the selection screen
-          // right away, without waiting for the admin to reveal the question
+          // Cat-in-the-bag, karaoke and crocodile: everyone joins the selection
+          // screen right away, without waiting for the admin to reveal the question
           const q = findQuestionById(questionId);
-          if (q && (q.type === 'secret' || q.type === 'karaoke')) {
+          if (q && (q.type === 'secret' || q.type === 'karaoke' || q.type === 'crocodile')) {
             navigate(`/game/${gameId}/question/${questionId}`);
           }
         }
@@ -102,6 +102,13 @@ const GameBoard = ({ isAdmin = false }) => {
     if (isAdmin) {
       navigate(`/game/${gameId}/question/${question.id}`);
     }
+  };
+
+  // Host-only: right-click toggles whether a question is closed (marked used)
+  // or open (available again). The server owns the set and broadcasts it back,
+  // so local state updates when selected_questions_update arrives.
+  const handleQuestionToggle = (question) => {
+    wsManager.sendQuestionToggle(question.id);
   };
 
   const goToNextRound = () => {
@@ -305,8 +312,10 @@ const GameBoard = ({ isAdmin = false }) => {
                 }}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  if (isAdmin && !isDisabled) {
-                    handleQuestionClick(question);
+                  // Toggle open/closed on right-click; the current tile keeps
+                  // its own "being played" state and is left alone
+                  if (isAdmin && !isCurrent) {
+                    handleQuestionToggle(question);
                   }
                 }}
               >

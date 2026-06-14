@@ -48,6 +48,12 @@ const requireHost = (req, res) => {
 
 // Pack upload is registered BEFORE express.json so the body is never parsed
 // or buffered in memory - it streams straight to the game's pack file.
+//
+// Large packs are sent as sequential chunks (Cloudflare caps a single request
+// body at 100MB). Each chunk is its own request carrying X-Chunk-Index /
+// X-Chunk-Count headers: the first truncates the file, the rest append, and
+// only the final chunk triggers validation. A request with no chunk headers is
+// treated as a single full upload, so older clients keep working unchanged.
 app.post('/api/games/:gameId/pack', (req, res) => {
   const game = requireHost(req, res);
   if (!game) return;
@@ -55,8 +61,17 @@ app.post('/api/games/:gameId/pack', (req, res) => {
     return res.status(409).json({ status: 'error', message: 'Game already started' });
   }
 
-  const fileStream = fs.createWriteStream(game.packPath);
-  let received = 0;
+  const chunkCount = parseInt(req.headers['x-chunk-count'], 10) || 1;
+  const chunkIndex = parseInt(req.headers['x-chunk-index'], 10) || 0;
+  const isFirst = chunkIndex === 0;
+  const isLast = chunkIndex === chunkCount - 1;
+
+  // Reset the running total at the start of a new upload. packUploadBytes
+  // accumulates across every chunk so MAX_PACK_SIZE bounds the whole pack,
+  // not just one chunk.
+  if (isFirst) game.packUploadBytes = 0;
+
+  const fileStream = fs.createWriteStream(game.packPath, { flags: isFirst ? 'w' : 'a' });
   let aborted = false;
 
   const fail = (status, message) => {
@@ -64,12 +79,13 @@ app.post('/api/games/:gameId/pack', (req, res) => {
     aborted = true;
     fileStream.destroy();
     fs.unlink(game.packPath, () => {});
+    game.packUploadBytes = 0;
     res.status(status).json({ status: 'error', message });
   };
 
   req.on('data', (chunk) => {
-    received += chunk.length;
-    if (received > MAX_PACK_SIZE) {
+    game.packUploadBytes += chunk.length;
+    if (game.packUploadBytes > MAX_PACK_SIZE) {
       req.destroy();
       fail(413, 'Pack is too large');
     }
@@ -80,6 +96,10 @@ app.post('/api/games/:gameId/pack', (req, res) => {
   fileStream.on('error', () => fail(500, 'Failed to save pack'));
   fileStream.on('finish', () => {
     if (aborted) return;
+    // Intermediate chunks are now on disk; defer validation until the last one.
+    if (!isLast) {
+      return res.json({ status: 'success', message: 'Chunk received', data: { partial: true } });
+    }
     try {
       // Single transient parse: validates the JSON and builds the small
       // question-type index; the pack itself stays on disk only
@@ -238,6 +258,12 @@ app.get('/api/games/:gameId/questions/:questionId/secret', (req, res) => {
   const game = requireGame(req, res);
   if (!game) return;
   res.json({ status: 'success', data: game.getSecretInfo(parseInt(req.params.questionId)) });
+});
+
+app.get('/api/games/:gameId/questions/:questionId/crocodile', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  res.json({ status: 'success', data: game.getCrocodileInfo(parseInt(req.params.questionId)) });
 });
 
 app.get('/api/games/:gameId/last-green-frame', (req, res) => {

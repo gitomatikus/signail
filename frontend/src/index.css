@@ -737,6 +737,94 @@ body::after {
     border-top: 1px solid var(--glass-border);
 }
 
+/* Compact header variant: small status button + popover */
+.mic-check-compact {
+    position: relative;
+    display: inline-flex;
+}
+
+.mic-check-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.42rem 0.75rem;
+    border-radius: 8px;
+    background: var(--surface-soft);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    font-weight: 500;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.mic-check-trigger:hover,
+.mic-check-trigger.is-open {
+    border-color: var(--primary);
+}
+
+.mic-check-trigger-icon {
+    font-size: 1rem;
+}
+
+.mic-check-trigger-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+}
+
+.mic-check-trigger.is-complete .mic-check-trigger-dot {
+    background: var(--success);
+    box-shadow: 0 0 0 3px var(--success-soft);
+}
+
+.mic-check-trigger.is-incomplete .mic-check-trigger-dot {
+    background: var(--danger);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+.mic-check-popover {
+    position: absolute;
+    top: calc(100% + 0.6rem);
+    right: 0;
+    width: 320px;
+    max-width: calc(100vw - 2rem);
+    max-height: min(70vh, 560px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--surface, var(--bg-dark));
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+    z-index: 1100;
+    animation: micCheckPopIn 0.14s ease-out;
+}
+
+.mic-check-popover-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+@keyframes micCheckPopIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 520px) {
+    .mic-check-trigger-label {
+        display: none;
+    }
+}
+
 .mic-check-reset-btn:hover:not(:disabled) {
     color: var(--text-primary);
     background: var(--surface-soft);

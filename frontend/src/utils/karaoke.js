@@ -17,7 +17,7 @@
 // decodable as a prefix-complete sequence (the first one carries the WebM
 // header), which is why the server keeps a backlog for late joiners.
 
-const RECORDER_MIME = 'audio/webm;codecs=opus';
+const RECORDER_MIME = "audio/webm;codecs=opus";
 const CHUNK_MS = 250;
 // Playback may fall behind the live edge after a stall; beyond this we jump
 const MAX_LIVE_LAG_S = 2.5;
@@ -28,18 +28,18 @@ const FALLBACK_MIC_LATENCY_S = 0.08;
 // Listener mix balance: mic loudness differs wildly between users, so the
 // track gain chases the measured voice level instead of using a fixed ratio
 // (see startSingerPipeline) - the singer must stay on top of the music.
-const TRACK_DUCK_RATIO = 0.8;   // track level target relative to the voice
-const TRACK_GAIN_MAX = 0.85;    // ceiling: the old fixed mix value
-const TRACK_GAIN_MIN = 0.25;    // floor: the music must stay audible
-const TRACK_GAIN_START = 0.6;   // until the first sung phrase is measured
+const TRACK_DUCK_RATIO = 0.5; // track level target relative to the voice
+const TRACK_GAIN_MAX = 0.5; // ceiling: the old fixed mix value
+const TRACK_GAIN_MIN = 0.15; // floor: the music must stay audible
+const TRACK_GAIN_START = 0.6; // until the first sung phrase is measured
 const DUCK_UPDATE_MS = 250;
-const DUCK_EMA_ALPHA = 0.15;    // ~1.7s level memory at the update rate
-const DUCK_SMOOTHING_S = 0.6;   // gain ramp time constant
-const VOICE_GATE_RMS = 0.015;   // quieter mic frames don't count as singing
-const TRACK_GATE_RMS = 0.005;   // ignore silent track passages
-const VOICE_SYNC_OVERRIDE_KEY = 'karaokeVoiceSyncMs';
-const VOICE_SYNC_CALIBRATION_KEY = 'karaokeVoiceSyncCalibration';
-export const VOICE_SYNC_CHANGE_EVENT = 'karaoke-voice-sync-change';
+const DUCK_EMA_ALPHA = 0.15; // ~1.7s level memory at the update rate
+const DUCK_SMOOTHING_S = 0.6; // gain ramp time constant
+const VOICE_GATE_RMS = 0.015; // quieter mic frames don't count as singing
+const TRACK_GATE_RMS = 0.005; // ignore silent track passages
+const VOICE_SYNC_OVERRIDE_KEY = "karaokeVoiceSyncMs";
+const VOICE_SYNC_CALIBRATION_KEY = "karaokeVoiceSyncCalibration";
+export const VOICE_SYNC_CHANGE_EVENT = "karaoke-voice-sync-change";
 const MIC_CHECK_INTERVAL_S = 1;
 const MIC_CHECK_BEATS = 10;
 const MIC_CHECK_MIN_SAMPLES = 3;
@@ -49,17 +49,17 @@ const MIC_CHECK_DEBOUNCE_S = 0.3;
 export class MicCheckError extends Error {
   constructor(code) {
     super(code);
-    this.name = 'MicCheckError';
+    this.name = "MicCheckError";
     this.code = code;
   }
 }
 
 export const isKaraokeStreamingSupported = () =>
-  typeof window.MediaRecorder !== 'undefined'
-  && MediaRecorder.isTypeSupported
-  && MediaRecorder.isTypeSupported(RECORDER_MIME)
-  && typeof window.MediaSource !== 'undefined'
-  && MediaSource.isTypeSupported(RECORDER_MIME);
+  typeof window.MediaRecorder !== "undefined" &&
+  MediaRecorder.isTypeSupported &&
+  MediaRecorder.isTypeSupported(RECORDER_MIME) &&
+  typeof window.MediaSource !== "undefined" &&
+  MediaSource.isTypeSupported(RECORDER_MIME);
 
 // ---------- Lyrics (plain text or LRC "[mm:ss.xx] line") ----------
 
@@ -70,11 +70,15 @@ const WORD_TIME_RE = /<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>/g;
 const matchToMs = (match) => {
   const minutes = parseInt(match[1], 10);
   const seconds = parseInt(match[2], 10);
-  const fracRaw = match[3] || '';
-  const fracMs = fracRaw.length === 0 ? 0
-    : fracRaw.length === 1 ? parseInt(fracRaw, 10) * 100
-      : fracRaw.length === 2 ? parseInt(fracRaw, 10) * 10
-        : parseInt(fracRaw.slice(0, 3), 10);
+  const fracRaw = match[3] || "";
+  const fracMs =
+    fracRaw.length === 0
+      ? 0
+      : fracRaw.length === 1
+        ? parseInt(fracRaw, 10) * 100
+        : fracRaw.length === 2
+          ? parseInt(fracRaw, 10) * 10
+          : parseInt(fracRaw.slice(0, 3), 10);
   return (minutes * 60 + seconds) * 1000 + fracMs;
 };
 
@@ -98,12 +102,18 @@ const parseLineWords = (content) => {
   while ((match = WORD_TIME_RE.exec(content)) !== null) {
     pushSegment(content.slice(sliceStart, match.index));
     const ms = matchToMs(match);
-    const prevChar = match.index > 0 ? content[match.index - 1] : '';
-    const lastEndOpen = words.length > 0 && words[words.length - 1].endMs === null;
+    const prevChar = match.index > 0 ? content[match.index - 1] : "";
+    const lastEndOpen =
+      words.length > 0 && words[words.length - 1].endMs === null;
     if (pending !== null && lastEndOpen) {
       words[words.length - 1].endMs = pending;
       pending = ms;
-    } else if (prevChar && prevChar !== '>' && !/\s/.test(prevChar) && lastEndOpen) {
+    } else if (
+      prevChar &&
+      prevChar !== ">" &&
+      !/\s/.test(prevChar) &&
+      lastEndOpen
+    ) {
       // Glued onto the word ("word<mm:ss.xx>"): its end, even when
       // untimed words follow
       words[words.length - 1].endMs = ms;
@@ -113,7 +123,11 @@ const parseLineWords = (content) => {
     sliceStart = WORD_TIME_RE.lastIndex;
   }
   pushSegment(content.slice(sliceStart));
-  if (pending !== null && words.length > 0 && words[words.length - 1].endMs === null) {
+  if (
+    pending !== null &&
+    words.length > 0 &&
+    words[words.length - 1].endMs === null
+  ) {
     words[words.length - 1].endMs = pending; // trailing tag ends the last word
   }
   return words;
@@ -123,7 +137,7 @@ const parseLineWords = (content) => {
 // as LRC. `words` is only set when the line carries enhanced-LRC stamps.
 export const parseLrc = (text) => {
   const lines = [];
-  for (const raw of String(text || '').split(/\r?\n/)) {
+  for (const raw of String(text || "").split(/\r?\n/)) {
     const times = [];
     let tailStart = 0;
     LRC_TIME_RE.lastIndex = 0;
@@ -136,7 +150,7 @@ export const parseLrc = (text) => {
     }
     if (times.length === 0) continue; // plain line or [ti:...] metadata tag
     const words = parseLineWords(raw.slice(tailStart));
-    const content = words.map((w) => w.text).join(' ');
+    const content = words.map((w) => w.text).join(" ");
     const hasWordTimes = words.some((w) => w.timeMs !== null);
     for (const timeMs of times) {
       lines.push({ timeMs, text: content, words: hasWordTimes ? words : null });
@@ -162,15 +176,16 @@ export const currentLrcIndex = (lines, trackTimeMs) => {
 
 // ---------- Shared helpers ----------
 
-const blobToBase64 = (blob) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => {
-    const dataUrl = reader.result || '';
-    resolve(String(dataUrl).slice(String(dataUrl).indexOf(',') + 1));
-  };
-  reader.onerror = () => reject(reader.error);
-  reader.readAsDataURL(blob);
-});
+const blobToBase64 = (blob) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result || "";
+      resolve(String(dataUrl).slice(String(dataUrl).indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 
 const base64ToBytes = (b64) => {
   const binary = atob(b64);
@@ -187,12 +202,17 @@ const base64ToBytes = (b64) => {
 export const createKaraokeRecordingBlob = (chunks) => {
   const bySequence = new Map();
   (chunks || []).forEach((chunk) => {
-    if (!chunk || !Number.isFinite(Number(chunk.seq)) || typeof chunk.b64 !== 'string') return;
+    if (
+      !chunk ||
+      !Number.isFinite(Number(chunk.seq)) ||
+      typeof chunk.b64 !== "string"
+    )
+      return;
     bySequence.set(Number(chunk.seq), chunk);
   });
   const bytes = [...bySequence.values()]
     .sort((a, b) => Number(a.seq) - Number(b.seq))
-    .map(chunk => base64ToBytes(chunk.b64));
+    .map((chunk) => base64ToBytes(chunk.b64));
   return new Blob(bytes, { type: RECORDER_MIME });
 };
 
@@ -200,18 +220,18 @@ export const createKaraokeRecordingBlob = (chunks) => {
 // better with a Blob URL (no megabytes-long attribute value). Falls back to
 // the original string if it isn't a data URL.
 export const dataUrlToObjectUrl = (dataUrl) => {
-  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+  if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) {
     return dataUrl;
   }
-  const comma = dataUrl.indexOf(',');
+  const comma = dataUrl.indexOf(",");
   const meta = dataUrl.slice(5, comma);
-  const mime = meta.split(';')[0] || 'application/octet-stream';
+  const mime = meta.split(";")[0] || "application/octet-stream";
   const bytes = base64ToBytes(dataUrl.slice(comma + 1));
   return URL.createObjectURL(new Blob([bytes], { type: mime }));
 };
 
 export const isVideoMedia = (mediaDataUrl) =>
-  typeof mediaDataUrl === 'string' && mediaDataUrl.startsWith('data:video');
+  typeof mediaDataUrl === "string" && mediaDataUrl.startsWith("data:video");
 
 // ---------- Singer side ----------
 
@@ -237,11 +257,15 @@ const getElementGraph = (mediaEl) => {
 };
 
 const clampVoiceSyncMs = (value) =>
-  Math.round(Math.min(MAX_VOICE_SYNC_S * 1000, Math.max(0, Number(value) || 0)));
+  Math.round(
+    Math.min(MAX_VOICE_SYNC_S * 1000, Math.max(0, Number(value) || 0)),
+  );
 
 export const getVoiceSyncOverride = () => {
   try {
-    const value = parseFloat(window.localStorage.getItem(VOICE_SYNC_OVERRIDE_KEY));
+    const value = parseFloat(
+      window.localStorage.getItem(VOICE_SYNC_OVERRIDE_KEY),
+    );
     return Number.isFinite(value) ? clampVoiceSyncMs(value) : null;
   } catch (e) {
     return null;
@@ -252,18 +276,27 @@ export const getVoiceSyncCalibration = () => {
   const latencyMs = getVoiceSyncOverride();
   if (latencyMs === null) return null;
   try {
-    const stored = JSON.parse(window.localStorage.getItem(VOICE_SYNC_CALIBRATION_KEY));
+    const stored = JSON.parse(
+      window.localStorage.getItem(VOICE_SYNC_CALIBRATION_KEY),
+    );
     return {
       latencyMs,
       measuredLatencyMs: Number.isFinite(stored && stored.measuredLatencyMs)
         ? clampVoiceSyncMs(stored.measuredLatencyMs)
         : latencyMs,
       calibratedAt: stored && stored.calibratedAt ? stored.calibratedAt : null,
-      source: stored && stored.source ? stored.source : 'manual',
-      ...(Number.isFinite(stored && stored.confidence) ? { confidence: stored.confidence } : {})
+      source: stored && stored.source ? stored.source : "manual",
+      ...(Number.isFinite(stored && stored.confidence)
+        ? { confidence: stored.confidence }
+        : {}),
     };
   } catch (e) {
-    return { latencyMs, measuredLatencyMs: latencyMs, calibratedAt: null, source: 'manual' };
+    return {
+      latencyMs,
+      measuredLatencyMs: latencyMs,
+      calibratedAt: null,
+      source: "manual",
+    };
   }
 };
 
@@ -271,13 +304,22 @@ export const setVoiceSyncOverride = (latencyMs, metadata = {}) => {
   const clamped = clampVoiceSyncMs(latencyMs);
   try {
     window.localStorage.setItem(VOICE_SYNC_OVERRIDE_KEY, String(clamped));
-    window.localStorage.setItem(VOICE_SYNC_CALIBRATION_KEY, JSON.stringify({
-      measuredLatencyMs: clampVoiceSyncMs(metadata.measuredLatencyMs ?? clamped),
-      calibratedAt: metadata.calibratedAt || new Date().toISOString(),
-      source: metadata.source || 'manual',
-      ...(Number.isFinite(metadata.confidence) ? { confidence: metadata.confidence } : {})
-    }));
-  } catch (e) { /* storage blocked - this session will keep the UI value only */ }
+    window.localStorage.setItem(
+      VOICE_SYNC_CALIBRATION_KEY,
+      JSON.stringify({
+        measuredLatencyMs: clampVoiceSyncMs(
+          metadata.measuredLatencyMs ?? clamped,
+        ),
+        calibratedAt: metadata.calibratedAt || new Date().toISOString(),
+        source: metadata.source || "manual",
+        ...(Number.isFinite(metadata.confidence)
+          ? { confidence: metadata.confidence }
+          : {}),
+      }),
+    );
+  } catch (e) {
+    /* storage blocked - this session will keep the UI value only */
+  }
   window.dispatchEvent(new CustomEvent(VOICE_SYNC_CHANGE_EVENT));
   return clamped;
 };
@@ -286,7 +328,9 @@ export const clearVoiceSyncOverride = () => {
   try {
     window.localStorage.removeItem(VOICE_SYNC_OVERRIDE_KEY);
     window.localStorage.removeItem(VOICE_SYNC_CALIBRATION_KEY);
-  } catch (e) { /* storage blocked */ }
+  } catch (e) {
+    /* storage blocked */
+  }
   window.dispatchEvent(new CustomEvent(VOICE_SYNC_CHANGE_EVENT));
 };
 
@@ -299,23 +343,34 @@ const median = (values) => {
     : (sorted[middle - 1] + sorted[middle]) / 2;
 };
 
-const matchOnsetsToClicks = (clickTimes, onsetTimes, maxDeltaS = MIC_CHECK_MAX_DELTA_S) => {
+const matchOnsetsToClicks = (
+  clickTimes,
+  onsetTimes,
+  maxDeltaS = MIC_CHECK_MAX_DELTA_S,
+) => {
   const unused = new Set(onsetTimes.map((_, index) => index));
-  return clickTimes.map((clickTime, clickIndex) => {
-    let bestIndex = null;
-    let bestDelta = Infinity;
-    onsetTimes.forEach((onsetTime, onsetIndex) => {
-      if (!unused.has(onsetIndex)) return;
-      const delta = onsetTime - clickTime;
-      if (delta >= 0 && delta <= maxDeltaS && delta < bestDelta) {
-        bestDelta = delta;
-        bestIndex = onsetIndex;
-      }
-    });
-    if (bestIndex === null) return null;
-    unused.delete(bestIndex);
-    return { clickIndex, clickTime, onsetTime: onsetTimes[bestIndex], deltaMs: bestDelta * 1000 };
-  }).filter(Boolean);
+  return clickTimes
+    .map((clickTime, clickIndex) => {
+      let bestIndex = null;
+      let bestDelta = Infinity;
+      onsetTimes.forEach((onsetTime, onsetIndex) => {
+        if (!unused.has(onsetIndex)) return;
+        const delta = onsetTime - clickTime;
+        if (delta >= 0 && delta <= maxDeltaS && delta < bestDelta) {
+          bestDelta = delta;
+          bestIndex = onsetIndex;
+        }
+      });
+      if (bestIndex === null) return null;
+      unused.delete(bestIndex);
+      return {
+        clickIndex,
+        clickTime,
+        onsetTime: onsetTimes[bestIndex],
+        deltaMs: bestDelta * 1000,
+      };
+    })
+    .filter(Boolean);
 };
 
 // Pure robust aggregation, exported so the timing policy can be tested without
@@ -325,26 +380,29 @@ const matchOnsetsToClicks = (clickTimes, onsetTimes, maxDeltaS = MIC_CHECK_MAX_D
 export const aggregateMicCheckSamples = (clickTimes, onsetTimes) => {
   const matched = matchOnsetsToClicks(clickTimes, onsetTimes);
   if (matched.length < MIC_CHECK_MIN_SAMPLES) {
-    throw new MicCheckError('no-onsets');
+    throw new MicCheckError("no-onsets");
   }
-  const initialMedian = median(matched.map(sample => sample.deltaMs));
-  const mad = median(matched.map(sample => Math.abs(sample.deltaMs - initialMedian))) || 0;
+  const initialMedian = median(matched.map((sample) => sample.deltaMs));
+  const mad =
+    median(matched.map((sample) => Math.abs(sample.deltaMs - initialMedian))) ||
+    0;
   const outlierLimitMs = Math.max(30, mad * 2);
-  const samples = matched.filter(sample =>
-    Math.abs(sample.deltaMs - initialMedian) <= outlierLimitMs
+  const samples = matched.filter(
+    (sample) => Math.abs(sample.deltaMs - initialMedian) <= outlierLimitMs,
   );
   if (samples.length < MIC_CHECK_MIN_SAMPLES) {
-    throw new MicCheckError('no-onsets');
+    throw new MicCheckError("no-onsets");
   }
-  const latencyMs = median(samples.map(sample => sample.deltaMs));
-  const finalMad = median(samples.map(sample => Math.abs(sample.deltaMs - latencyMs))) || 0;
+  const latencyMs = median(samples.map((sample) => sample.deltaMs));
+  const finalMad =
+    median(samples.map((sample) => Math.abs(sample.deltaMs - latencyMs))) || 0;
   const coverage = Math.min(1, samples.length / Math.max(1, clickTimes.length));
   const stability = Math.max(0, 1 - finalMad / 90);
   const confidence = Math.round(coverage * stability * 100) / 100;
   return {
     latencyMs: clampVoiceSyncMs(latencyMs),
     confidence,
-    samples
+    samples,
   };
 };
 
@@ -364,13 +422,15 @@ export const detectOnsetsInBuffer = (
   sampleRate,
   threshold,
   windowSize = 256,
-  debounceS = MIC_CHECK_DEBOUNCE_S
+  debounceS = MIC_CHECK_DEBOUNCE_S,
 ) => {
   const onsets = [];
   let wasAbove = false;
   let lastOnsetS = -Infinity;
   for (let offset = 0; offset < samples.length; offset += windowSize) {
-    const rms = computeRms(samples.subarray(offset, Math.min(samples.length, offset + windowSize)));
+    const rms = computeRms(
+      samples.subarray(offset, Math.min(samples.length, offset + windowSize)),
+    );
     const timeS = offset / sampleRate;
     const above = rms >= threshold;
     if (above && !wasAbove && timeS - lastOnsetS >= debounceS) {
@@ -382,40 +442,59 @@ export const detectOnsetsInBuffer = (
   return onsets;
 };
 
-export const getMicCheckVoiceOffsetMs = (firstBeatOffsetMs, positionMs, voiceSyncMs) =>
-  Math.max(0, Number(firstBeatOffsetMs) + Number(positionMs) + Number(voiceSyncMs));
+export const getMicCheckVoiceOffsetMs = (
+  firstBeatOffsetMs,
+  positionMs,
+  voiceSyncMs,
+) =>
+  Math.max(
+    0,
+    Number(firstBeatOffsetMs) + Number(positionMs) + Number(voiceSyncMs),
+  );
 
 export const createMicCheckWaveform = (
   audioBuffer,
   firstBeatOffsetMs,
   durationMs,
   voiceSyncMs,
-  pointCount = 180
+  pointCount = 180,
 ) => {
-  if (!audioBuffer || !audioBuffer.length || !audioBuffer.sampleRate || pointCount <= 0) return [];
+  if (
+    !audioBuffer ||
+    !audioBuffer.length ||
+    !audioBuffer.sampleRate ||
+    pointCount <= 0
+  )
+    return [];
   const sourceStart = Math.round(
-    getMicCheckVoiceOffsetMs(firstBeatOffsetMs, 0, voiceSyncMs)
-    * audioBuffer.sampleRate / 1000
+    (getMicCheckVoiceOffsetMs(firstBeatOffsetMs, 0, voiceSyncMs) *
+      audioBuffer.sampleRate) /
+      1000,
   );
-  const sourceLength = Math.round(durationMs * audioBuffer.sampleRate / 1000);
+  const sourceLength = Math.round((durationMs * audioBuffer.sampleRate) / 1000);
   const channelData = Array.from(
     { length: audioBuffer.numberOfChannels || 1 },
-    (_, channel) => audioBuffer.getChannelData(channel)
+    (_, channel) => audioBuffer.getChannelData(channel),
   );
   const values = Array.from({ length: pointCount }, (_, index) => {
-    const start = sourceStart + Math.floor(index * sourceLength / pointCount);
-    const end = sourceStart + Math.floor((index + 1) * sourceLength / pointCount);
+    const start = sourceStart + Math.floor((index * sourceLength) / pointCount);
+    const end =
+      sourceStart + Math.floor(((index + 1) * sourceLength) / pointCount);
     const stride = Math.max(1, Math.floor((end - start) / 80));
     let peak = 0;
     channelData.forEach((samples) => {
-      for (let sample = start; sample < end && sample < samples.length; sample += stride) {
+      for (
+        let sample = start;
+        sample < end && sample < samples.length;
+        sample += stride
+      ) {
         if (sample >= 0) peak = Math.max(peak, Math.abs(samples[sample]));
       }
     });
     return peak;
   });
   const max = Math.max(...values, 0.001);
-  return values.map(value => Math.min(1, value / max));
+  return values.map((value) => Math.min(1, value / max));
 };
 
 const scheduleMicCheckClick = (ctx, time) => {
@@ -437,13 +516,13 @@ const scheduleMicCheckClick = (ctx, time) => {
 // human reaction in the loop, which is exactly the latency being calibrated.
 export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    throw new MicCheckError('mic-denied');
+    throw new MicCheckError("mic-denied");
   }
   const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextImpl) throw new MicCheckError('mic-denied');
+  if (!AudioContextImpl) throw new MicCheckError("mic-denied");
   const ownsContext = !mediaEl;
   const ctx = mediaEl ? getElementGraph(mediaEl).ctx : new AudioContextImpl();
-  if (ctx.state === 'suspended') {
+  if (ctx.state === "suspended") {
     await ctx.resume();
   }
 
@@ -453,11 +532,11 @@ export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
       audio: {
         echoCancellation: false,
         noiseSuppression: false,
-        autoGainControl: false
-      }
+        autoGainControl: false,
+      },
     });
   } catch (e) {
-    throw new MicCheckError('mic-denied');
+    throw new MicCheckError("mic-denied");
   }
 
   const micSource = ctx.createMediaStreamSource(micStream);
@@ -468,14 +547,15 @@ export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
   const recordingChunks = [];
   let recorder = null;
   let recordingStartedAt = ctx.currentTime;
-  if (typeof MediaRecorder !== 'undefined') {
-    const options = MediaRecorder.isTypeSupported
-      && MediaRecorder.isTypeSupported(RECORDER_MIME)
-      ? { mimeType: RECORDER_MIME }
-      : undefined;
+  if (typeof MediaRecorder !== "undefined") {
+    const options =
+      MediaRecorder.isTypeSupported &&
+      MediaRecorder.isTypeSupported(RECORDER_MIME)
+        ? { mimeType: RECORDER_MIME }
+        : undefined;
     try {
       recorder = new MediaRecorder(micStream, options);
-      recorder.addEventListener('dataavailable', event => {
+      recorder.addEventListener("dataavailable", (event) => {
         if (event.data && event.data.size > 0) recordingChunks.push(event.data);
       });
       recorder.start();
@@ -492,44 +572,71 @@ export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
   const firstClickTime = ctx.currentTime + 0.8;
   const allClickTimes = Array.from(
     { length: MIC_CHECK_BEATS },
-    (_, index) => firstClickTime + index * MIC_CHECK_INTERVAL_S
+    (_, index) => firstClickTime + index * MIC_CHECK_INTERVAL_S,
   );
-  allClickTimes.forEach(time => oscillators.push(scheduleMicCheckClick(ctx, time)));
+  allClickTimes.forEach((time) =>
+    oscillators.push(scheduleMicCheckClick(ctx, time)),
+  );
 
   let raf = null;
   let beatCursor = 0;
   let wasAbove = false;
   let lastOnsetTime = -Infinity;
-  let lastProgressKey = '';
+  let lastProgressKey = "";
   let finished = false;
   let cleaned = false;
 
-  const stopRecording = () => new Promise((resolve) => {
-    if (!recorder || recorder.state === 'inactive') {
-      resolve(recordingChunks.length
-        ? new Blob(recordingChunks, { type: recorder ? recorder.mimeType : RECORDER_MIME })
-        : null);
-      return;
-    }
-    recorder.addEventListener('stop', () => {
-      resolve(new Blob(recordingChunks, { type: recorder.mimeType || RECORDER_MIME }));
-    }, { once: true });
-    recorder.stop();
-  });
+  const stopRecording = () =>
+    new Promise((resolve) => {
+      if (!recorder || recorder.state === "inactive") {
+        resolve(
+          recordingChunks.length
+            ? new Blob(recordingChunks, {
+                type: recorder ? recorder.mimeType : RECORDER_MIME,
+              })
+            : null,
+        );
+        return;
+      }
+      recorder.addEventListener(
+        "stop",
+        () => {
+          resolve(
+            new Blob(recordingChunks, {
+              type: recorder.mimeType || RECORDER_MIME,
+            }),
+          );
+        },
+        { once: true },
+      );
+      recorder.stop();
+    });
 
   const cleanup = () => {
     if (cleaned) return;
     cleaned = true;
     if (raf !== null) cancelAnimationFrame(raf);
-    try { micSource.disconnect(); } catch (e) { /* detached */ }
-    try { analyser.disconnect(); } catch (e) { /* detached */ }
-    micStream.getTracks().forEach(track => track.stop());
+    try {
+      micSource.disconnect();
+    } catch (e) {
+      /* detached */
+    }
+    try {
+      analyser.disconnect();
+    } catch (e) {
+      /* detached */
+    }
+    micStream.getTracks().forEach((track) => track.stop());
     if (!finished) {
-      oscillators.forEach(oscillator => {
-        try { oscillator.stop(); } catch (e) { /* already stopped */ }
+      oscillators.forEach((oscillator) => {
+        try {
+          oscillator.stop();
+        } catch (e) {
+          /* already stopped */
+        }
       });
     }
-    if (ownsContext && ctx.state !== 'closed') {
+    if (ownsContext && ctx.state !== "closed") {
       ctx.close().catch(() => {});
     }
   };
@@ -542,7 +649,7 @@ export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
     };
     const tick = () => {
       if (signal && signal.aborted) {
-        fail('aborted');
+        fail("aborted");
         return;
       }
 
@@ -561,13 +668,16 @@ export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
       }
       wasAbove = above;
 
-      while (beatCursor < allClickTimes.length && now >= allClickTimes[beatCursor]) {
+      while (
+        beatCursor < allClickTimes.length &&
+        now >= allClickTimes[beatCursor]
+      ) {
         if (onBeat) {
           onBeat({
-            phase: 'measure',
+            phase: "measure",
             index: beatCursor,
             total: MIC_CHECK_BEATS,
-            scheduledTime: allClickTimes[beatCursor]
+            scheduledTime: allClickTimes[beatCursor],
           });
         }
         beatCursor += 1;
@@ -575,7 +685,7 @@ export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
 
       const provisional = matchOnsetsToClicks(allClickTimes, onsetTimes);
       const estimateMs = provisional.length
-        ? Math.round(median(provisional.map(sample => sample.deltaMs)))
+        ? Math.round(median(provisional.map((sample) => sample.deltaMs)))
         : null;
       const progressKey = `${provisional.length}:${estimateMs}`;
       if (onProgress && progressKey !== lastProgressKey) {
@@ -583,30 +693,35 @@ export const runMicCheck = async ({ mediaEl, onBeat, onProgress, signal }) => {
         onProgress({
           detected: provisional.length,
           total: MIC_CHECK_BEATS,
-          estimateMs
+          estimateMs,
         });
       }
 
-      if (now >= allClickTimes[allClickTimes.length - 1] + MIC_CHECK_MAX_DELTA_S + 0.1) {
+      if (
+        now >=
+        allClickTimes[allClickTimes.length - 1] + MIC_CHECK_MAX_DELTA_S + 0.1
+      ) {
         try {
           const result = aggregateMicCheckSamples(allClickTimes, onsetTimes);
           finished = true;
-          stopRecording().then(recordingBlob => resolve({
-            ...result,
-            recordingBlob,
-            preview: {
-              firstBeatOffsetMs: Math.round(
-                (allClickTimes[0] - recordingStartedAt) * 1000
-              ),
-              beatCount: MIC_CHECK_BEATS,
-              intervalMs: MIC_CHECK_INTERVAL_S * 1000,
-              durationMs: Math.round(
-                (MIC_CHECK_BEATS - 1) * MIC_CHECK_INTERVAL_S * 1000
-                + MIC_CHECK_MAX_DELTA_S * 1000
-                + 200
-              )
-            }
-          }));
+          stopRecording().then((recordingBlob) =>
+            resolve({
+              ...result,
+              recordingBlob,
+              preview: {
+                firstBeatOffsetMs: Math.round(
+                  (allClickTimes[0] - recordingStartedAt) * 1000,
+                ),
+                beatCount: MIC_CHECK_BEATS,
+                intervalMs: MIC_CHECK_INTERVAL_S * 1000,
+                durationMs: Math.round(
+                  (MIC_CHECK_BEATS - 1) * MIC_CHECK_INTERVAL_S * 1000 +
+                    MIC_CHECK_MAX_DELTA_S * 1000 +
+                    200,
+                ),
+              },
+            }),
+          );
           cleanup();
         } catch (e) {
           stopRecording();
@@ -629,12 +744,14 @@ export const createMicCheckPreview = async ({
   durationMs,
   voiceSyncMs,
   volume = 1,
-  onEnded
+  onEnded,
 }) => {
   const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextImpl || !recordingBlob) return null;
   const ctx = new AudioContextImpl();
-  const recordingBuffer = await ctx.decodeAudioData(await recordingBlob.arrayBuffer());
+  const recordingBuffer = await ctx.decodeAudioData(
+    await recordingBlob.arrayBuffer(),
+  );
   const output = ctx.createGain();
   output.gain.value = Math.min(1, Math.max(0, volume));
   output.connect(ctx.destination);
@@ -650,11 +767,19 @@ export const createMicCheckPreview = async ({
 
   const stopNodes = () => {
     if (voiceSource) {
-      try { voiceSource.stop(); } catch (e) { /* already stopped */ }
+      try {
+        voiceSource.stop();
+      } catch (e) {
+        /* already stopped */
+      }
       voiceSource = null;
     }
     clickNodes.forEach(({ oscillator }) => {
-      try { oscillator.stop(); } catch (e) { /* already stopped */ }
+      try {
+        oscillator.stop();
+      } catch (e) {
+        /* already stopped */
+      }
     });
     clickNodes = [];
     if (endTimer !== null) {
@@ -663,9 +788,10 @@ export const createMicCheckPreview = async ({
     }
   };
 
-  const getPositionMs = () => startedAt === null
-    ? positionMs
-    : Math.min(durationMs, positionMs + (ctx.currentTime - startedAt) * 1000);
+  const getPositionMs = () =>
+    startedAt === null
+      ? positionMs
+      : Math.min(durationMs, positionMs + (ctx.currentTime - startedAt) * 1000);
 
   const schedule = async (fromMs) => {
     if (destroyed) return;
@@ -673,7 +799,7 @@ export const createMicCheckPreview = async ({
     stopNodes();
     positionMs = Math.min(durationMs, Math.max(0, fromMs));
     if (positionMs >= durationMs) positionMs = 0;
-    if (ctx.state === 'suspended') await ctx.resume();
+    if (ctx.state === "suspended") await ctx.resume();
     if (destroyed || version !== scheduleVersion) return;
     const startAt = ctx.currentTime + 0.03;
     startedAt = startAt;
@@ -681,7 +807,7 @@ export const createMicCheckPreview = async ({
     const voiceOffsetMs = getMicCheckVoiceOffsetMs(
       firstBeatOffsetMs,
       positionMs,
-      currentVoiceSyncMs
+      currentVoiceSyncMs,
     );
     if (voiceOffsetMs < recordingBuffer.duration * 1000) {
       voiceSource = ctx.createBufferSource();
@@ -707,12 +833,15 @@ export const createMicCheckPreview = async ({
       clickNodes.push({ oscillator, gain });
     }
 
-    endTimer = setTimeout(() => {
-      stopNodes();
-      positionMs = 0;
-      startedAt = null;
-      if (onEnded) onEnded();
-    }, Math.max(0, durationMs - positionMs) + 50);
+    endTimer = setTimeout(
+      () => {
+        stopNodes();
+        positionMs = 0;
+        startedAt = null;
+        if (onEnded) onEnded();
+      },
+      Math.max(0, durationMs - positionMs) + 50,
+    );
   };
 
   return {
@@ -729,13 +858,14 @@ export const createMicCheckPreview = async ({
     restart: () => schedule(0),
     isPlaying: () => startedAt !== null,
     getPositionMs,
-    getWaveform: (pointCount) => createMicCheckWaveform(
-      recordingBuffer,
-      firstBeatOffsetMs,
-      durationMs,
-      currentVoiceSyncMs,
-      pointCount
-    ),
+    getWaveform: (pointCount) =>
+      createMicCheckWaveform(
+        recordingBuffer,
+        firstBeatOffsetMs,
+        durationMs,
+        currentVoiceSyncMs,
+        pointCount,
+      ),
     setVoiceSyncMs: (nextVoiceSyncMs) => {
       if (destroyed) return;
       currentVoiceSyncMs = nextVoiceSyncMs;
@@ -751,10 +881,10 @@ export const createMicCheckPreview = async ({
       scheduleVersion += 1;
       stopNodes();
       startedAt = null;
-      if (ctx.state !== 'closed') {
+      if (ctx.state !== "closed") {
         ctx.close().catch(() => {});
       }
-    }
+    },
   };
 };
 
@@ -768,8 +898,9 @@ export const createMicCheckPreview = async ({
 const estimateVoiceSyncS = (ctx, micStream) => {
   let inputLatencyS = FALLBACK_MIC_LATENCY_S;
   const track = micStream.getAudioTracks()[0];
-  const reported = track && track.getSettings ? track.getSettings().latency : undefined;
-  if (typeof reported === 'number' && Number.isFinite(reported)) {
+  const reported =
+    track && track.getSettings ? track.getSettings().latency : undefined;
+  if (typeof reported === "number" && Number.isFinite(reported)) {
     // Browsers tend to report the requested ideal rather than the real
     // capture latency - never trust a value below the realistic floor
     inputLatencyS = Math.max(reported, FALLBACK_MIC_LATENCY_S);
@@ -782,13 +913,17 @@ const estimateVoiceSyncS = (ctx, micStream) => {
 // the given (gated, smoothed) voice and track levels - a touch below the
 // voice, but clamped so the music neither vanishes nor exceeds the ceiling.
 export const computeTrackDuckGain = (voiceRms, trackRms) => {
-  if (!Number.isFinite(voiceRms) || voiceRms <= 0
-    || !Number.isFinite(trackRms) || trackRms <= 0) {
+  if (
+    !Number.isFinite(voiceRms) ||
+    voiceRms <= 0 ||
+    !Number.isFinite(trackRms) ||
+    trackRms <= 0
+  ) {
     return TRACK_GAIN_MAX;
   }
   return Math.min(
     TRACK_GAIN_MAX,
-    Math.max(TRACK_GAIN_MIN, (voiceRms * TRACK_DUCK_RATIO) / trackRms)
+    Math.max(TRACK_GAIN_MIN, (voiceRms * TRACK_DUCK_RATIO) / trackRms),
   );
 };
 
@@ -798,9 +933,13 @@ export const computeTrackDuckGain = (voiceRms, trackRms) => {
 // level so listeners hear the singer over the music regardless of mic gain.
 // Mic failure is tolerated: the game must go on, the stream just carries the
 // bare track and the caller shows a warning.
-export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) => {
+export const startSingerPipeline = async ({
+  mediaEl,
+  monitorVolume,
+  onChunk,
+}) => {
   if (!isKaraokeStreamingSupported()) {
-    throw new Error('karaoke-unsupported');
+    throw new Error("karaoke-unsupported");
   }
   const { ctx, source, monitorGain } = getElementGraph(mediaEl);
 
@@ -813,7 +952,7 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
   mediaEl.__programmaticChange = false;
   monitorGain.gain.value = Math.min(1, Math.max(0, monitorVolume ?? 1));
 
-  if (ctx.state === 'suspended') {
+  if (ctx.state === "suspended") {
     await ctx.resume();
   }
 
@@ -826,12 +965,12 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
       audio: {
         echoCancellation: false,
         noiseSuppression: false,
-        autoGainControl: false
-      }
+        autoGainControl: false,
+      },
     });
     micSource = ctx.createMediaStreamSource(micStream);
   } catch (e) {
-    console.warn('Karaoke: microphone unavailable, streaming track only', e);
+    console.warn("Karaoke: microphone unavailable, streaming track only", e);
   }
 
   // No mic means no voice to align. Otherwise the estimate can be overridden
@@ -842,7 +981,9 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
     if (overrideMs !== null) {
       voiceSyncS = overrideMs / 1000;
     }
-    console.info(`Karaoke: track delayed ${Math.round(voiceSyncS * 1000)}ms to align the voice (override: localStorage.${VOICE_SYNC_OVERRIDE_KEY})`);
+    console.info(
+      `Karaoke: track delayed ${Math.round(voiceSyncS * 1000)}ms to align the voice (override: localStorage.${VOICE_SYNC_OVERRIDE_KEY})`,
+    );
   }
   const voiceSyncMs = Math.round(voiceSyncS * 1000);
 
@@ -886,20 +1027,22 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
       const micRms = computeRms(micBuffer);
       const trackRms = computeRms(trackBuffer);
       if (micRms >= VOICE_GATE_RMS) {
-        voiceLevel = voiceLevel === null
-          ? micRms
-          : voiceLevel + (micRms - voiceLevel) * DUCK_EMA_ALPHA;
+        voiceLevel =
+          voiceLevel === null
+            ? micRms
+            : voiceLevel + (micRms - voiceLevel) * DUCK_EMA_ALPHA;
       }
       if (trackRms >= TRACK_GATE_RMS) {
-        trackLevel = trackLevel === null
-          ? trackRms
-          : trackLevel + (trackRms - trackLevel) * DUCK_EMA_ALPHA;
+        trackLevel =
+          trackLevel === null
+            ? trackRms
+            : trackLevel + (trackRms - trackLevel) * DUCK_EMA_ALPHA;
       }
       if (voiceLevel !== null && trackLevel !== null) {
         trackGain.gain.setTargetAtTime(
           computeTrackDuckGain(voiceLevel, trackLevel),
           ctx.currentTime,
-          DUCK_SMOOTHING_S
+          DUCK_SMOOTHING_S,
         );
       }
     }, DUCK_UPDATE_MS);
@@ -907,7 +1050,7 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
 
   const recorder = new MediaRecorder(mixDest.stream, {
     mimeType: RECORDER_MIME,
-    audioBitsPerSecond: 192000
+    audioBitsPerSecond: 192000,
   });
   let seq = 0;
   let stopped = false;
@@ -917,12 +1060,15 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
   recorder.ondataavailable = (event) => {
     if (!event.data || event.data.size === 0) return;
     // On the delayed clock: the track position the mix actually contains now
-    const t = Math.max(0, Math.round((mediaEl.currentTime || 0) * 1000 - voiceSyncMs));
+    const t = Math.max(
+      0,
+      Math.round((mediaEl.currentTime || 0) * 1000 - voiceSyncMs),
+    );
     const mySeq = seq++;
     conversionChain = conversionChain
       .then(() => blobToBase64(event.data))
       .then((b64) => onChunk({ seq: mySeq, b64, t }))
-      .catch((e) => console.error('Karaoke: chunk encode failed', e));
+      .catch((e) => console.error("Karaoke: chunk encode failed", e));
   };
   recorder.start(CHUNK_MS);
 
@@ -937,23 +1083,37 @@ export const startSingerPipeline = async ({ mediaEl, monitorVolume, onChunk }) =
       stopped = true;
       if (duckTimer !== null) clearInterval(duckTimer);
       try {
-        if (recorder.state !== 'inactive') {
+        if (recorder.state !== "inactive") {
           recorder.stop(); // flushes a final dataavailable with the tail
         }
-      } catch (e) { /* already gone */ }
-      try { source.disconnect(trackDelay); } catch (e) { /* detached */ }
+      } catch (e) {
+        /* already gone */
+      }
+      try {
+        source.disconnect(trackDelay);
+      } catch (e) {
+        /* detached */
+      }
       if (trackAnalyser) {
-        try { source.disconnect(trackAnalyser); } catch (e) { /* detached */ }
+        try {
+          source.disconnect(trackAnalyser);
+        } catch (e) {
+          /* detached */
+        }
       }
       if (micSource) {
-        try { micSource.disconnect(); } catch (e) { /* detached */ }
+        try {
+          micSource.disconnect();
+        } catch (e) {
+          /* detached */
+        }
       }
       if (micStream) {
         micStream.getTracks().forEach((track) => track.stop());
       }
       // ctx and the element graph stay alive: closing the context would
       // permanently silence the media element (see getElementGraph)
-    }
+    },
   };
 };
 
@@ -1004,19 +1164,23 @@ export const createListenerPlayer = ({ audioEl, onAutoplayBlocked }) => {
         sourceBuffer.appendBuffer(bytes);
         appendedAny = true;
       } catch (e) {
-        console.error('Karaoke: appendBuffer failed', e);
+        console.error("Karaoke: appendBuffer failed", e);
       }
       return;
     }
-    if (finalized && pending.size === 0 && mediaSource.readyState === 'open') {
-      try { mediaSource.endOfStream(); } catch (e) { /* already ended */ }
+    if (finalized && pending.size === 0 && mediaSource.readyState === "open") {
+      try {
+        mediaSource.endOfStream();
+      } catch (e) {
+        /* already ended */
+      }
     }
   };
 
-  mediaSource.addEventListener('sourceopen', () => {
+  mediaSource.addEventListener("sourceopen", () => {
     if (destroyed || sourceBuffer) return;
     sourceBuffer = mediaSource.addSourceBuffer(RECORDER_MIME);
-    sourceBuffer.addEventListener('updateend', () => {
+    sourceBuffer.addEventListener("updateend", () => {
       if (destroyed) return;
       tryPlay();
       // Fell behind the live edge (tab throttling, network stall): jump
@@ -1033,7 +1197,12 @@ export const createListenerPlayer = ({ audioEl, onAutoplayBlocked }) => {
 
   return {
     push: ({ seq, b64, t }) => {
-      if (destroyed || typeof seq !== 'number' || seq < nextSeq || pending.has(seq)) {
+      if (
+        destroyed ||
+        typeof seq !== "number" ||
+        seq < nextSeq ||
+        pending.has(seq)
+      ) {
         return; // duplicate (sync backlog overlapping live relay) - drop
       }
       try {
@@ -1041,7 +1210,7 @@ export const createListenerPlayer = ({ audioEl, onAutoplayBlocked }) => {
       } catch (e) {
         return; // malformed base64 - skip rather than kill the stream
       }
-      if (typeof t === 'number' && t >= 0) {
+      if (typeof t === "number" && t >= 0) {
         lastChunkT = Math.max(lastChunkT ?? 0, t);
       }
       pump();
@@ -1066,11 +1235,13 @@ export const createListenerPlayer = ({ audioEl, onAutoplayBlocked }) => {
       try {
         if (audioEl) {
           audioEl.pause();
-          audioEl.removeAttribute('src');
+          audioEl.removeAttribute("src");
           audioEl.load();
         }
-      } catch (e) { /* tearing down */ }
+      } catch (e) {
+        /* tearing down */
+      }
       URL.revokeObjectURL(objectUrl);
-    }
+    },
   };
 };

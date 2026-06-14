@@ -43,6 +43,10 @@ class Game {
     // Chunks are an in-memory backlog so late joiners can catch up:
     // MediaRecorder output is only decodable as a prefix-complete sequence.
     this.karaoke = new Map();
+    // questionId -> { targetUserId, selectorUserId, response }
+    // Crocodile: one chosen player privately sees the question and submits a
+    // text/image/audio response; everyone else then guesses by buzzing.
+    this.crocodile = new Map();
     this.lastGreenFrameUser = null;
   }
 
@@ -122,6 +126,7 @@ class Game {
     this.questionSelectors.clear();
     this.secretAssignments.clear();
     this.karaoke.clear();
+    this.crocodile.clear();
     this.questionClicks.clear();
     this.questionAnswers.clear();
     this.revealedAnswers.clear();
@@ -143,6 +148,18 @@ class Game {
     return {
       selectorId: this.questionSelectors.get(questionId) || null,
       assignment: this.secretAssignments.get(questionId) || null,
+      revealed: this.revealedQuestions.has(questionId)
+    };
+  }
+
+  getCrocodileInfo(questionId) {
+    const entry = this.crocodile.get(questionId);
+    return {
+      // Before any assignment the question selector is the one allowed to pick
+      // the performer (plus the host) — same idea as cat-in-the-bag
+      selectorId: (entry && entry.selectorUserId) || this.questionSelectors.get(questionId) || null,
+      targetUserId: entry ? entry.targetUserId : null,
+      response: entry ? entry.response : null,
       revealed: this.revealedQuestions.has(questionId)
     };
   }

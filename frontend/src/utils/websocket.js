@@ -108,6 +108,10 @@ class WebSocketManager {
     this.send({ type: 'question_select', data: { questionId, userType, userId } });
   }
 
+  sendQuestionToggle(questionId) {
+    this.send({ type: 'question_toggle', data: { questionId } });
+  }
+
   sendCatClicks(questionId, userId, clicksLeft) {
     this.send({ type: 'cat_clicks', data: { questionId, userId, clicksLeft } });
   }
@@ -146,6 +150,14 @@ class WebSocketManager {
 
   sendKaraokeSync(questionId) {
     this.send({ type: 'karaoke_sync', data: { questionId } });
+  }
+
+  sendCrocodileAssign(questionId, targetUserId, selectorUserId = null) {
+    this.send({ type: 'crocodile_assign', data: { questionId, targetUserId, selectorUserId } });
+  }
+
+  sendCrocodileResponse(questionId, value) {
+    this.send({ type: 'crocodile_response', data: { questionId, value } });
   }
 
   sendClearSelectedQuestions() {

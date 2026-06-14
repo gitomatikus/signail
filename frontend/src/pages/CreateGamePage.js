@@ -31,15 +31,26 @@ const CreateGamePage = ({ user }) => {
         }
     };
 
-    const uploadPack = (gameId, hostToken) => new Promise((resolve, reject) => {
+    // Cloudflare caps a single request body at 100MB, so the pack is sliced
+    // into sub-100MB chunks uploaded sequentially. Each chunk is its own
+    // request tagged with its index; the server appends them and validates
+    // once the last one lands. Small packs are a single chunk.
+    const CHUNK_SIZE = 90 * 1024 * 1024;
+
+    const sendChunk = (gameId, hostToken, index, chunkCount) => new Promise((resolve, reject) => {
+        const start = index * CHUNK_SIZE;
+        const blob = file.slice(start, start + CHUNK_SIZE);
         const xhr = new XMLHttpRequest();
         xhr.open('POST', `${config.apiUrl}/api/games/${gameId}/pack`, true);
-        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
         xhr.setRequestHeader('X-Host-Token', hostToken);
+        xhr.setRequestHeader('X-Chunk-Index', index);
+        xhr.setRequestHeader('X-Chunk-Count', chunkCount);
 
         xhr.upload.onprogress = (event) => {
             if (event.lengthComputable) {
-                setUploadProgress(Math.round((event.loaded * 100) / event.total));
+                // Aggregate progress: bytes from finished chunks + this chunk's.
+                setUploadProgress(Math.round(((start + event.loaded) * 100) / file.size));
             }
         };
         xhr.onload = () => {
@@ -58,9 +69,20 @@ const CreateGamePage = ({ user }) => {
             }
         };
         xhr.onerror = () => reject(new Error('create.networkError'));
-        // Send the raw file: the browser streams it, the server pipes it to disk
-        xhr.send(file);
+        // Send the raw chunk: the browser streams it, the server pipes it to disk
+        xhr.send(blob);
     });
+
+    const uploadPack = async (gameId, hostToken) => {
+        const chunkCount = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+        let last = {};
+        for (let index = 0; index < chunkCount; index++) {
+            // Sequential so the server appends chunks in order; the final
+            // chunk's response carries packName/cacheKey.
+            last = await sendChunk(gameId, hostToken, index, chunkCount);
+        }
+        return last;
+    };
 
     const cacheUploadedPack = async (gameId, cacheKey) => {
         try {

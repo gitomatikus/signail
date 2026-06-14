@@ -67,7 +67,7 @@ const MicCheckTimeline = ({ waveform, preview, playheadMs }) => {
   );
 };
 
-const MicCheckSetting = () => {
+const MicCheckSetting = ({ variant = 'panel' }) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState('idle');
@@ -89,6 +89,7 @@ const MicCheckSetting = () => {
   const previewRef = useRef(null);
   const playheadRafRef = useRef(null);
   const calibrationRef = useRef(calibration);
+  const rootRef = useRef(null);
 
   useEffect(() => {
     calibrationRef.current = calibration;
@@ -103,6 +104,19 @@ const MicCheckSetting = () => {
     window.addEventListener(VOICE_SYNC_CHANGE_EVENT, syncCalibration);
     return () => window.removeEventListener(VOICE_SYNC_CHANGE_EVENT, syncCalibration);
   }, []);
+
+  // Compact (header) variant opens its controls as a popover: close it when
+  // the user clicks anywhere outside.
+  useEffect(() => {
+    if (variant !== 'compact' || !expanded) return undefined;
+    const onPointerDown = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) {
+        setExpanded(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [variant, expanded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -253,6 +267,137 @@ const MicCheckSetting = () => {
   };
 
   const complete = !!calibration;
+
+  const detailsContent = (
+    <>
+      <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+        {t('settings.micCheckEncouragement')}
+      </div>
+      <button type="button" className="btn-primary" onClick={handleCheck} disabled={status === 'running'}>
+        {complete ? t('question.micCheckRedo') : t('question.micCheckButton')}
+      </button>
+
+      {status === 'running' && (
+        <div style={{
+          textAlign: 'center',
+          padding: '0.8rem',
+          background: 'var(--input-bg)',
+          border: '1px solid var(--glass-border)',
+          borderRadius: '8px'
+        }}>
+          <div style={{ fontWeight: '700' }}>
+            {t('question.micCheckClap')}
+          </div>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            margin: '0.7rem auto',
+            display: 'grid',
+            placeItems: 'center',
+            borderRadius: '50%',
+            background: 'var(--accent)',
+            color: 'var(--bg-darker)',
+            fontWeight: '900',
+            fontSize: '1.3rem'
+          }}>
+            {beat && beat.phase === 'measure' ? beat.index + 1 : '...'}
+          </div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+            {t('question.micCheckProgress', { count: progress.detected, total: progress.total })}
+          </div>
+        </div>
+      )}
+
+      {complete && status !== 'running' && (
+        <>
+          <div style={{ color: 'var(--accent)', fontWeight: '800', textAlign: 'center' }}>
+            {t('question.micCheckResult', { ms: calibration.latencyMs })}
+          </div>
+          {recording && (
+            <>
+              <button
+                type="button"
+                className="mic-check-preview-btn"
+                onClick={handlePreview}
+                disabled={!previewReady}
+              >
+                <span aria-hidden="true">{previewPlaying ? '■' : '▶'}</span>
+                {previewPlaying ? t('question.micCheckStopPreview') : t('question.micCheckPlayPreview')}
+              </button>
+              {previewReady && (
+                <MicCheckTimeline waveform={waveform} preview={recording.preview} playheadMs={playheadMs} />
+              )}
+            </>
+          )}
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <span style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>
+              {t('question.micCheckNudge', { value: nudgeMs > 0 ? `+${nudgeMs}` : nudgeMs })}
+            </span>
+            <input
+              type="range"
+              className="volume-slider"
+              min="-200"
+              max="200"
+              step="10"
+              value={nudgeMs}
+              onChange={event => handleNudge(event.target.value)}
+              style={{ width: '100%', background: 'var(--glass-border)' }}
+            />
+          </label>
+          <button type="button" className="mic-check-reset-btn" onClick={handleReset}>
+            <span aria-hidden="true">↺</span>
+            {t('question.micCheckReset')}
+          </button>
+        </>
+      )}
+
+      {status === 'error' && (
+        <div style={{ color: 'var(--danger)', textAlign: 'center' }}>
+          {t(`question.micCheckError.${error}`)}
+        </div>
+      )}
+    </>
+  );
+
+  // Compact variant: a small status button that lives in the page header and
+  // opens the full controls as a popover.
+  if (variant === 'compact') {
+    return (
+      <div className="mic-check-compact" ref={rootRef}>
+        <button
+          type="button"
+          className={`mic-check-trigger ${complete ? 'is-complete' : 'is-incomplete'} ${expanded ? 'is-open' : ''}`}
+          onClick={() => setExpanded(value => !value)}
+          aria-expanded={expanded}
+          title={complete
+            ? t('settings.micCheckReady', { ms: calibration.latencyMs })
+            : t('settings.micCheckMissing')}
+        >
+          <span className="mic-check-trigger-icon" aria-hidden="true">🎤</span>
+          <span className="mic-check-trigger-label">{t('settings.micCheck')}</span>
+          <span className="mic-check-trigger-dot" aria-hidden="true" />
+        </button>
+
+        {expanded && (
+          <div className="mic-check-popover">
+            <div className="mic-check-popover-head">
+              <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{t('settings.micCheck')}</span>
+              <span className={`mic-check-status ${complete ? 'is-complete' : 'is-incomplete'}`}>
+                <span aria-hidden="true">{complete ? '✓' : '×'}</span>
+                <span>
+                  {complete
+                    ? t('settings.micCheckReady', { ms: calibration.latencyMs })
+                    : t('settings.micCheckMissing')}
+                </span>
+              </span>
+            </div>
+            {detailsContent}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={`mic-check-setting ${complete ? 'is-complete' : 'is-incomplete'}`}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
@@ -279,92 +424,7 @@ const MicCheckSetting = () => {
 
       {expanded && (
         <div className="mic-check-details" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            {t('settings.micCheckEncouragement')}
-          </div>
-          <button type="button" className="btn-primary" onClick={handleCheck} disabled={status === 'running'}>
-            {complete ? t('question.micCheckRedo') : t('question.micCheckButton')}
-          </button>
-
-          {status === 'running' && (
-            <div style={{
-              textAlign: 'center',
-              padding: '0.8rem',
-              background: 'var(--input-bg)',
-              border: '1px solid var(--glass-border)',
-              borderRadius: '8px'
-            }}>
-              <div style={{ fontWeight: '700' }}>
-                {t('question.micCheckClap')}
-              </div>
-              <div style={{
-                width: '64px',
-                height: '64px',
-                margin: '0.7rem auto',
-                display: 'grid',
-                placeItems: 'center',
-                borderRadius: '50%',
-                background: 'var(--accent)',
-                color: 'var(--bg-darker)',
-                fontWeight: '900',
-                fontSize: '1.3rem'
-              }}>
-                {beat && beat.phase === 'measure' ? beat.index + 1 : '...'}
-              </div>
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                {t('question.micCheckProgress', { count: progress.detected, total: progress.total })}
-              </div>
-            </div>
-          )}
-
-          {complete && status !== 'running' && (
-            <>
-              <div style={{ color: 'var(--accent)', fontWeight: '800', textAlign: 'center' }}>
-                {t('question.micCheckResult', { ms: calibration.latencyMs })}
-              </div>
-              {recording && (
-                <>
-                  <button
-                    type="button"
-                    className="mic-check-preview-btn"
-                    onClick={handlePreview}
-                    disabled={!previewReady}
-                  >
-                    <span aria-hidden="true">{previewPlaying ? '■' : '▶'}</span>
-                    {previewPlaying ? t('question.micCheckStopPreview') : t('question.micCheckPlayPreview')}
-                  </button>
-                  {previewReady && (
-                    <MicCheckTimeline waveform={waveform} preview={recording.preview} playheadMs={playheadMs} />
-                  )}
-                </>
-              )}
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                <span style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>
-                  {t('question.micCheckNudge', { value: nudgeMs > 0 ? `+${nudgeMs}` : nudgeMs })}
-                </span>
-                <input
-                  type="range"
-                  className="volume-slider"
-                  min="-200"
-                  max="200"
-                  step="10"
-                  value={nudgeMs}
-                  onChange={event => handleNudge(event.target.value)}
-                  style={{ width: '100%', background: 'var(--glass-border)' }}
-                />
-              </label>
-              <button type="button" className="mic-check-reset-btn" onClick={handleReset}>
-                <span aria-hidden="true">↺</span>
-                {t('question.micCheckReset')}
-              </button>
-            </>
-          )}
-
-          {status === 'error' && (
-            <div style={{ color: 'var(--danger)', textAlign: 'center' }}>
-              {t(`question.micCheckError.${error}`)}
-            </div>
-          )}
+          {detailsContent}
         </div>
       )}
     </div>

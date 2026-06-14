@@ -163,6 +163,17 @@ class WebSocketManager {
       game.selectedQuestions.add(questionId);
       game.broadcast({ type: 'question_select', data: data.data });
       game.broadcastSelectedQuestions();
+    } else if (data.type === 'question_toggle') {
+      // Host right-clicks a board tile to close it (mark as used) or reopen
+      // it, without actually playing the question
+      if (!ws.isHost) return;
+      const { questionId } = data.data;
+      if (game.selectedQuestions.has(questionId)) {
+        game.selectedQuestions.delete(questionId);
+      } else {
+        game.selectedQuestions.add(questionId);
+      }
+      game.broadcastSelectedQuestions();
     } else if (data.type === 'question_reveal') {
       game.revealedQuestions.add(data.data.questionId);
       game.broadcast({ type: 'question_reveal', data: data.data });
@@ -358,6 +369,39 @@ class WebSocketManager {
             type: 'karaoke_chunk',
             data: { questionId, performanceId: perf.id, ...chunk }
           }));
+        });
+      }
+    } else if (data.type === 'crocodile_assign') {
+      const { questionId, targetUserId, selectorUserId } = data.data;
+      const existing = game.crocodile.get(questionId);
+      // First assignment wins, but the host may re-assign as long as the chosen
+      // player hasn't submitted a response yet (e.g. they went offline). Unlike
+      // cat-in-the-bag, the selector may pick themselves.
+      const canAssign = !existing || (ws.isHost && !existing.response);
+      if (targetUserId && canAssign) {
+        game.crocodile.set(questionId, {
+          targetUserId,
+          selectorUserId: selectorUserId || (existing ? existing.selectorUserId : null),
+          response: existing ? existing.response : null
+        });
+        game.broadcast({
+          type: 'crocodile_assign',
+          data: { questionId, targetUserId, selectorUserId: selectorUserId || null }
+        });
+      }
+    } else if (data.type === 'crocodile_response') {
+      // Only the chosen performer may submit, exactly once. The response is a
+      // text/image/audio string and is broadcast unmasked so everyone else can
+      // start guessing.
+      const { questionId, value } = data.data;
+      const entry = game.crocodile.get(questionId);
+      const sender = game.onlineUsers.get(ws);
+      if (entry && !entry.response && sender && sender.id === entry.targetUserId
+        && this.isValidAnswerValue(value)) {
+        entry.response = value;
+        game.broadcast({
+          type: 'crocodile_response',
+          data: { questionId, userId: sender.id, value }
         });
       }
     } else if (data.type === 'request_selected_questions') {
