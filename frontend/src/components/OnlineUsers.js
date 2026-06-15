@@ -6,7 +6,7 @@ import { useGame } from '../contexts/GameContext';
 import { HIDE_HOST_KEY, HIDE_HOST_EVENT } from '../utils/hostVisibility';
 import { useTranslation } from '../i18n/LanguageContext';
 
-const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, secretTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false }) => {
+const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, secretTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false }) => {
   const location = useLocation();
   const { t } = useTranslation();
   const isQuestionPage = location.pathname.includes('/question/');
@@ -75,6 +75,11 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
   const isCloseEnoughQuestion = question?.type === 'close-enough';
   const isChoiceQuestion = question?.type === 'choice';
   const isTextQuestion = question?.type === 'text-answer';
+  const isCrocodileQuestion = question?.type === 'crocodile';
+  const crocodileMode = question?.crocodile_mode || 'fastest';
+  // Dixit guesses are submitted as text answers, so they surface just like a
+  // text-answer question once the host reveals them
+  const isCrocodileDixit = isCrocodileQuestion && crocodileMode === 'dixit';
 
   // Close-enough: once numbers are revealed, find who came closest to the answer
   let closestIds = [];
@@ -192,7 +197,16 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   ? numberAnswers[user.id] !== undefined
                   : isTextQuestion
                     ? (answersRevealed && numberAnswers[user.id] !== undefined)
-                    : position === 0
+                    : isCrocodileQuestion
+                      // The chosen performer can be scored +/- either way; the
+                      // guessers score by the active mode (dixit on reveal,
+                      // fastest by the buzz race)
+                      ? (user.id === crocodileTargetId
+                          ? true
+                          : isCrocodileDixit
+                            ? (answersRevealed && numberAnswers[user.id] !== undefined)
+                            : position === 0)
+                      : position === 0
         );
         const submittedAnswer = numberAnswers[user.id];
         const answerBadge = isCloseEnoughQuestion && submittedAnswer !== undefined
@@ -250,6 +264,14 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             return {
               border: '3px solid #ffd600',
               boxShadow: '0 0 25px rgba(255, 214, 0, 0.6)'
+            };
+          }
+
+          // Highlight the chosen crocodile performer in the signature green
+          if (isCrocodileQuestion && crocodileTargetId && user.id === crocodileTargetId) {
+            return {
+              border: '3px solid #4ade80',
+              boxShadow: '0 0 25px rgba(74, 222, 128, 0.6)'
             };
           }
 
@@ -559,7 +581,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   for the admin, choice picks appear in real time. Correctness colors
                   appear for the admin right away and for players only after the
                   admin shows the response. */}
-              {(isChoiceQuestion || isTextQuestion) && (answersRevealed || (isAdmin && isChoiceQuestion))
+              {(isChoiceQuestion || isTextQuestion || isCrocodileDixit) && (answersRevealed || (isAdmin && isChoiceQuestion))
                 && submittedAnswer !== undefined && submittedAnswer !== true && (
                 <div className="glass-panel" style={{
                   marginTop: '4px',

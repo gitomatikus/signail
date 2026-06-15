@@ -271,8 +271,10 @@ const QuestionPage = () => {
     }
 
     // For submission-based types (close-enough numbers, choice picks, text
-    // answers), restore submissions (masked until reveal; own value included)
-    if (['close-enough', 'choice', 'text-answer'].includes(question.type)) {
+    // answers, crocodile dixit guesses), restore submissions (masked until
+    // reveal; own value included). Crocodile "fastest" mode stores no answers,
+    // so the fetch just comes back empty there.
+    if (['close-enough', 'choice', 'text-answer', 'crocodile'].includes(question.type)) {
       const storedUser = localStorage.getItem('user');
       const myId = storedUser ? JSON.parse(storedUser).id : null;
       const query = myId ? `?userId=${encodeURIComponent(myId)}` : '';
@@ -700,9 +702,11 @@ const QuestionPage = () => {
         }
       }
       if (question?.type === 'crocodile') {
-        // Only guessers buzz, and only once the performer's response is shown.
-        // The performer and the host never guess.
-        if (!crocodileResponse || isAdmin || currentUserId === crocodileTargetId) {
+        // Buzzing is only for the "fastest" mode; in "dixit" mode guessers
+        // submit a text answer instead. Only guessers buzz, and only once the
+        // performer's response is shown. The performer and host never guess.
+        const crocodileMode = question.crocodile_mode || 'fastest';
+        if (crocodileMode === 'dixit' || !crocodileResponse || isAdmin || currentUserId === crocodileTargetId) {
           return;
         }
       }
@@ -1688,6 +1692,9 @@ const QuestionPage = () => {
     // Unlike cat-in-the-bag, the selector may pick themselves.
     const canAssign = isAdmin || (currentUserId && currentUserId === crocodileSelectorId);
     const isPerformer = currentUserId && currentUserId === crocodileTargetId;
+    // 'fastest': guessers buzz, the quickest correct one scores. 'dixit':
+    // everyone submits a text guess and the host can score anyone.
+    const crocodileMode = question.crocodile_mode || 'fastest';
 
     // PHASE 1: choose the performer
     if (!crocodileTargetId) {
@@ -1796,11 +1803,43 @@ const QuestionPage = () => {
       );
     }
 
-    // Guessers: the response, a buzz prompt, and the answer card once revealed
+    // Guessers: the response, then either a buzz prompt (fastest mode) or a
+    // text composer (dixit mode), and the answer card once revealed
     const afterRoundRules = question.after_round || [];
     const answerCard = (showAfterRound && afterRoundRules.length > 0)
       ? renderRuleCard(afterRoundRules[Math.min(currentAfterRoundIndex, afterRoundRules.length - 1)], t('question.answerLabel'))
       : null;
+
+    // Dixit: everyone types their guess (mirrors the text-answer flow)
+    if (crocodileMode === 'dixit') {
+      const myGuess = currentUserId ? numberAnswers[currentUserId] : undefined;
+      const hasGuessed = myGuess !== undefined;
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {header}
+          {responseCard}
+          <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+            {hasGuessed ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
+                {renderAnswerValue(myGuess)}
+              </div>
+            ) : (
+              <AnswerComposer
+                key={`crocodile-guess-${questionId}`}
+                onSubmit={handleSubmitTextAnswer}
+                onPreviewImage={setLightboxImage}
+                submitLabel={t('question.submitAnswer')}
+                buttonStyle={buttonStyle}
+              />
+            )}
+          </div>
+          {answerCard}
+        </div>
+      );
+    }
+
+    // Fastest: guessers buzz, the quickest correct one scores
     const hasBuzzed = hasRecordedTime || (currentUserId && userTimes[currentUserId] !== undefined);
 
     return (
@@ -2286,7 +2325,11 @@ const QuestionPage = () => {
           </button>
         )}
         {/* Choice has no "Show Result": the admin sees picks in real time */}
-        {isAdmin && ['close-enough', 'text-answer'].includes(question.type) && isQuestionRevealed && !answersRevealed && (
+        {isAdmin && !answersRevealed && (
+          (['close-enough', 'text-answer'].includes(question.type) && isQuestionRevealed) ||
+          // Crocodile dixit collects text guesses once the performer responds
+          (question.type === 'crocodile' && (question.crocodile_mode || 'fastest') === 'dixit' && crocodileResponse)
+        ) && (
           <button
             onClick={() => wsManager.sendRevealNumberAnswers(parseInt(questionId))}
             className="btn-primary"
@@ -2336,6 +2379,7 @@ const QuestionPage = () => {
                 ? karaokeTargetId // the singer gets the same highlight + award buttons
                 : null
           }
+          crocodileTargetId={question?.type === 'crocodile' ? crocodileTargetId : null}
           clicksLeftMap={clicksLeftMap}
           numberAnswers={numberAnswers}
           answersRevealed={answersRevealed}

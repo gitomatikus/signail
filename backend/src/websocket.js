@@ -117,11 +117,15 @@ class WebSocketManager {
         userData.id = `${userData.name}-${Date.now()}`;
       }
       if (game.userScores.has(userData.id)) {
+        // Reconnecting to a game we're already in: restore the score the
+        // server has been tracking for us in THIS game.
         userData.score = game.userScores.get(userData.id);
       } else {
-        if (typeof userData.score !== 'number') {
-          userData.score = 0;
-        }
+        // First time in THIS game: always start at 0. The score the client
+        // sends is never trusted - it may be a stale value left in the
+        // browser from a previous game. Scores belong to the game, not the
+        // user, so they never carry across games.
+        userData.score = 0;
         game.userScores.set(userData.id, userData.score);
       }
       game.onlineUsers.set(ws, userData);
