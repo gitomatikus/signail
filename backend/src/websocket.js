@@ -242,14 +242,25 @@ class WebSocketManager {
         const answers = game.questionAnswers.get(questionId);
         if (!answers.has(userId)) {
           answers.set(userId, value);
-          // Choice picks go out unmasked so the admin sees results in
-          // real time; for other types clients only learn that the
-          // player answered, not the answer itself
-          const isChoice = game.getQuestionType(questionId) === 'choice';
-          game.broadcast({
-            type: 'number_answer_submitted',
-            data: isChoice ? { questionId, userId, value } : { questionId, userId }
-          });
+          const qType = game.getQuestionType(questionId);
+          if (qType === 'choice') {
+            // Choice picks go out unmasked so the admin sees results in real time
+            game.broadcast({ type: 'number_answer_submitted', data: { questionId, userId, value } });
+          } else if (qType === 'voting') {
+            // Voting answers reach the host unmasked (live moderation) but stay
+            // masked for players until the host reveals them
+            game.sockets.forEach((client) => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                  type: 'number_answer_submitted',
+                  data: client.isHost ? { questionId, userId, value } : { questionId, userId }
+                }));
+              }
+            });
+          } else {
+            // Other types: clients only learn that the player answered
+            game.broadcast({ type: 'number_answer_submitted', data: { questionId, userId } });
+          }
         }
       }
     } else if (data.type === 'reveal_number_answers') {
@@ -406,6 +417,43 @@ class WebSocketManager {
         game.broadcast({
           type: 'crocodile_response',
           data: { questionId, userId: sender.id, value }
+        });
+      }
+    } else if (data.type === 'cast_vote') {
+      // Voting: each player casts one final vote for another player's answer.
+      // Only after the answers have been revealed, never for your own answer,
+      // and never twice. In open mode the target goes out unmasked so everyone
+      // tallies live; in closed mode only the fact that a vote was cast is
+      // broadcast, so nobody (host included) sees targets until the reveal.
+      const { questionId, voterId, targetUserId } = data.data;
+      if (game.getQuestionType(questionId) === 'voting'
+        && voterId && targetUserId && voterId !== targetUserId
+        && game.revealedAnswers.has(questionId)
+        && !game.revealedVotes.has(questionId)) {
+        if (!game.votes.has(questionId)) {
+          game.votes.set(questionId, new Map());
+        }
+        const questionVotes = game.votes.get(questionId);
+        if (!questionVotes.has(voterId)) {
+          questionVotes.set(voterId, targetUserId);
+          const open = game.getVoteMode(questionId) === 'open';
+          game.broadcast({
+            type: 'vote_cast',
+            data: open ? { questionId, voterId, targetUserId } : { questionId, voterId }
+          });
+        }
+      }
+    } else if (data.type === 'reveal_votes') {
+      // Host ends voting and publishes every target. In open mode counts were
+      // already visible, so this just locks further votes; in closed mode it
+      // uncovers who voted for whom.
+      const { questionId } = data.data;
+      if (!game.revealedVotes.has(questionId)) {
+        game.revealedVotes.add(questionId);
+        const questionVotes = game.votes.get(questionId) || new Map();
+        game.broadcast({
+          type: 'votes_revealed',
+          data: { questionId, votes: Object.fromEntries(questionVotes) }
         });
       }
     } else if (data.type === 'request_selected_questions') {

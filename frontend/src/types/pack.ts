@@ -39,6 +39,8 @@ export interface Question {
   curve?: RevealCurve;
   /** Crocodile scoring mode: 'fastest' (only the quickest correct guesser scores) or 'dixit' (everyone submits a text guess and anyone can score) */
   crocodile_mode?: 'fastest' | 'dixit';
+  /** Voting visibility: 'open' (everyone sees votes live) or 'closed' (hidden until the host reveals) */
+  vote_mode?: 'open' | 'closed';
 }
 
 export interface ChoiceOption {
@@ -84,7 +86,8 @@ export enum QuestionType {
   Choice = 'choice',
   TextAnswer = 'text-answer',
   ProgressiveReveal = 'progressive-reveal',
-  Crocodile = 'crocodile'
+  Crocodile = 'crocodile',
+  Voting = 'voting'
 }
 
 export enum RuleType {

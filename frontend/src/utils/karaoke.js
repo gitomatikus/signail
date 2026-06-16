@@ -19,9 +19,15 @@
 
 const RECORDER_MIME = "audio/webm;codecs=opus";
 const CHUNK_MS = 250;
-// Playback may fall behind the live edge after a stall; beyond this we jump
-const MAX_LIVE_LAG_S = 2.5;
-const LIVE_EDGE_OFFSET_S = 0.4;
+// Listener playback keeps a buffer cushion so network jitter doesn't underrun
+// the element into chunk-by-chunk stutter. Being a second or two behind the
+// live edge is fine; choppy audio is not - smoothness wins over latency here.
+const START_BUFFER_S = 1.5; // build this much before (re)starting playback
+// Playback may fall behind the live edge after a stall; beyond this we jump.
+// Generous, because the jump itself is an audible seek - we'd rather sit a few
+// seconds late than snap to the edge often.
+const MAX_LIVE_LAG_S = 5;
+const LIVE_EDGE_OFFSET_S = 1.5; // where the catch-up jump lands (== cushion)
 // Voice-vs-track alignment inside the mix (see Singer side below)
 const MAX_VOICE_SYNC_S = 1.5;
 const FALLBACK_MIC_LATENCY_S = 0.08;
@@ -1132,6 +1138,11 @@ export const createListenerPlayer = ({ audioEl, onAutoplayBlocked }) => {
   const pending = new Map(); // seq -> bytes, waiting for their turn
   let lastChunkT = null; // track position at the end of the last appended chunk
   let appendedAny = false;
+  // Hold playback until START_BUFFER_S is buffered ahead of the playhead, so a
+  // fresh stream (and every recovery from an underrun) starts with a cushion
+  // instead of riding the live edge. Starts true: the first chunk alone is not
+  // enough to begin on.
+  let rebuffering = true;
 
   const bufferedEnd = () => {
     try {
@@ -1142,8 +1153,17 @@ export const createListenerPlayer = ({ audioEl, onAutoplayBlocked }) => {
     }
   };
 
+  const bufferedAhead = () => Math.max(0, bufferedEnd() - audioEl.currentTime);
+
   const tryPlay = () => {
-    if (!audioEl.paused || destroyed) return;
+    if (destroyed) return;
+    // Wait for the cushion before (re)starting. Once finalized there's no more
+    // audio coming, so drain whatever we have rather than stalling forever.
+    if (rebuffering) {
+      if (!finalized && bufferedAhead() < START_BUFFER_S) return;
+      rebuffering = false;
+    }
+    if (!audioEl.paused) return;
     const playResult = audioEl.play();
     if (playResult && playResult.catch) {
       playResult.catch(() => {
@@ -1153,6 +1173,19 @@ export const createListenerPlayer = ({ audioEl, onAutoplayBlocked }) => {
       });
     }
   };
+
+  // Native underrun: the element ran out of buffered data. Take control by
+  // pausing (otherwise it auto-resumes the instant one frame lands and stutters
+  // chunk-by-chunk at the edge) and rebuild the cushion before resuming.
+  audioEl.addEventListener("waiting", () => {
+    if (destroyed || finalized || rebuffering) return;
+    rebuffering = true;
+    try {
+      audioEl.pause();
+    } catch (e) {
+      /* tearing down */
+    }
+  });
 
   const pump = () => {
     if (destroyed || !sourceBuffer || sourceBuffer.updating) return;
@@ -1215,9 +1248,12 @@ export const createListenerPlayer = ({ audioEl, onAutoplayBlocked }) => {
       }
       pump();
     },
-    // The performance ended: let playback drain the buffer and stop naturally
+    // The performance ended: let playback drain the buffer and stop naturally.
+    // tryPlay too, so a stream still waiting on its startup cushion plays out
+    // the tail instead of sitting paused forever.
     finalize: () => {
       finalized = true;
+      tryPlay();
       pump();
     },
     resume: () => tryPlay(),

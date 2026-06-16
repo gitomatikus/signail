@@ -241,12 +241,17 @@ app.get('/api/games/:gameId/questions/:questionId/answers', (req, res) => {
   const questionId = parseInt(req.params.questionId);
   const requesterId = req.query.userId;
   const info = game.getNumberAnswersInfo(questionId);
+  const type = game.getQuestionType(questionId);
   // Choice picks are not masked: the admin shows them in real time
   // (the player UI still hides other players' picks until the reveal)
-  const isChoice = game.getQuestionType(questionId) === 'choice';
+  const isChoice = type === 'choice';
+  // Voting answers are unmasked for the host (so a refresh restores the live
+  // view) but stay masked for players until the reveal
+  const hostToken = req.headers['x-host-token'] || req.query.hostToken;
+  const votingHostView = type === 'voting' && !!hostToken && hostToken === game.hostToken;
   const answers = {};
   for (const [userId, value] of info.answers) {
-    answers[userId] = info.revealed || isChoice || userId === requesterId ? value : true;
+    answers[userId] = info.revealed || isChoice || votingHostView || userId === requesterId ? value : true;
   }
   res.json({
     status: 'success',
@@ -264,6 +269,25 @@ app.get('/api/games/:gameId/questions/:questionId/crocodile', (req, res) => {
   const game = requireGame(req, res);
   if (!game) return;
   res.json({ status: 'success', data: game.getCrocodileInfo(parseInt(req.params.questionId)) });
+});
+
+// Voting state for a question. Vote targets are masked (as `true`) in closed
+// mode until revealed; pass ?userId= to still get your own vote back after a
+// refresh. Open mode always returns targets.
+app.get('/api/games/:gameId/questions/:questionId/votes', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  const requesterId = req.query.userId;
+  const info = game.getVotesInfo(parseInt(req.params.questionId));
+  const open = info.voteMode === 'open';
+  const votes = {};
+  for (const [voterId, targetUserId] of info.votes) {
+    votes[voterId] = info.revealed || open || voterId === requesterId ? targetUserId : true;
+  }
+  res.json({
+    status: 'success',
+    data: { revealed: info.revealed, voteMode: info.voteMode, votes }
+  });
 });
 
 app.get('/api/games/:gameId/last-green-frame', (req, res) => {

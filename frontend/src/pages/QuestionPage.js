@@ -12,6 +12,7 @@ import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
 import { getHostLayout, HOST_LAYOUT_EVENT } from '../utils/hostLayout';
 import { isAutoSubmitSingleChoice } from '../utils/answerSettings';
+import { getHostToken } from '../services/gameAuth';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
 
@@ -112,7 +113,7 @@ const isAudioOnlyContent = (html) => {
 // Question types where every player answers independently and several can
 // score: one player's answer (or the admin scoring it) must not stop
 // question media for everyone else
-const MULTI_WINNER_TYPES = ['close-enough', 'choice', 'text-answer', 'find-a-cat'];
+const MULTI_WINNER_TYPES = ['close-enough', 'choice', 'text-answer', 'find-a-cat', 'voting'];
 
 // Audio/video that belongs to the question content itself (not avatars etc.)
 const getQuestionMedia = () =>
@@ -168,6 +169,10 @@ const QuestionPage = () => {
   const [clicksLeftMap, setClicksLeftMap] = useState({});
   const [numberAnswers, setNumberAnswers] = useState({});
   const [answersRevealed, setAnswersRevealed] = useState(false);
+  // Voting: voterId -> targetUserId (or `true` in closed mode before reveal,
+  // meaning "this player voted but the target is still hidden")
+  const [votes, setVotes] = useState({});
+  const [votesRevealed, setVotesRevealed] = useState(false);
   const [answerInput, setAnswerInput] = useState('');
   const [selectedOptions, setSelectedOptions] = useState(new Set());
   const [lightboxImage, setLightboxImage] = useState(null);
@@ -206,6 +211,8 @@ const QuestionPage = () => {
     setClicksLeftMap({}); // Click budgets are per-question; drop stale entries
     setNumberAnswers({});
     setAnswersRevealed(false);
+    setVotes({});
+    setVotesRevealed(false);
     setAnswerInput('');
     setSelectedOptions(new Set());
     setCrocodileSelectorId(null);
@@ -274,13 +281,30 @@ const QuestionPage = () => {
     // answers, crocodile dixit guesses), restore submissions (masked until
     // reveal; own value included). Crocodile "fastest" mode stores no answers,
     // so the fetch just comes back empty there.
-    if (['close-enough', 'choice', 'text-answer', 'crocodile'].includes(question.type)) {
+    if (['close-enough', 'choice', 'text-answer', 'crocodile', 'voting'].includes(question.type)) {
       const storedUser = localStorage.getItem('user');
       const myId = storedUser ? JSON.parse(storedUser).id : null;
-      const query = myId ? `?userId=${encodeURIComponent(myId)}` : '';
+      const params = new URLSearchParams();
+      if (myId) params.set('userId', myId);
+      // The host token unmasks voting answers so a host refresh keeps the live view
+      const ht = getHostToken(gameId);
+      if (ht) params.set('hostToken', ht);
+      const query = params.toString() ? `?${params.toString()}` : '';
       hydrate(`/answers${query}`, (data) => {
         setNumberAnswers(prev => ({ ...(data.answers || {}), ...prev }));
         setAnswersRevealed(prev => prev || !!data.revealed);
+      });
+    }
+
+    // For voting, restore who voted for whom (targets masked in closed mode
+    // until revealed; own vote always included)
+    if (question.type === 'voting') {
+      const storedUser = localStorage.getItem('user');
+      const myId = storedUser ? JSON.parse(storedUser).id : null;
+      const query = myId ? `?userId=${encodeURIComponent(myId)}` : '';
+      hydrate(`/votes${query}`, (data) => {
+        setVotes(prev => ({ ...(data.votes || {}), ...prev }));
+        setVotesRevealed(prev => prev || !!data.revealed);
       });
     }
 
@@ -413,6 +437,21 @@ const QuestionPage = () => {
       } else if (data.type === 'number_answers' && data.data.questionId === parseInt(questionId)) {
         setNumberAnswers(prev => ({ ...prev, ...data.data.answers }));
         setAnswersRevealed(true);
+      } else if (data.type === 'vote_cast' && data.data.questionId === parseInt(questionId)) {
+        // Another player voted. Open mode carries the target; closed mode only
+        // tells us they voted (stored as `true`). Our own vote is tracked
+        // optimistically, so ignore the echo. First write wins (votes are final).
+        const { voterId, targetUserId } = data.data;
+        if (voterId !== currentUserId) {
+          setVotes(prev => (
+            prev[voterId] !== undefined
+              ? prev
+              : { ...prev, [voterId]: targetUserId !== undefined ? targetUserId : true }
+          ));
+        }
+      } else if (data.type === 'votes_revealed' && data.data.questionId === parseInt(questionId)) {
+        setVotes(prev => ({ ...prev, ...data.data.votes }));
+        setVotesRevealed(true);
       } else if (data.type === 'admin_clicked_red_number') {
         // Progressive reveal: a judged-wrong buzz no longer pauses the reveal
         setRedJudgedUsers(prev => new Set([...prev, data.data.userId]));
@@ -458,6 +497,8 @@ const QuestionPage = () => {
         setClicksLeftMap({});
         setNumberAnswers({});
         setAnswersRevealed(false);
+        setVotes({});
+        setVotesRevealed(false);
         setAnswerInput('');
         setSelectedOptions(new Set());
         setRedJudgedUsers(new Set());
@@ -633,6 +674,10 @@ const QuestionPage = () => {
       // Guess countdown, only relevant once the response is shown
       return question.duration || 30;
     }
+    if (question.type === 'voting') {
+      // Answer-writing window; informational, the host reveals when ready
+      return question.duration || 60;
+    }
     if (question.type === 'karaoke') {
       // Placeholder while the singer gets ready; karaoke_start resets the
       // countdown to the actual track length
@@ -678,7 +723,7 @@ const QuestionPage = () => {
   // Add keyboard event listener for space and right arrow
   useEffect(() => {
     const handleKeyPress = (event) => {
-      if (['find-a-cat', 'close-enough', 'choice', 'text-answer', 'karaoke'].includes(question?.type)) {
+      if (['find-a-cat', 'close-enough', 'choice', 'text-answer', 'karaoke', 'voting'].includes(question?.type)) {
         return; // These types answer by clicking/typing/singing, not by racing on the spacebar
       }
       if (event.code !== 'Space' && event.code !== 'ArrowRight') {
@@ -768,9 +813,9 @@ const QuestionPage = () => {
     if (isAdmin && question) {
       wsManager.sendQuestionReveal(question.id);
       setIsQuestionRevealed(true);
-      // find-a-cat and crocodile reveal the answer in a separate step; every
-      // other type shows question + answer together
-      if (question.type !== 'find-a-cat' && question.type !== 'crocodile') {
+      // find-a-cat, crocodile and voting reveal the answer(s) in a separate
+      // step; every other type shows question + answer together
+      if (question.type !== 'find-a-cat' && question.type !== 'crocodile' && question.type !== 'voting') {
         setIsAnswerRevealed(true);
         setShowAfterRound(true);
         setCurrentAfterRoundIndex(0);
@@ -1617,6 +1662,196 @@ const QuestionPage = () => {
     );
   };
 
+  // Voting: submit an answer (text/image/audio). Unlike text-answer this
+  // records no buzz time — there is no race, everyone answers, then votes.
+  const handleSubmitVotingAnswer = (value) => {
+    if (!currentUserId || !value) {
+      return;
+    }
+    if (answersRevealed || numberAnswers[currentUserId] !== undefined) {
+      return;
+    }
+    setNumberAnswers(prev => ({ ...prev, [currentUserId]: value }));
+    wsManager.sendNumberAnswer(parseInt(questionId), currentUserId, value);
+  };
+
+  // Cast a final vote for another player's answer
+  const handleCastVote = (targetUserId) => {
+    if (!currentUserId || targetUserId === currentUserId || votesRevealed) {
+      return;
+    }
+    const myVote = votes[currentUserId];
+    if (myVote !== undefined && myVote !== true) {
+      return; // one vote, final
+    }
+    setVotes(prev => ({ ...prev, [currentUserId]: targetUserId })); // optimistic
+    wsManager.sendCastVote(parseInt(questionId), currentUserId, targetUserId);
+  };
+
+  const renderVotingContent = () => {
+    const voteMode = question.vote_mode === 'closed' ? 'closed' : 'open';
+    const myAnswer = currentUserId ? numberAnswers[currentUserId] : undefined;
+    const hasSubmitted = myAnswer !== undefined;
+    const myVote = currentUserId ? votes[currentUserId] : undefined;
+    const hasVoted = myVote !== undefined && myVote !== true;
+    // Open voting shows tallies live; closed voting hides them (from everyone,
+    // host included) until the host reveals. Counts are only meaningful once
+    // voting is open (answers revealed).
+    const showVoteCounts = answersRevealed && (voteMode === 'open' || votesRevealed);
+
+    const voteCounts = {};
+    if (showVoteCounts) {
+      Object.values(votes).forEach(target => {
+        if (typeof target === 'string') {
+          voteCounts[target] = (voteCounts[target] || 0) + 1;
+        }
+      });
+    }
+    const maxVotes = showVoteCounts
+      ? Object.values(voteCounts).reduce((m, n) => Math.max(m, n), 0)
+      : 0;
+
+    // Only real submissions render a card; masked entries are `true`. The host
+    // gets unmasked answers live, so its grid fills in during collection too.
+    const answerEntries = Object.entries(numberAnswers).filter(([, v]) => v !== undefined && v !== true);
+
+    const renderAnswerCard = (uid, val) => {
+      const author = onlineUsers.find(u => u.id === uid);
+      const isOwn = uid === currentUserId;
+      const count = voteCounts[uid] || 0;
+      const votedForThis = hasVoted && myVote === uid;
+      const canVote = !isAdmin && answersRevealed && !votesRevealed && !hasVoted && !isOwn;
+      const isWinner = showVoteCounts && count > 0 && count === maxVotes;
+
+      return (
+        <div
+          key={uid}
+          onClick={canVote ? () => handleCastVote(uid) : undefined}
+          style={{
+            ...cardStyle,
+            minHeight: 'auto',
+            padding: '1rem',
+            gap: '0.75rem',
+            cursor: canVote ? 'pointer' : 'default',
+            border: votedForThis
+              ? '2px solid var(--primary)'
+              : isWinner
+                ? '2px solid #fbbf24'
+                : '1px solid var(--glass-border)',
+            boxShadow: votedForThis
+              ? '0 0 16px var(--primary-glow)'
+              : isWinner
+                ? '0 0 16px rgba(251, 191, 36, 0.4)'
+                : 'var(--glass-shadow)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', alignSelf: 'stretch' }}>
+            {author && (author.imageUrl && author.imageUrl.toLowerCase().endsWith('.mp4') ? (
+              <video src={author.imageUrl} style={{ width: '36px', height: '36px', borderRadius: '10px', objectFit: 'cover' }} autoPlay loop muted playsInline />
+            ) : (
+              <img src={author.imageUrl} alt={author.name} style={{ width: '36px', height: '36px', borderRadius: '10px', objectFit: 'cover' }} />
+            ))}
+            <span style={{ fontSize: '1rem', fontWeight: '600', flex: 1, minWidth: 0, textAlign: 'left', wordBreak: 'break-word' }}>
+              {author ? author.name : '—'}{isOwn ? ` (${t('users.you')})` : ''}
+            </span>
+            {showVoteCounts && (
+              <span style={{
+                fontSize: '0.95rem',
+                fontWeight: '700',
+                color: isWinner ? '#fbbf24' : 'var(--accent)',
+                whiteSpace: 'nowrap'
+              }}>
+                🗳 {count}
+              </span>
+            )}
+          </div>
+          {renderAnswerValue(val, { imgMaxWidth: 240, imgMaxHeight: 180, audioWidth: 240 })}
+          {canVote && (
+            <button className="btn-primary" style={{ ...buttonStyle, padding: '0.5rem 1.25rem' }}>
+              {t('question.voteButton')}
+            </button>
+          )}
+          {votedForThis && (
+            <div style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--primary)' }}>
+              {t('question.yourVote')}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const answersGrid = (
+      <div className="voting-answers-grid" style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+        gap: '1rem'
+      }}>
+        {answerEntries.map(([uid, val]) => renderAnswerCard(uid, val))}
+      </div>
+    );
+
+    // PHASE 1: collecting answers
+    if (!answersRevealed) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {renderNormalContent()}
+          {!isAdmin && (
+            <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+              {hasSubmitted ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
+                  {renderAnswerValue(myAnswer)}
+                </div>
+              ) : (
+                <AnswerComposer
+                  key={`voting-${questionId}`}
+                  onSubmit={handleSubmitVotingAnswer}
+                  onPreviewImage={setLightboxImage}
+                  submitLabel={t('question.submitAnswer')}
+                  buttonStyle={buttonStyle}
+                />
+              )}
+            </div>
+          )}
+          {/* The host watches answers arrive in real time */}
+          {isAdmin && (answerEntries.length > 0 ? (
+            <>
+              <div style={{ ...themeHeaderStyle, color: 'var(--accent)', textShadow: '0 0 20px var(--accent-glow)' }}>
+                {t('question.votingAnswersSoFar', { count: answerEntries.length })}
+              </div>
+              {answersGrid}
+            </>
+          ) : (
+            <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem', color: 'var(--text-secondary)' }}>
+              {t('question.votingWaitingAnswers')}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // PHASE 2: answers revealed — everyone votes / sees results
+    const statusText = votesRevealed
+      ? t('question.votingClosed')
+      : hasVoted
+        ? t('question.yourVote')
+        : isAdmin
+          ? t('question.votingInProgress')
+          : !showVoteCounts && voteMode === 'closed'
+            ? t('question.votingClosedHint')
+            : t('question.votingInstructions');
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {renderNormalContent()}
+        <div style={{ ...themeHeaderStyle, color: 'var(--accent)', textShadow: '0 0 20px var(--accent-glow)' }}>
+          {statusText}
+        </div>
+        {answersGrid}
+      </div>
+    );
+  };
+
   const handleCrocodileAssign = (targetUserId) => {
     if (crocodileTargetId) {
       return;
@@ -2004,6 +2239,9 @@ const QuestionPage = () => {
     if (question.type === 'crocodile') {
       return renderCrocodileContent();
     }
+    if (question.type === 'voting') {
+      return renderVotingContent();
+    }
     return renderNormalContent();
   };
 
@@ -2315,7 +2553,7 @@ const QuestionPage = () => {
             {t('question.showQuestion')}
           </button>
         )}
-        {isAdmin && isQuestionRevealed && !isAnswerRevealed && (
+        {isAdmin && isQuestionRevealed && !isAnswerRevealed && question.type !== 'voting' && (
           <button
             onClick={handleShowAnswer}
             className="btn-primary"
@@ -2326,7 +2564,7 @@ const QuestionPage = () => {
         )}
         {/* Choice has no "Show Result": the admin sees picks in real time */}
         {isAdmin && !answersRevealed && (
-          (['close-enough', 'text-answer'].includes(question.type) && isQuestionRevealed) ||
+          (['close-enough', 'text-answer', 'voting'].includes(question.type) && isQuestionRevealed) ||
           // Crocodile dixit collects text guesses once the performer responds
           (question.type === 'crocodile' && (question.crocodile_mode || 'fastest') === 'dixit' && crocodileResponse)
         ) && (
@@ -2335,7 +2573,17 @@ const QuestionPage = () => {
             className="btn-primary"
             style={buttonStyle}
           >
-            {t('question.showResult')}
+            {question.type === 'voting' ? t('question.showAnswers') : t('question.showResult')}
+          </button>
+        )}
+        {/* Voting: once answers are out and votes are in, lock/reveal them */}
+        {isAdmin && question.type === 'voting' && answersRevealed && !votesRevealed && (
+          <button
+            onClick={() => wsManager.sendRevealVotes(parseInt(questionId))}
+            className="btn-primary"
+            style={buttonStyle}
+          >
+            {t('question.revealVotes')}
           </button>
         )}
         {isAdmin && isAnswerRevealed && !isResponseRevealed && (
@@ -2384,6 +2632,8 @@ const QuestionPage = () => {
           numberAnswers={numberAnswers}
           answersRevealed={answersRevealed}
           responseRevealed={isResponseRevealed}
+          votes={votes}
+          votesRevealed={votesRevealed}
         />
       </div>
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} isAdmin={isAdmin} />}

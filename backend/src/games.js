@@ -47,6 +47,15 @@ class Game {
     // Crocodile: one chosen player privately sees the question and submits a
     // text/image/audio response; everyone else then guesses by buzzing.
     this.crocodile = new Map();
+    // Voting: everyone submits an answer (reusing questionAnswers), the host
+    // reveals them, then each player casts one final vote for someone else's
+    // answer. questionId -> Map(voterId -> targetUserId).
+    this.votes = new Map();
+    this.revealedVotes = new Set();
+    // questionId -> 'open' | 'closed'. Open shows vote targets live to
+    // everyone; closed hides them (from everyone, host included) until the
+    // host reveals. Indexed from the pack alongside questionTypes.
+    this.questionVoteModes = new Map();
     this.lastGreenFrameUser = null;
   }
 
@@ -127,6 +136,8 @@ class Game {
     this.secretAssignments.clear();
     this.karaoke.clear();
     this.crocodile.clear();
+    this.votes.clear();
+    this.revealedVotes.clear();
     this.questionClicks.clear();
     this.questionAnswers.clear();
     this.revealedAnswers.clear();
@@ -176,6 +187,18 @@ class Game {
     return {
       revealed: this.revealedAnswers.has(questionId),
       answers: this.questionAnswers.get(questionId) || new Map()
+    };
+  }
+
+  getVoteMode(questionId) {
+    return this.questionVoteModes.get(questionId) === 'closed' ? 'closed' : 'open';
+  }
+
+  getVotesInfo(questionId) {
+    return {
+      revealed: this.revealedVotes.has(questionId),
+      voteMode: this.getVoteMode(questionId),
+      votes: this.votes.get(questionId) || new Map()
     };
   }
 }
@@ -249,16 +272,21 @@ class GameManager {
       throw new Error('Pack must be an object with a rounds array');
     }
     const types = new Map();
+    const voteModes = new Map();
     for (const round of pack.rounds) {
       for (const theme of round.themes || []) {
         for (const q of theme.questions || []) {
           if (q && q.id !== undefined) {
             types.set(q.id, q.type || 'normal');
+            if (q.type === 'voting') {
+              voteModes.set(q.id, q.vote_mode === 'closed' ? 'closed' : 'open');
+            }
           }
         }
       }
     }
     game.questionTypes = types;
+    game.questionVoteModes = voteModes;
     game.packName = typeof pack.name === 'string' ? pack.name : 'Unnamed pack';
     game.packAuthor = typeof pack.author === 'string' ? pack.author : '';
     try {

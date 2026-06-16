@@ -6,7 +6,7 @@ import { useGame } from '../contexts/GameContext';
 import { HIDE_HOST_KEY, HIDE_HOST_EVENT } from '../utils/hostVisibility';
 import { useTranslation } from '../i18n/LanguageContext';
 
-const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, secretTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false }) => {
+const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, secretTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false }) => {
   const location = useLocation();
   const { t } = useTranslation();
   const isQuestionPage = location.pathname.includes('/question/');
@@ -80,6 +80,23 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
   // Dixit guesses are submitted as text answers, so they surface just like a
   // text-answer question once the host reveals them
   const isCrocodileDixit = isCrocodileQuestion && crocodileMode === 'dixit';
+
+  // Voting: tally votes per author. Open mode shows counts live; closed mode
+  // keeps them hidden (host included) until the host reveals.
+  const isVotingQuestion = question?.type === 'voting';
+  const voteMode = question?.vote_mode === 'closed' ? 'closed' : 'open';
+  const showVoteCounts = isVotingQuestion && (voteMode === 'open' || votesRevealed);
+  const votesReceived = {};
+  if (showVoteCounts) {
+    Object.values(votes).forEach(target => {
+      if (typeof target === 'string') {
+        votesReceived[target] = (votesReceived[target] || 0) + 1;
+      }
+    });
+  }
+  const maxVotesReceived = showVoteCounts
+    ? Object.values(votesReceived).reduce((m, n) => Math.max(m, n), 0)
+    : 0;
 
   // Close-enough: once numbers are revealed, find who came closest to the answer
   let closestIds = [];
@@ -206,9 +223,15 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                           : isCrocodileDixit
                             ? (answersRevealed && numberAnswers[user.id] !== undefined)
                             : position === 0)
-                      : position === 0
+                      : isVotingQuestion
+                        // Host hands out +/- to everyone once answers are out
+                        ? answersRevealed
+                        : position === 0
         );
         const submittedAnswer = numberAnswers[user.id];
+        // Voting: how many votes this player's answer received (only when visible)
+        const voteCountForUser = showVoteCounts ? (votesReceived[user.id] || 0) : null;
+        const isVoteWinner = showVoteCounts && voteCountForUser > 0 && voteCountForUser === maxVotesReceived;
         const answerBadge = isCloseEnoughQuestion && submittedAnswer !== undefined
           ? (typeof submittedAnswer === 'number' ? submittedAnswer : '✓')
           : null;
@@ -283,6 +306,14 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             };
           }
 
+          // Voting winner: the most-voted answer (once counts are visible)
+          if (isVoteWinner) {
+            return {
+              border: '3px solid #fbbf24',
+              boxShadow: '0 0 25px rgba(251, 191, 36, 0.6)'
+            };
+          }
+
           if (!isTopThree) {
             if (userTime === null) {
               return {
@@ -348,6 +379,27 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                 boxShadow: '0 4px 12px var(--primary-glow)'
               }}>
                 {typeof userTime === 'number' ? userTime.toFixed(3) : userTime}s
+              </div>
+            )}
+
+            {/* Voting: votes received, shown once counts are visible */}
+            {voteCountForUser !== null && (
+              <div style={{
+                position: 'absolute',
+                top: -20,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                background: isVoteWinner ? '#fbbf24' : 'var(--primary)',
+                color: isVoteWinner ? '#3a2a00' : 'var(--on-primary)',
+                padding: '4px 12px',
+                borderRadius: '9999px',
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                zIndex: 10,
+                whiteSpace: 'nowrap',
+                boxShadow: '0 4px 12px var(--primary-glow)'
+              }}>
+                🗳 {voteCountForUser}
               </div>
             )}
 

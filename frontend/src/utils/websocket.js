@@ -160,6 +160,14 @@ class WebSocketManager {
     this.send({ type: 'crocodile_response', data: { questionId, value } });
   }
 
+  sendCastVote(questionId, voterId, targetUserId) {
+    this.send({ type: 'cast_vote', data: { questionId, voterId, targetUserId } });
+  }
+
+  sendRevealVotes(questionId) {
+    this.send({ type: 'reveal_votes', data: { questionId } });
+  }
+
   sendClearSelectedQuestions() {
     this.send({ type: 'clear_selected_questions' });
   }
