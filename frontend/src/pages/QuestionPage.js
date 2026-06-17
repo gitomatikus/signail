@@ -15,6 +15,15 @@ import { isAutoSubmitSingleChoice } from '../utils/answerSettings';
 import { getHostToken } from '../services/gameAuth';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
+import {
+  normalizeQuestion,
+  responseMethod,
+  allowsSelfPick,
+  usesSecretSelection,
+  isExclusiveSelection,
+  isMultiWinner,
+  usesNumberAnswers,
+} from '../utils/questionModel';
 
 // Sanitize HTML content to allow only safe tags and attributes
 const sanitizeHtml = (html) => {
@@ -110,11 +119,6 @@ const isAudioOnlyContent = (html) => {
   return !(doc.body.textContent || '').trim();
 };
 
-// Question types where every player answers independently and several can
-// score: one player's answer (or the admin scoring it) must not stop
-// question media for everyone else
-const MULTI_WINNER_TYPES = ['close-enough', 'choice', 'text-answer', 'find-a-cat', 'voting'];
-
 // Audio/video that belongs to the question content itself (not avatars etc.)
 const getQuestionMedia = () =>
   Array.from(document.querySelectorAll('.question-content audio, .question-content video'));
@@ -140,7 +144,8 @@ const QuestionPage = () => {
     for (let r = 0; r < (pack?.rounds.length || 0); r++) {
       for (const theme of pack.rounds[r].themes) {
         const q = theme.questions.find(item => item.id === qid);
-        if (q) return { question: q, themeName: theme.name || '', roundIndex: r };
+        // Normalize legacy types (secret / text-answer) to base type + options
+        if (q) return { question: normalizeQuestion(q), themeName: theme.name || '', roundIndex: r };
       }
     }
     return { question: null, themeName: '', roundIndex: null };
@@ -253,8 +258,9 @@ const QuestionPage = () => {
       }
     };
 
-    // For cat-in-the-bag, restore who selected it and who answers it (survives refresh)
-    if (question.type === 'secret') {
+    // For user-selection questions (cat-in-the-bag and friends), restore who
+    // selected it and who was chosen (survives refresh)
+    if (usesSecretSelection(question)) {
       hydrate('/secret', (data) => {
         setSecretSelectorId(prev => prev || data.selectorId || null);
         setSecretTargetId(prev => prev || data.assignment?.targetUserId || null);
@@ -281,7 +287,7 @@ const QuestionPage = () => {
     // answers, crocodile dixit guesses), restore submissions (masked until
     // reveal; own value included). Crocodile "fastest" mode stores no answers,
     // so the fetch just comes back empty there.
-    if (['close-enough', 'choice', 'text-answer', 'crocodile', 'voting'].includes(question.type)) {
+    if (usesNumberAnswers(question)) {
       const storedUser = localStorage.getItem('user');
       const myId = storedUser ? JSON.parse(storedUser).id : null;
       const params = new URLSearchParams();
@@ -463,7 +469,7 @@ const QuestionPage = () => {
         // A correct answer stops question media for everyone (the admin can
         // still resume playback manually) — except in multi-winner types,
         // where other players may still be answering
-        if (!MULTI_WINNER_TYPES.includes(question?.type)) {
+        if (!isMultiWinner(question)) {
           adminPausedMediaRef.current = true;
           autoPausedMediaRef.current.clear();
           getQuestionMedia().forEach((el) => {
@@ -515,9 +521,9 @@ const QuestionPage = () => {
 
   useEffect(() => {
     if (!question) return;
-    // For cat-in-the-bag, rules don't advance until a player is chosen
-    // and (for players) the admin has shown the question
-    if (question.type === 'secret' && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) return;
+    // For exclusive selection (cat-in-the-bag), rules don't advance until a
+    // player is chosen and (for players) the admin has shown the question
+    if (isExclusiveSelection(question) && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) return;
 
     if (showAfterRound) {
       const afterRoundRules = question.after_round || [];
@@ -549,9 +555,9 @@ const QuestionPage = () => {
   }, [question, currentRuleIndex, currentAfterRoundIndex, showAfterRound, secretTargetId, isAdmin, isQuestionRevealed]);
 
   useEffect(() => {
-    // For cat-in-the-bag, the countdown waits until a player is chosen
-    // and (for players) the admin has shown the question
-    if (question?.type === 'secret' && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
+    // For exclusive selection (cat-in-the-bag), the countdown waits until a
+    // player is chosen and (for players) the admin has shown the question
+    if (isExclusiveSelection(question) && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
       return;
     }
     // Crocodile: the guess countdown only runs once the performer's response
@@ -586,7 +592,7 @@ const QuestionPage = () => {
   useEffect(() => {
     // Multi-winner types have no buzz race: a recorded answer time there
     // only marks a submission and must not pause media for everyone
-    if (MULTI_WINNER_TYPES.includes(question?.type)) {
+    if (isMultiWinner(question)) {
       return;
     }
     const buzzPending = Object.keys(userTimes).some(uid => !redJudgedUsers.has(uid));
@@ -723,8 +729,8 @@ const QuestionPage = () => {
   // Add keyboard event listener for space and right arrow
   useEffect(() => {
     const handleKeyPress = (event) => {
-      if (['find-a-cat', 'close-enough', 'choice', 'text-answer', 'karaoke', 'voting'].includes(question?.type)) {
-        return; // These types answer by clicking/typing/singing, not by racing on the spacebar
+      if (responseMethod(question) !== 'buzz') {
+        return; // These answer by clicking/typing/singing, not by racing on the spacebar
       }
       if (event.code !== 'Space' && event.code !== 'ArrowRight') {
         return;
@@ -739,8 +745,8 @@ const QuestionPage = () => {
       }
       // Space pages the window down by default; buzzing must not scroll
       event.preventDefault();
-      if (question?.type === 'secret') {
-        // Only the chosen player can answer a cat-in-the-bag question,
+      if (isExclusiveSelection(question)) {
+        // Only the chosen player can answer an exclusive-selection question,
         // and only after the admin has shown the question
         if (!secretTargetId || (!isAdmin && (currentUserId !== secretTargetId || !isQuestionRevealed))) {
           return;
@@ -784,7 +790,7 @@ const QuestionPage = () => {
     if (!question) {
       return;
     }
-    if (question.type === 'secret' && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
+    if (isExclusiveSelection(question) && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
       return;
     }
     // Crocodile: the buzz clock starts only once the performer's response is in
@@ -840,7 +846,7 @@ const QuestionPage = () => {
       // For choice the admin already sees picks live, so there is no separate
       // "Show Result" step: revealing the response also publishes everyone's
       // picks to the players and stops further submissions
-      if (question.type === 'choice' && !answersRevealed) {
+      if (responseMethod(question) === 'choice' && question.type !== 'crocodile' && !answersRevealed) {
         wsManager.sendRevealNumberAnswers(parseInt(questionId));
       }
       wsManager.sendResponseReveal(question.id);
@@ -1245,13 +1251,24 @@ const QuestionPage = () => {
     wsManager.sendSecretAssign(parseInt(questionId), targetUserId, secretSelectorId);
   };
 
-  const renderSecretContent = () => {
+  // Selection gate shared by normal / reveal / choice / find-a-cat when the
+  // "user selection" option is on. `renderCore` renders the underlying question
+  // content for the chosen base type.
+  //  - exclusive (buzz types): only the chosen player answers; others wait for
+  //    the admin to reveal, mirroring classic cat-in-the-bag.
+  //  - inclusive (parallel types: choice / find-a-cat): everyone plays the
+  //    question, but only the chosen player can score (enforced in OnlineUsers).
+  const renderSelectionGate = (renderCore) => {
+    const exclusive = isExclusiveSelection(question);
+    const selfPick = allowsSelfPick(question);
     const targetUser = onlineUsers.find(u => u.id === secretTargetId);
     const selectorUser = onlineUsers.find(u => u.id === secretSelectorId);
     // The selector picks who answers; admin can always assign as a host override
     const canAssign = isAdmin || (currentUserId && currentUserId === secretSelectorId);
 
     if (!secretTargetId) {
+      // The selector is excluded from the candidates unless self-pick is allowed
+      const candidates = onlineUsers.filter(u => selfPick || u.id !== secretSelectorId);
       const pendingPanel = (
         <div style={cardStyle}>
           <div style={{ fontSize: '4rem', marginBottom: '0.5rem' }}>🐱</div>
@@ -1267,50 +1284,7 @@ const QuestionPage = () => {
           </div>
           {/* Everyone sees the candidates; only the selector and admin can click */}
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-            {onlineUsers.filter(u => u.id !== secretSelectorId).map(u => (
-              <div
-                key={u.id}
-                onClick={canAssign ? () => handleSecretAssign(u.id) : undefined}
-                style={{
-                  cursor: canAssign ? 'pointer' : 'default',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '0.75rem',
-                  borderRadius: '12px',
-                  border: '1px solid var(--glass-border)',
-                  background: 'var(--bg-dark)',
-                  transition: 'all 0.2s',
-                  width: '110px'
-                }}
-                onMouseEnter={canAssign ? e => {
-                  e.currentTarget.style.border = '1px solid var(--primary)';
-                  e.currentTarget.style.boxShadow = '0 0 16px var(--primary-glow)';
-                } : undefined}
-                onMouseLeave={canAssign ? e => {
-                  e.currentTarget.style.border = '1px solid var(--glass-border)';
-                  e.currentTarget.style.boxShadow = 'none';
-                } : undefined}
-              >
-                {u.imageUrl && u.imageUrl.toLowerCase().endsWith('.mp4') ? (
-                  <video
-                    src={u.imageUrl}
-                    style={{ width: '64px', height: '64px', borderRadius: '16px', objectFit: 'cover' }}
-                    autoPlay loop muted playsInline
-                  />
-                ) : (
-                  <img
-                    src={u.imageUrl}
-                    alt={u.name}
-                    style={{ width: '64px', height: '64px', borderRadius: '16px', objectFit: 'cover' }}
-                  />
-                )}
-                <span style={{ fontSize: '1rem', fontWeight: '600', textAlign: 'center', wordBreak: 'break-word' }}>
-                  {u.name}
-                </span>
-              </div>
-            ))}
+            {candidates.map(u => renderCandidateCard(u, canAssign, handleSecretAssign))}
           </div>
         </div>
       );
@@ -1320,28 +1294,43 @@ const QuestionPage = () => {
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {pendingPanel}
-            {renderNormalContent()}
+            {renderCore()}
           </div>
         );
       }
       return pendingPanel;
     }
 
-    // Player chosen: admins see the question right away, players wait
-    // until the admin presses "Show Question"
+    const header = (
+      <div style={{
+        ...themeHeaderStyle,
+        color: '#ffd600',
+        textShadow: '0 0 20px rgba(255, 214, 0, 0.4)'
+      }}>
+        {t('question.secretAnswering', { name: targetUser ? targetUser.name : '...' })}
+      </div>
+    );
+
+    // Inclusive selection: everyone plays the question immediately; only the
+    // chosen player scores. No per-player reveal gating.
+    if (!exclusive) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {header}
+          {renderCore()}
+        </div>
+      );
+    }
+
+    // Exclusive: admins see the question right away, players wait until the
+    // admin presses "Show Question"
     const showQuestionContent = isAdmin || isQuestionRevealed;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{
-          ...themeHeaderStyle,
-          color: '#ffd600',
-          textShadow: '0 0 20px rgba(255, 214, 0, 0.4)'
-        }}>
-          {t('question.secretAnswering', { name: targetUser ? targetUser.name : '...' })}
-        </div>
+        {header}
         {showQuestionContent ? (
-          renderNormalContent()
+          renderCore()
         ) : (
           <div style={cardStyle}>
             <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)' }}>
@@ -1497,15 +1486,19 @@ const QuestionPage = () => {
     submitChoicePicks([...selectedOptions]);
   };
 
-  const renderChoiceContent = () => {
+  // The clickable options grid + confirm button, with no question above it.
+  // Reused by normal/reveal choice questions and crocodile choice guessers.
+  const renderChoiceOptionsBlock = () => {
     const myPicks = currentUserId ? numberAnswers[currentUserId] : undefined;
     const hasSubmitted = myPicks !== undefined;
     const showCorrect = isAdmin || isResponseRevealed;
+    // In an exclusive-selection question only the chosen player may pick;
+    // everyone else sees the options read-only.
+    const exclusiveLocked = isExclusiveSelection(question) && currentUserId !== secretTargetId;
+    const canPick = !isAdmin && !exclusiveLocked;
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {renderNormalContent()}
-
+      <>
         <div className="choice-options-grid" style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
@@ -1520,7 +1513,7 @@ const QuestionPage = () => {
             return (
               <div
                 key={idx}
-                onClick={() => !isAdmin && handleToggleOption(idx)}
+                onClick={() => canPick && handleToggleOption(idx)}
                 style={{
                   ...cardStyle,
                   minHeight: 'auto',
@@ -1529,7 +1522,7 @@ const QuestionPage = () => {
                   gap: '0.75rem',
                   alignItems: 'flex-start',
                   textAlign: 'left',
-                  cursor: !isAdmin && !hasSubmitted && !answersRevealed ? 'pointer' : 'default',
+                  cursor: canPick && !hasSubmitted && !answersRevealed ? 'pointer' : 'default',
                   border: highlightCorrect
                     ? '2px solid #4ade80'
                     : isSelected
@@ -1572,7 +1565,7 @@ const QuestionPage = () => {
           })}
         </div>
 
-        {!isAdmin && !hasSubmitted && !answersRevealed && (
+        {canPick && !hasSubmitted && !answersRevealed && (
           <button
             onClick={handleConfirmChoice}
             className="btn-primary"
@@ -1586,14 +1579,21 @@ const QuestionPage = () => {
             {t('question.confirmAnswer')}
           </button>
         )}
-        {!isAdmin && hasSubmitted && (
+        {canPick && hasSubmitted && (
           <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
             {t('question.answerAccepted')}
           </div>
         )}
-      </div>
+      </>
     );
   };
+
+  const renderChoiceContent = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {renderNormalContent()}
+      {renderChoiceOptionsBlock()}
+    </div>
+  );
 
   // Record a text-field answer (text, image data URL or audio data URL). The
   // composer in AnswerComposer builds the value; this just submits it.
@@ -1632,35 +1632,43 @@ const QuestionPage = () => {
     );
   };
 
-  const renderTextAnswerContent = () => {
+  // The text-field answer card (composer, or the player's own submitted value),
+  // with no question above it. Reused by normal/reveal text questions. Returns
+  // null for the host and for non-chosen players of an exclusive question.
+  const renderTextComposerCard = () => {
     const myAnswer = currentUserId ? numberAnswers[currentUserId] : undefined;
     const hasSubmitted = myAnswer !== undefined;
+    // With exclusive selection (e.g. "draw a cat") only the chosen player gets
+    // the composer; everyone else just sees the question and waits.
+    const exclusiveLocked = isExclusiveSelection(question) && currentUserId !== secretTargetId;
+    if (isAdmin || exclusiveLocked) return null;
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {renderNormalContent()}
-
-        {!isAdmin && (
-          <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
-            {hasSubmitted ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
-                {renderAnswerValue(myAnswer)}
-              </div>
-            ) : (
-              <AnswerComposer
-                key={`text-answer-${questionId}`}
-                onSubmit={handleSubmitTextAnswer}
-                onPreviewImage={setLightboxImage}
-                submitLabel={t('question.submitAnswer')}
-                buttonStyle={buttonStyle}
-              />
-            )}
+      <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+        {hasSubmitted ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
+            {renderAnswerValue(myAnswer)}
           </div>
+        ) : (
+          <AnswerComposer
+            key={`text-answer-${questionId}`}
+            onSubmit={handleSubmitTextAnswer}
+            onPreviewImage={setLightboxImage}
+            submitLabel={t('question.submitAnswer')}
+            buttonStyle={buttonStyle}
+          />
         )}
       </div>
     );
   };
+
+  const renderTextAnswerContent = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {renderNormalContent()}
+      {renderTextComposerCard()}
+    </div>
+  );
 
   // Voting: submit an answer (text/image/audio). Unlike text-answer this
   // records no buzz time — there is no race, everyone answers, then votes.
@@ -1927,9 +1935,8 @@ const QuestionPage = () => {
     // Unlike cat-in-the-bag, the selector may pick themselves.
     const canAssign = isAdmin || (currentUserId && currentUserId === crocodileSelectorId);
     const isPerformer = currentUserId && currentUserId === crocodileTargetId;
-    // 'fastest': guessers buzz, the quickest correct one scores. 'dixit':
-    // everyone submits a text guess and the host can score anyone.
-    const crocodileMode = question.crocodile_mode || 'fastest';
+    // Guessers answer by buzz (fastest), text (dixit) or picking options —
+    // resolved via responseMethod() in PHASE 3 below.
 
     // PHASE 1: choose the performer
     if (!crocodileTargetId) {
@@ -2045,8 +2052,25 @@ const QuestionPage = () => {
       ? renderRuleCard(afterRoundRules[Math.min(currentAfterRoundIndex, afterRoundRules.length - 1)], t('question.answerLabel'))
       : null;
 
+    // Guesser answer method: buzz (fastest), text (dixit) or choice (pick).
+    const guessMethod = responseMethod(question);
+
+    // Choice: guessers pick from options; the host reveals and scores (like dixit)
+    if (guessMethod === 'choice') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {header}
+          {responseCard}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {renderChoiceOptionsBlock()}
+          </div>
+          {answerCard}
+        </div>
+      );
+    }
+
     // Dixit: everyone types their guess (mirrors the text-answer flow)
-    if (crocodileMode === 'dixit') {
+    if (guessMethod === 'text') {
       const myGuess = currentUserId ? numberAnswers[currentUserId] : undefined;
       const hasGuessed = myGuess !== undefined;
       return (
@@ -2111,26 +2135,39 @@ const QuestionPage = () => {
     const rawProgress = revealDuration > 0 ? Math.max(0, Math.min(1, 1 - timer / revealDuration)) : 1;
     const progress = applyRevealCurve(rawProgress, question.curve);
     const buzzPending = Object.keys(userTimes).some(uid => !redJudgedUsers.has(uid));
+    const rm = responseMethod(question);
+
+    // For a buzz reveal the prompt invites a buzz; for text/choice reveals the
+    // input below the image is the prompt, so only announce a full reveal.
+    const hint = progress >= 1
+      ? t('question.fullyRevealed')
+      : rm === 'buzz'
+        ? (buzzPending ? t('question.revealPaused') : t('question.pressSpace'))
+        : null;
+    // The answer input shown beneath the revealing image (text field or options)
+    const answerInputEl = rm === 'choice'
+      ? (<div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%', maxWidth: '800px' }}>{renderChoiceOptionsBlock()}</div>)
+      : rm === 'text'
+        ? renderTextComposerCard()
+        : null;
 
     const playField = (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '1.5rem' }}>
-        <div className="glass-panel" style={{
-          padding: '1rem 2rem',
-          fontSize: '1.3rem',
-          fontWeight: '700',
-          color: buzzPending ? '#fbbf24' : 'var(--text-primary)',
-          textAlign: 'center',
-          border: buzzPending ? '1px solid #fbbf24' : '1px solid var(--glass-border)',
-          width: '100%',
-          maxWidth: '800px',
-          boxShadow: buzzPending ? '0 0 20px rgba(251, 191, 36, 0.4)' : 'var(--glass-shadow)'
-        }}>
-          {progress >= 1
-            ? t('question.fullyRevealed')
-            : buzzPending
-              ? t('question.revealPaused')
-              : t('question.pressSpace')}
-        </div>
+        {hint && (
+          <div className="glass-panel" style={{
+            padding: '1rem 2rem',
+            fontSize: '1.3rem',
+            fontWeight: '700',
+            color: buzzPending ? '#fbbf24' : 'var(--text-primary)',
+            textAlign: 'center',
+            border: buzzPending ? '1px solid #fbbf24' : '1px solid var(--glass-border)',
+            width: '100%',
+            maxWidth: '800px',
+            boxShadow: buzzPending ? '0 0 20px rgba(251, 191, 36, 0.4)' : 'var(--glass-shadow)'
+          }}>
+            {hint}
+          </div>
+        )}
 
         {/* Shrink-wraps the image so the frame hugs it; the image is capped to
             the viewport inside ProgressiveImage so it fits without scrolling */}
@@ -2149,6 +2186,7 @@ const QuestionPage = () => {
           />
         </div>
 
+        {answerInputEl}
       </div>
     );
 
@@ -2215,26 +2253,31 @@ const QuestionPage = () => {
   };
 
   const renderContent = () => {
-    if (question.type === 'find-a-cat') {
-      return renderFindACatContent();
-    }
+    // Core content for the question's base type. Karaoke and crocodile carry
+    // their own selection flow, so they're handled before the shared gate.
+    const renderCore = () => {
+      if (question.type === 'find-a-cat') {
+        return renderFindACatContent();
+      }
+      if (question.type === 'close-enough') {
+        return renderCloseEnoughContent();
+      }
+      if (question.type === 'progressive-reveal') {
+        return renderProgressiveRevealContent();
+      }
+      // normal — answered by buzzing, a text field, or picking from options
+      const rm = responseMethod(question);
+      if (rm === 'choice') {
+        return renderChoiceContent();
+      }
+      if (rm === 'text') {
+        return renderTextAnswerContent();
+      }
+      return renderNormalContent();
+    };
+
     if (question.type === 'karaoke') {
       return renderKaraokeContent();
-    }
-    if (question.type === 'secret') {
-      return renderSecretContent();
-    }
-    if (question.type === 'close-enough') {
-      return renderCloseEnoughContent();
-    }
-    if (question.type === 'choice') {
-      return renderChoiceContent();
-    }
-    if (question.type === 'text-answer') {
-      return renderTextAnswerContent();
-    }
-    if (question.type === 'progressive-reveal') {
-      return renderProgressiveRevealContent();
     }
     if (question.type === 'crocodile') {
       return renderCrocodileContent();
@@ -2242,7 +2285,11 @@ const QuestionPage = () => {
     if (question.type === 'voting') {
       return renderVotingContent();
     }
-    return renderNormalContent();
+    // user-selection option (normal / reveal / find-a-cat)
+    if (usesSecretSelection(question)) {
+      return renderSelectionGate(renderCore);
+    }
+    return renderCore();
   };
 
   // Any question-content image opens full-size in the lightbox (players too).
@@ -2562,11 +2609,14 @@ const QuestionPage = () => {
             {t('question.showAnswer')}
           </button>
         )}
-        {/* Choice has no "Show Result": the admin sees picks in real time */}
+        {/* Choice has no "Show Result": the admin sees picks in real time.
+            Text-field normals, close-enough and voting collect submissions and
+            reveal them in one step. */}
         {isAdmin && !answersRevealed && (
-          (['close-enough', 'text-answer', 'voting'].includes(question.type) && isQuestionRevealed) ||
-          // Crocodile dixit collects text guesses once the performer responds
-          (question.type === 'crocodile' && (question.crocodile_mode || 'fastest') === 'dixit' && crocodileResponse)
+          ((question.type === 'close-enough' || question.type === 'voting'
+            || (responseMethod(question) === 'text' && question.type !== 'crocodile')) && isQuestionRevealed) ||
+          // Crocodile dixit/choice collect guesses once the performer responds
+          (question.type === 'crocodile' && responseMethod(question) !== 'buzz' && crocodileResponse)
         ) && (
           <button
             onClick={() => wsManager.sendRevealNumberAnswers(parseInt(questionId))}
@@ -2589,7 +2639,7 @@ const QuestionPage = () => {
         {isAdmin && isAnswerRevealed && !isResponseRevealed && (
           question.type === 'close-enough'
             ? answersRevealed // submissions first, then the correct answer
-            : question.type === 'choice'
+            : (responseMethod(question) === 'choice' && question.type !== 'crocodile')
               ? true // reveals picks and the correct options in one step
               : question.after_round && question.after_round.length > 0
         ) && (
@@ -2620,11 +2670,11 @@ const QuestionPage = () => {
           userTimes={userTimes}
           isAdmin={isAdmin}
           question={question}
-          secretTargetId={
-            question?.type === 'secret'
-              ? secretTargetId
-              : question?.type === 'karaoke'
-                ? karaokeTargetId // the singer gets the same highlight + award buttons
+          selectedTargetId={
+            question?.type === 'karaoke'
+              ? karaokeTargetId // the singer gets the same highlight + award buttons
+              : usesSecretSelection(question)
+                ? secretTargetId
                 : null
           }
           crocodileTargetId={question?.type === 'crocodile' ? crocodileTargetId : null}

@@ -39,6 +39,15 @@
  * @property {Object[]} [options] - Choice options: { content: html, correct: boolean }
  * @property {string} [effect] - Progressive-reveal hiding effect: blur | pixelate | zoom
  * @property {string} [curve] - Progressive-reveal speed curve: linear | slow-start | fast-start
+ * @property {string} [crocodile_mode] - Crocodile scoring: 'fastest' | 'dixit'
+ * @property {string} [vote_mode] - Voting visibility: 'open' | 'closed'
+ * @property {string} [media] - Karaoke track (audio/video) as a base64 data URL
+ * @property {string} [lyrics] - Karaoke lyrics (plain text or LRC)
+ * @property {string} [lyrics_format] - 'plain' | 'lrc'
+ * @property {boolean} [user_selection] - Option: designate one player (only-answerer for buzz types, only-scorer for parallel types)
+ * @property {boolean} [allow_self_pick] - Option: the selector may pick themselves
+ * @property {string} [response] - Option: answer method for normal/reveal — 'buzz' | 'text'
+ * @property {boolean} [hidden_until_reveal] - Option: keep submitted answers masked until the host reveals
  */
 
 /**
@@ -62,13 +71,18 @@
  */
 const QuestionType = {
     Normal: 'normal',
+    // @deprecated Read-only: normalized to Normal + user_selection
     Secret: 'secret',
     Empty: 'empty',
     FindACat: 'find-a-cat',
     CloseEnough: 'close-enough',
     Choice: 'choice',
+    // @deprecated Read-only: normalized to Normal + response:'text'
     TextAnswer: 'text-answer',
-    ProgressiveReveal: 'progressive-reveal'
+    ProgressiveReveal: 'progressive-reveal',
+    Karaoke: 'karaoke',
+    Crocodile: 'crocodile',
+    Voting: 'voting'
 };
 
 /**

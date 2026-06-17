@@ -5,8 +5,9 @@ import ImageLightbox from './ImageLightbox';
 import { useGame } from '../contexts/GameContext';
 import { HIDE_HOST_KEY, HIDE_HOST_EVENT } from '../utils/hostVisibility';
 import { useTranslation } from '../i18n/LanguageContext';
+import { responseMethod } from '../utils/questionModel';
 
-const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, secretTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false }) => {
+const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, selectedTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false }) => {
   const location = useLocation();
   const { t } = useTranslation();
   const isQuestionPage = location.pathname.includes('/question/');
@@ -73,13 +74,18 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
   const incorrectValue = question?.price?.incorrect ?? 0;
   const hasClickLimit = question?.type === 'find-a-cat' && Number(question?.max_clicks) > 0;
   const isCloseEnoughQuestion = question?.type === 'close-enough';
-  const isChoiceQuestion = question?.type === 'choice';
-  const isTextQuestion = question?.type === 'text-answer';
+  const respMethod = responseMethod(question);
   const isCrocodileQuestion = question?.type === 'crocodile';
-  const crocodileMode = question?.crocodile_mode || 'fastest';
-  // Dixit guesses are submitted as text answers, so they surface just like a
-  // text-answer question once the host reveals them
-  const isCrocodileDixit = isCrocodileQuestion && crocodileMode === 'dixit';
+  // Choice/text answers on a normal/reveal question (crocodile guesses are
+  // text/choice too but have their own collect-then-score handling below)
+  const isChoiceQuestion = respMethod === 'choice' && !isCrocodileQuestion
+    && question?.type !== 'voting';
+  const isTextQuestion = respMethod === 'text'
+    && question?.type !== 'voting' && !isCrocodileQuestion;
+  // Crocodile guessers using text (dixit) or choice: collected, then the host
+  // reveals and scores them — surfaced like a text/choice answer on reveal.
+  const isCrocodileCollect = isCrocodileQuestion && respMethod !== 'buzz';
+  const isCrocodileChoice = isCrocodileQuestion && respMethod === 'choice';
 
   // Voting: tally votes per author. Open mode shows counts live; closed mode
   // keeps them hidden (host included) until the host reveals.
@@ -199,12 +205,13 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
         const clicksLeft = hasClickLimit ? (clicksLeftMap[user.id] ?? question.max_clicks) : null;
         const hasFailedClicks = hasClickLimit && clicksLeft <= 0 && userTime === null;
         const isFindACat = question?.type === 'find-a-cat';
-        // Who gets award buttons: the chosen player for cat-in-the-bag,
-        // every finisher for find-a-cat, every user once close-enough numbers
-        // are revealed, every answerer for choice/text, the fastest player otherwise
+        // Who gets award buttons: the chosen player for user-selection
+        // questions (only they can score), every finisher for find-a-cat, every
+        // user once close-enough numbers are revealed, every answerer for
+        // choice/text, the fastest player otherwise
         const showAwardRow = isAdmin && !isUpdated && !isPenalized && (
-          secretTargetId
-            ? user.id === secretTargetId
+          selectedTargetId
+            ? user.id === selectedTargetId
             : isFindACat
               ? userTime !== null
               : isCloseEnoughQuestion
@@ -216,11 +223,11 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                     ? (answersRevealed && numberAnswers[user.id] !== undefined)
                     : isCrocodileQuestion
                       // The chosen performer can be scored +/- either way; the
-                      // guessers score by the active mode (dixit on reveal,
-                      // fastest by the buzz race)
+                      // guessers score by the active method (text/choice on
+                      // reveal, buzz by the race)
                       ? (user.id === crocodileTargetId
                           ? true
-                          : isCrocodileDixit
+                          : isCrocodileCollect
                             ? (answersRevealed && numberAnswers[user.id] !== undefined)
                             : position === 0)
                       : isVotingQuestion
@@ -282,8 +289,8 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             };
           }
 
-          // Highlight the player chosen to answer a cat-in-the-bag question
-          if (secretTargetId && user.id === secretTargetId) {
+          // Highlight the player chosen for a user-selection question
+          if (selectedTargetId && user.id === selectedTargetId) {
             return {
               border: '3px solid #ffd600',
               boxShadow: '0 0 25px rgba(255, 214, 0, 0.6)'
@@ -633,7 +640,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   for the admin, choice picks appear in real time. Correctness colors
                   appear for the admin right away and for players only after the
                   admin shows the response. */}
-              {(isChoiceQuestion || isTextQuestion || isCrocodileDixit) && (answersRevealed || (isAdmin && isChoiceQuestion))
+              {(isChoiceQuestion || isTextQuestion || isCrocodileCollect) && (answersRevealed || (isAdmin && isChoiceQuestion))
                 && submittedAnswer !== undefined && submittedAnswer !== true && (
                 <div className="glass-panel" style={{
                   marginTop: '4px',
@@ -644,11 +651,11 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                     ? (isCorrectChoicePicks(submittedAnswer) ? '1px solid #4ade80' : '1px solid #ef4444')
                     : '1px solid var(--glass-border)'
                 }}>
-                  {isChoiceQuestion ? (
+                  {(isChoiceQuestion || isCrocodileChoice) ? (
                     <span style={{
                       fontWeight: '700',
                       fontSize: '1rem',
-                      color: (isAdmin || responseRevealed)
+                      color: isChoiceQuestion && (isAdmin || responseRevealed)
                         ? (isCorrectChoicePicks(submittedAnswer) ? '#4ade80' : '#ef4444')
                         : 'var(--accent)'
                     }}>

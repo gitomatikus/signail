@@ -5,6 +5,7 @@ import Logo from './Logo';
 import wsManager from '../utils/websocket';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
+import { normalizeQuestion, hasUserSelection } from '../utils/questionModel';
 
 const GameBoard = ({ isAdmin = false }) => {
   const navigate = useNavigate();
@@ -58,10 +59,11 @@ const GameBoard = ({ isAdmin = false }) => {
         if (isAdmin) {
           navigate(`/game/${gameId}/question/${questionId}`);
         } else {
-          // Cat-in-the-bag, karaoke and crocodile: everyone joins the selection
-          // screen right away, without waiting for the admin to reveal the question
+          // User-selection questions (cat-in-the-bag, karaoke, crocodile,
+          // secret choice/find-a-cat): everyone joins the selection screen right
+          // away, without waiting for the admin to reveal the question
           const q = findQuestionById(questionId);
-          if (q && (q.type === 'secret' || q.type === 'karaoke' || q.type === 'crocodile')) {
+          if (q && hasUserSelection(normalizeQuestion(q))) {
             navigate(`/game/${gameId}/question/${questionId}`);
           }
         }

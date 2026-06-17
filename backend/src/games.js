@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const WebSocket = require('ws');
+const { normalizeQuestion, isHiddenUntilReveal } = require('./questionModel');
 
 const PACKS_DIR = path.join(__dirname, '..', 'packs');
 const EMPTY_GAME_TTL_MS = 15 * 60 * 1000; // remove a game 15 minutes after the last person left
@@ -56,6 +57,10 @@ class Game {
     // everyone; closed hides them (from everyone, host included) until the
     // host reveals. Indexed from the pack alongside questionTypes.
     this.questionVoteModes = new Map();
+    // questionId -> bool. Whether per-player submissions stay masked from
+    // other players until the host reveals them. Indexed from the pack
+    // alongside questionTypes (pack metadata, not per-round state).
+    this.questionHidden = new Map();
     this.lastGreenFrameUser = null;
   }
 
@@ -194,6 +199,13 @@ class Game {
     return this.questionVoteModes.get(questionId) === 'closed' ? 'closed' : 'open';
   }
 
+  // Voting answers are never broadcast unmasked to players (host-only live
+  // view); every other submission type follows its indexed hidden flag.
+  isAnswerHidden(questionId) {
+    if (this.getQuestionType(questionId) === 'voting') return true;
+    return this.questionHidden.get(questionId) === true;
+  }
+
   getVotesInfo(questionId) {
     return {
       revealed: this.revealedVotes.has(questionId),
@@ -273,20 +285,25 @@ class GameManager {
     }
     const types = new Map();
     const voteModes = new Map();
+    const hidden = new Map();
     for (const round of pack.rounds) {
       for (const theme of round.themes || []) {
-        for (const q of theme.questions || []) {
+        for (const rawQ of theme.questions || []) {
+          // Normalize legacy types (secret / text-answer) to base type + options
+          const q = normalizeQuestion(rawQ);
           if (q && q.id !== undefined) {
             types.set(q.id, q.type || 'normal');
             if (q.type === 'voting') {
               voteModes.set(q.id, q.vote_mode === 'closed' ? 'closed' : 'open');
             }
+            hidden.set(q.id, isHiddenUntilReveal(q));
           }
         }
       }
     }
     game.questionTypes = types;
     game.questionVoteModes = voteModes;
+    game.questionHidden = hidden;
     game.packName = typeof pack.name === 'string' ? pack.name : 'Unnamed pack';
     game.packAuthor = typeof pack.author === 'string' ? pack.author : '';
     try {

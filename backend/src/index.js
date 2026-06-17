@@ -242,16 +242,17 @@ app.get('/api/games/:gameId/questions/:questionId/answers', (req, res) => {
   const requesterId = req.query.userId;
   const info = game.getNumberAnswersInfo(questionId);
   const type = game.getQuestionType(questionId);
-  // Choice picks are not masked: the admin shows them in real time
-  // (the player UI still hides other players' picks until the reveal)
-  const isChoice = type === 'choice';
+  // Live (non-hidden) answers — e.g. choice picks — are not masked: results
+  // show in real time (the player UI still hides them until the reveal for
+  // hidden questions). Voting is never live for players, only for the host.
+  const liveUnmasked = type !== 'voting' && !game.isAnswerHidden(questionId);
   // Voting answers are unmasked for the host (so a refresh restores the live
   // view) but stay masked for players until the reveal
   const hostToken = req.headers['x-host-token'] || req.query.hostToken;
   const votingHostView = type === 'voting' && !!hostToken && hostToken === game.hostToken;
   const answers = {};
   for (const [userId, value] of info.answers) {
-    answers[userId] = info.revealed || isChoice || votingHostView || userId === requesterId ? value : true;
+    answers[userId] = info.revealed || liveUnmasked || votingHostView || userId === requesterId ? value : true;
   }
   res.json({
     status: 'success',

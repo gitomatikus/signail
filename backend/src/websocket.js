@@ -243,10 +243,7 @@ class WebSocketManager {
         if (!answers.has(userId)) {
           answers.set(userId, value);
           const qType = game.getQuestionType(questionId);
-          if (qType === 'choice') {
-            // Choice picks go out unmasked so the admin sees results in real time
-            game.broadcast({ type: 'number_answer_submitted', data: { questionId, userId, value } });
-          } else if (qType === 'voting') {
+          if (qType === 'voting') {
             // Voting answers reach the host unmasked (live moderation) but stay
             // masked for players until the host reveals them
             game.sockets.forEach((client) => {
@@ -257,8 +254,12 @@ class WebSocketManager {
                 }));
               }
             });
+          } else if (!game.isAnswerHidden(questionId)) {
+            // Live answers (e.g. choice) go out unmasked so the admin — and,
+            // for non-hidden questions, everyone — sees results in real time
+            game.broadcast({ type: 'number_answer_submitted', data: { questionId, userId, value } });
           } else {
-            // Other types: clients only learn that the player answered
+            // Hidden answers: clients only learn that the player answered
             game.broadcast({ type: 'number_answer_submitted', data: { questionId, userId } });
           }
         }

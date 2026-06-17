@@ -1,0 +1,169 @@
+{
+  "author": "optiontest",
+  "name": "Options Overhaul Test",
+  "rounds": [
+    {
+      "name": "Round 1",
+      "themes": [
+        {
+          "name": "Options",
+          "description": "all option combinations",
+          "ordered": false,
+          "questions": [
+            {
+              "id": 101,
+              "type": "normal",
+              "price": { "text": "100", "correct": 100, "incorrect": -100, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q1 normal buzz: capital of France?", "duration": 30 } ],
+              "after_round": [ { "type": "embedded", "content": "Paris", "duration": 15 } ]
+            },
+            {
+              "id": 102,
+              "type": "normal",
+              "user_selection": true,
+              "price": { "text": "200", "correct": 200, "incorrect": -200, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q2 secret buzz (only chosen answers): 2+2?", "duration": 30 } ],
+              "after_round": [ { "type": "embedded", "content": "4", "duration": 15 } ]
+            },
+            {
+              "id": 103,
+              "type": "normal",
+              "response": "text",
+              "price": { "text": "300", "correct": 300, "incorrect": -300, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q3 text answer (everyone types): name a fruit", "duration": 30 } ],
+              "after_round": [ { "type": "embedded", "content": "any fruit", "duration": 15 } ]
+            },
+            {
+              "id": 104,
+              "type": "normal",
+              "response": "text",
+              "user_selection": true,
+              "price": { "text": "400", "correct": 400, "incorrect": -400, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q4 DRAW A CAT (only chosen types): describe a cat", "duration": 30 } ],
+              "after_round": [ { "type": "embedded", "content": "meow", "duration": 15 } ]
+            },
+            {
+              "id": 105,
+              "type": "choice",
+              "user_selection": true,
+              "allow_self_pick": true,
+              "multiple": false,
+              "options": [
+                { "content": "Red", "correct": false },
+                { "content": "Blue", "correct": true },
+                { "content": "Green", "correct": false }
+              ],
+              "price": { "text": "500", "correct": 500, "incorrect": -500, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q5 secret choice (all pick, only chosen scores): sky color?", "duration": 30 } ],
+              "after_round": []
+            },
+            {
+              "id": 106,
+              "type": "choice",
+              "hidden_until_reveal": true,
+              "multiple": false,
+              "options": [
+                { "content": "Cat", "correct": true },
+                { "content": "Dog", "correct": false }
+              ],
+              "price": { "text": "600", "correct": 600, "incorrect": -600, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q6 hidden choice (picks masked until reveal): meows?", "duration": 30 } ],
+              "after_round": []
+            },
+            {
+              "id": 107,
+              "type": "close-enough",
+              "answer": 42,
+              "duration": 30,
+              "perfect_bonus": 100,
+              "price": { "text": "700", "correct": 700, "incorrect": -700, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q7 close-enough: answer to everything?", "duration": 30 } ],
+              "after_round": []
+            },
+            {
+              "id": 108,
+              "type": "voting",
+              "vote_mode": "open",
+              "duration": 30,
+              "price": { "text": "800", "correct": 800, "incorrect": -800, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q8 voting (untouched): best pet?", "duration": 30 } ],
+              "after_round": []
+            },
+            {
+              "id": 109,
+              "type": "secret",
+              "price": { "text": "900", "correct": 900, "incorrect": -900, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q9 LEGACY secret (should normalize): 3+3?", "duration": 30 } ],
+              "after_round": [ { "type": "embedded", "content": "6", "duration": 15 } ]
+            },
+            {
+              "id": 110,
+              "type": "text-answer",
+              "price": { "text": "1000", "correct": 1000, "incorrect": -1000, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q10 LEGACY text-answer (should normalize): name a color", "duration": 30 } ],
+              "after_round": [ { "type": "embedded", "content": "any color", "duration": 15 } ]
+            },
+            {
+              "id": 111,
+              "type": "normal",
+              "response": "choice",
+              "multiple": false,
+              "options": [
+                { "content": "Mercury", "correct": false },
+                { "content": "Sun", "correct": true },
+                { "content": "Moon", "correct": false }
+              ],
+              "price": { "text": "1100", "correct": 1100, "incorrect": -1100, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q11 normal+CHOICE (everyone picks): center of solar system?", "duration": 30 } ],
+              "after_round": []
+            },
+            {
+              "id": 112,
+              "type": "normal",
+              "response": "choice",
+              "user_selection": true,
+              "multiple": false,
+              "options": [
+                { "content": "Two", "correct": false },
+                { "content": "Four", "correct": true }
+              ],
+              "price": { "text": "1200", "correct": 1200, "incorrect": -1200, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q12 SECRET choice (only chosen picks): 2+2?", "duration": 30 } ],
+              "after_round": []
+            },
+            {
+              "id": 113,
+              "type": "progressive-reveal",
+              "response": "choice",
+              "image": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300'%3E%3Crect width='400' height='300' fill='%23ff8800'/%3E%3Ctext x='200' y='160' font-size='40' text-anchor='middle' fill='white'%3EORANGE%3C/text%3E%3C/svg%3E",
+              "duration": 30,
+              "effect": "blur",
+              "multiple": false,
+              "options": [
+                { "content": "Orange", "correct": true },
+                { "content": "Blue", "correct": false }
+              ],
+              "price": { "text": "1300", "correct": 1300, "incorrect": -1300, "random_range": "null" },
+              "rules": [],
+              "after_round": []
+            },
+            {
+              "id": 114,
+              "type": "crocodile",
+              "response": "choice",
+              "duration": 30,
+              "multiple": false,
+              "options": [
+                { "content": "Elephant", "correct": true },
+                { "content": "Mouse", "correct": false }
+              ],
+              "price": { "text": "1400", "correct": 1400, "incorrect": -1400, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "Q14 crocodile+CHOICE: act out the animal", "duration": 30 } ],
+              "after_round": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
