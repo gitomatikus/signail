@@ -16,7 +16,6 @@ const LEGACY_TYPE_MAP = {
   secret: { type: 'normal', user_selection: true },
   'text-answer': { type: 'normal', response: 'text' },
   choice: { type: 'normal', response: 'choice' },
-  'progressive-reveal': { type: 'normal', reveal: true },
 };
 
 export function normalizeQuestion(q) {
@@ -34,14 +33,7 @@ export function normalizeQuestion(q) {
 // Selected player is the only one allowed to answer; everyone else is locked
 // out (whether the answer is a buzz race or a text field) — today's "secret",
 // generalized.
-export const SELECTION_EXCLUSIVE_TYPES = ['normal'];
-
-// A normal question whose content is a progressively-revealing image
-// (the old "progressive-reveal" type, now an option). Reuses image/effect/
-// curve/duration and keeps the reveal+pause runtime behavior.
-export function isReveal(q) {
-  return !!q && !!q.reveal && typeof q.image === 'string' && q.image.length > 0;
-}
+export const SELECTION_EXCLUSIVE_TYPES = ['normal', 'progressive-reveal'];
 // Everyone answers in parallel, but only the selected player can score.
 export const SELECTION_PARALLEL_TYPES = ['find-a-cat'];
 // One performer is always picked (selection is intrinsic to the type).

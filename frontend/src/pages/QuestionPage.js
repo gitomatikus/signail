@@ -123,6 +123,14 @@ const isAudioOnlyContent = (html) => {
 const getQuestionMedia = () =>
   Array.from(document.querySelectorAll('.question-content audio, .question-content video'));
 
+// Progressive-reveal is now an inline-image option: an <img data-reveal> placed
+// in a question's content (authored by clicking the image in the editor). A
+// question with such an image gets the reveal+pause runtime behavior.
+const ruleHasReveal = (content) =>
+  typeof content === 'string' && content.includes('data-reveal');
+const questionHasReveal = (question) =>
+  !!question && (question.rules || []).some(r => ruleHasReveal(r && r.content));
+
 // Programmatic play/pause (buzz auto-pause, applying admin commands) must not
 // be re-broadcast as if the admin clicked the controls
 const suppressMediaEvents = (el) => { el.__suppressMediaUntil = Date.now() + 400; };
@@ -463,7 +471,7 @@ const QuestionPage = () => {
         setRedJudgedUsers(prev => new Set([...prev, data.data.userId]));
       } else if (data.type === 'admin_clicked_green_number') {
         // Progressive reveal: a correct answer uncovers the image completely
-        if (question?.type === 'progressive-reveal') {
+        if (question?.type === 'progressive-reveal' || questionHasReveal(question)) {
           setTimer(0);
         }
         // A correct answer stops question media for everyone (the admin can
@@ -566,7 +574,7 @@ const QuestionPage = () => {
       return;
     }
     // Progressive reveal: pause while any buzz awaits the admin's verdict
-    if (question?.type === 'progressive-reveal'
+    if ((question?.type === 'progressive-reveal' || questionHasReveal(question))
       && Object.keys(userTimes).some(uid => !redJudgedUsers.has(uid))) {
       return;
     }
@@ -971,8 +979,57 @@ const QuestionPage = () => {
   // The admin keeps native media controls; players get media stripped of them
   const renderHtmlContent = (content) => (isAdmin ? content : stripMediaControls(content));
 
+  // Render embedded content that contains one or more <img data-reveal> images:
+  // the reveal images are lifted out and rendered through ProgressiveImage
+  // (driven by the question timer, reused as the reveal clock), while the rest
+  // of the content renders normally. Effect/curve come from the image's
+  // data-effect / data-curve attributes.
+  const renderRevealHtml = (content) => {
+    const doc = new DOMParser().parseFromString(content, 'text/html');
+    const revealImgs = Array.from(doc.querySelectorAll('img[data-reveal]'));
+    revealImgs.forEach(img => img.remove()); // pull them out of the text flow
+    const revealDuration = getInitialTimerValue(question) || 60;
+    const rawProgress = revealDuration > 0
+      ? Math.max(0, Math.min(1, 1 - timer / revealDuration))
+      : 1;
+    const restHtml = renderHtmlContent(doc.body.innerHTML);
+    const hasRest = !!(doc.body.textContent || '').trim() || /<(img|video|audio)/i.test(restHtml);
+    return (
+      <>
+        {hasRest && (
+          <div
+            className="question-content"
+            style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap', marginBottom: '12px' }}
+            dangerouslySetInnerHTML={{ __html: restHtml }}
+          />
+        )}
+        {revealImgs.map((img, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+            <div style={{
+              width: 'fit-content',
+              maxWidth: '100%',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              border: '1px solid var(--glass-border)',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.6)'
+            }}>
+              <ProgressiveImage
+                src={img.getAttribute('src')}
+                effect={img.getAttribute('data-effect') || 'blur'}
+                progress={applyRevealCurve(rawProgress, img.getAttribute('data-curve') || 'linear')}
+              />
+            </div>
+          </div>
+        ))}
+      </>
+    );
+  };
+
   const renderRule = (rule) => {
     if (rule.type === 'embedded') {
+      if (ruleHasReveal(rule.content)) {
+        return renderRevealHtml(rule.content);
+      }
       return (
         <div
           className="question-content"
@@ -2387,12 +2444,9 @@ const QuestionPage = () => {
           <div style={cardStyle}>
             <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
             {question.rules.map((rule, index) => (
-              <div
-                key={index}
-                className="question-content"
-                style={{ color: 'var(--text-primary)', fontSize: '1.1rem', whiteSpace: 'pre-wrap', marginBottom: '8px' }}
-                dangerouslySetInnerHTML={{ __html: renderHtmlContent(rule.content) }}
-              />
+              <div key={index} style={{ marginBottom: '8px', width: '100%' }}>
+                {renderRule(rule)}
+              </div>
             ))}
           </div>
         );
@@ -2415,6 +2469,10 @@ const QuestionPage = () => {
   const renderRuleCard = (rule, badge) => {
     const badgeEl = badge ? <div style={cardBadgeStyle}>{badge}</div> : null;
     if (rule.type === 'embedded') {
+      // Reveal images render through ProgressiveImage inside the card
+      if (ruleHasReveal(rule.content)) {
+        return <div style={cardStyle}>{badgeEl}{renderRevealHtml(rule.content)}</div>;
+      }
       const html = renderHtmlContent(rule.content);
       if (!isAdmin && isAudioOnlyContent(html)) {
         return (

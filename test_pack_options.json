@@ -160,6 +160,24 @@
               "price": { "text": "1400", "correct": 1400, "incorrect": -1400, "random_range": "null" },
               "rules": [ { "type": "embedded", "content": "Q14 crocodile+CHOICE: act out the animal", "duration": 30 } ],
               "after_round": []
+            },
+            {
+              "id": 115,
+              "type": "normal",
+              "price": { "text": "1500", "correct": 1500, "incorrect": -1500, "random_range": "null" },
+              "rules": [ { "type": "embedded", "content": "<p>Q15 inline REVEAL image (buzz):</p><p><img src=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300'%3E%3Crect width='400' height='300' fill='%2322aa55'/%3E%3Ctext x='200' y='160' font-size='44' text-anchor='middle' fill='white'%3EFROG%3C/text%3E%3C/svg%3E\" data-reveal=\"true\" data-effect=\"blur\" data-curve=\"linear\"></p>", "duration": 20 } ],
+              "after_round": [ { "type": "embedded", "content": "A frog", "duration": 15 } ]
+            },
+            {
+              "id": 116,
+              "type": "progressive-reveal",
+              "image": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300'%3E%3Crect width='400' height='300' fill='%23aa2255'/%3E%3Ctext x='200' y='160' font-size='40' text-anchor='middle' fill='white'%3ELEGACY%3C/text%3E%3C/svg%3E",
+              "duration": 20,
+              "effect": "pixelate",
+              "curve": "linear",
+              "price": { "text": "1600", "correct": 1600, "incorrect": -1600, "random_range": "null" },
+              "rules": [],
+              "after_round": [ { "type": "embedded", "content": "legacy reveal still works", "duration": 15 } ]
             }
           ]
         }
