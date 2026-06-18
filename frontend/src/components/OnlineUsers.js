@@ -236,6 +236,13 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                         : position === 0
         );
         const submittedAnswer = numberAnswers[user.id];
+        // Choice answers have a known-correct outcome, so the host shouldn't have
+        // to guess which button to press: dim the one that contradicts the pick
+        // (both stay clickable for a manual override).
+        const choiceOutcomeKnown = isChoiceQuestion && submittedAnswer !== undefined;
+        const choseCorrectly = choiceOutcomeKnown && isCorrectChoicePicks(submittedAnswer);
+        const minusDimmed = choiceOutcomeKnown && choseCorrectly;
+        const plusDimmed = choiceOutcomeKnown && !choseCorrectly;
         // Voting: how many votes this player's answer received (only when visible)
         const voteCountForUser = showVoteCounts ? (votesReceived[user.id] || 0) : null;
         const isVoteWinner = showVoteCounts && voteCountForUser > 0 && voteCountForUser === maxVotesReceived;
@@ -540,12 +547,13 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                         style={{
                           fontWeight: 'bold',
                           fontSize: '1rem',
-                          color: '#ef4444',
+                          color: minusDimmed ? 'var(--text-muted)' : '#ef4444',
+                          opacity: minusDimmed ? 0.4 : 1,
                           cursor: 'pointer',
                           transition: 'opacity 0.2s'
                         }}
                         onMouseEnter={e => e.target.style.opacity = '0.8'}
-                        onMouseLeave={e => e.target.style.opacity = '1'}
+                        onMouseLeave={e => e.target.style.opacity = minusDimmed ? '0.4' : '1'}
                       >
                         {incorrectValue}
                       </span>
@@ -564,12 +572,13 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                     style={{
                       fontWeight: 'bold',
                       fontSize: '1rem',
-                      color: '#4ade80',
+                      color: plusDimmed ? 'var(--text-muted)' : '#4ade80',
+                      opacity: plusDimmed ? 0.4 : 1,
                       cursor: 'pointer',
                       transition: 'opacity 0.2s'
                     }}
                     onMouseEnter={e => e.target.style.opacity = '0.8'}
-                    onMouseLeave={e => e.target.style.opacity = '1'}
+                    onMouseLeave={e => e.target.style.opacity = plusDimmed ? '0.4' : '1'}
                   >
                     {isFindACat
                       ? `+${awardValue}${firstPlaceBonus > 0 ? ' 🥇' : ''}`

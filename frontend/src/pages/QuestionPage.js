@@ -19,10 +19,12 @@ import {
   normalizeQuestion,
   responseMethod,
   allowsSelfPick,
+  hasUserSelection,
   usesSecretSelection,
   isExclusiveSelection,
   isMultiWinner,
   usesNumberAnswers,
+  isHiddenUntilReveal,
 } from '../utils/questionModel';
 
 // Sanitize HTML content to allow only safe tags and attributes
@@ -2042,10 +2044,11 @@ const QuestionPage = () => {
     // PHASE 2: performer assigned, waiting for their response
     if (!crocodileResponse) {
       if (isPerformer) {
-        // Only the performer sees the question, plus the composer to respond
+        // The performer sees the prompt in the same plain question card the host
+        // gets for a normal question (no bespoke crocodile header), plus the
+        // composer to respond.
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {header}
             {renderNormalContent()}
             <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
               <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
@@ -2063,10 +2066,10 @@ const QuestionPage = () => {
         );
       }
       if (isAdmin) {
-        // Host watches the prompt and waits for the response
+        // Host watches the prompt (same plain question card as a normal question)
+        // and waits for the response
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {header}
             {renderNormalContent()}
             <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem', color: 'var(--text-secondary)' }}>
               {t('question.crocodileWaitingResponse', { name: targetUser ? targetUser.name : '...' })}
@@ -2093,13 +2096,10 @@ const QuestionPage = () => {
     // Performer and host also see the underlying question (and the answer once
     // the host reveals it) through the normal content flow
     if (isAdmin || isPerformer) {
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {header}
-          {responseCard}
-          {renderNormalContent()}
-        </div>
-      );
+      // Performer and host see the prompt + the response in the same split/tabs
+      // host layout a normal question uses for its question + answer — the prompt
+      // is the "question" card, the performer's response the "answer" card.
+      return renderHostQuestionAnswer(renderNormalContent(), responseCard);
     }
 
     // Guessers: the response, then either a buzz prompt (fastest mode) or a
@@ -2349,6 +2349,42 @@ const QuestionPage = () => {
     return renderCore();
   };
 
+  // Admin-only badge telling the host how players answer this question
+  // (buzz / text / choice / number / …), plus whether one player is chosen
+  // and whether answers are masked until reveal.
+  const renderAnswerTypeBadge = () => {
+    if (!isAdmin || !question || question.type === 'empty') return null;
+    const emojiByType = { buzz: '⚡', text: '⌨️', choice: '🔘', numeric: '🔢', click: '🖱️', audio: '🎤', voting: '🗳️' };
+    const key = question.type === 'voting' ? 'voting' : responseMethod(question);
+    const rm = responseMethod(question);
+    const extras = [];
+    if (hasUserSelection(question)) extras.push(t('answerType.selected'));
+    if (isHiddenUntilReveal(question) && ['text', 'numeric', 'choice'].includes(rm) && question.type !== 'voting') {
+      extras.push(t('answerType.hidden'));
+    }
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+        <div className="glass-panel" style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.4rem 1rem',
+          borderRadius: '999px',
+          border: '1px solid var(--glass-border)',
+          fontSize: '0.9rem',
+          fontWeight: '600'
+        }}>
+          <span>{emojiByType[key] || '❓'}</span>
+          <span style={{ color: 'var(--text-secondary)' }}>{t('question.answerTypeLabel')}:</span>
+          <span style={{ color: 'var(--text-primary)' }}>{t(`answerType.${key}`)}</span>
+          {extras.length > 0 && (
+            <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>· {extras.join(' · ')}</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // Any question-content image opens full-size in the lightbox (players too).
   // Choice options are excluded — clicking those means picking the answer.
   // Find-a-cat and progressive-reveal play fields don't render inside
@@ -2583,7 +2619,7 @@ const QuestionPage = () => {
         }}>
           {timer}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-start', minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
           {question.price?.text && (
             <div className="glass-panel" style={{
               padding: '0.5rem 1.25rem',
@@ -2598,8 +2634,26 @@ const QuestionPage = () => {
               {question.price.text}
             </div>
           )}
+          {question.price?.incorrect === 0 && (
+            <div className="glass-panel" style={{
+              padding: '0.4rem 0.85rem',
+              borderRadius: '12px',
+              color: 'var(--success, #4ade80)',
+              fontWeight: '700',
+              fontSize: '0.8rem',
+              letterSpacing: '0.03em',
+              textTransform: 'uppercase',
+              border: '1px solid var(--glass-border)',
+              whiteSpace: 'nowrap',
+              textShadow: '0 0 10px rgba(74, 222, 128, 0.5)'
+            }}>
+              🛡️ Питання Без Ризику
+            </div>
+          )}
         </div>
       </div>
+      {/* Admin-only: how players answer this question */}
+      {renderAnswerTypeBadge()}
       {/* Players have no native media controls, so give them a volume slider.
           Karaoke streams play through a hidden element with no controls at
           all, so there the host needs the slider too. */}
@@ -2694,12 +2748,12 @@ const QuestionPage = () => {
             {t('question.revealVotes')}
           </button>
         )}
-        {isAdmin && isAnswerRevealed && !isResponseRevealed && (
-          question.type === 'close-enough'
-            ? answersRevealed // submissions first, then the correct answer
-            : (responseMethod(question) === 'choice' && question.type !== 'crocodile')
-              ? true // reveals picks and the correct options in one step
-              : question.after_round && question.after_round.length > 0
+        {/* Close-enough's correct-answer reveal is intentionally NOT here — it
+            sits apart below so it isn't pressed by reflex after "Show Result". */}
+        {isAdmin && isAnswerRevealed && !isResponseRevealed && question.type !== 'close-enough' && (
+          (responseMethod(question) === 'choice' && question.type !== 'crocodile')
+            ? true // reveals picks and the correct options in one step
+            : question.after_round && question.after_round.length > 0
         ) && (
           <button
             onClick={handleShowAfterRound}
@@ -2719,6 +2773,33 @@ const QuestionPage = () => {
           </button>
         )}
       </div>
+
+      {/* Close-enough: the correct-answer reveal lives on its own, away from the
+          main controls, and asks for confirmation so it can't be hit by accident
+          right after revealing the submitted numbers. */}
+      {isAdmin && question.type === 'close-enough' && isAnswerRevealed && !isResponseRevealed && answersRevealed && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.25rem' }}>
+          <button
+            onClick={() => {
+              if (window.confirm(t('question.confirmRevealCorrectAnswer'))) {
+                handleShowAfterRound();
+              }
+            }}
+            style={{
+              ...buttonStyle,
+              fontSize: '0.85rem',
+              padding: '0.5rem 1rem',
+              background: 'transparent',
+              border: '1px solid var(--glass-border)',
+              color: 'var(--text-secondary)',
+              borderRadius: '10px',
+              cursor: 'pointer'
+            }}
+          >
+            🔒 {t('question.revealCorrectAnswer')}
+          </button>
+        </div>
+      )}
       {/* Online users below the board — full width so a long row fits */}
       <div style={{ width: '100%', margin: 0, padding: 0, lineHeight: 1 }}>
         <OnlineUsers
