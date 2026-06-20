@@ -228,7 +228,9 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                       ? (user.id === crocodileTargetId
                           ? true
                           : isCrocodileCollect
-                            ? (answersRevealed && numberAnswers[user.id] !== undefined)
+                            // Host sees guesses live, so they can score as soon
+                            // as a guess arrives (no need to wait for reveal)
+                            ? (numberAnswers[user.id] !== undefined)
                             : position === 0)
                       : isVotingQuestion
                         // Host hands out +/- to everyone once answers are out
@@ -649,7 +651,8 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   for the admin, choice picks appear in real time. Correctness colors
                   appear for the admin right away and for players only after the
                   admin shows the response. */}
-              {(isChoiceQuestion || isTextQuestion || isCrocodileCollect) && (answersRevealed || (isAdmin && isChoiceQuestion))
+              {(isChoiceQuestion || isTextQuestion || isCrocodileCollect)
+                && (answersRevealed || (isAdmin && (isChoiceQuestion || isCrocodileCollect)))
                 && submittedAnswer !== undefined && submittedAnswer !== true && (
                 <div className="glass-panel" style={{
                   marginTop: '4px',

@@ -187,6 +187,7 @@ class WebSocketManager {
       game.broadcast({ type: 'response_reveal', data: data.data });
     } else if (data.type === 'return_to_game') {
       game.closeKaraokePerformances();
+      game.closeDrawingPerformances();
       game.broadcast({ type: 'return_to_game' });
     } else if (data.type === 'elapsed_time') {
       const { questionId, userId } = data.data;
@@ -243,9 +244,9 @@ class WebSocketManager {
         if (!answers.has(userId)) {
           answers.set(userId, value);
           const qType = game.getQuestionType(questionId);
-          if (qType === 'voting') {
-            // Voting answers reach the host unmasked (live moderation) but stay
-            // masked for players until the host reveals them
+          if (qType === 'voting' || qType === 'crocodile') {
+            // Voting and crocodile guesses reach the host unmasked (live
+            // moderation / scoring) but stay masked for players until reveal.
             game.sockets.forEach((client) => {
               if (client.readyState === WebSocket.OPEN) {
                 client.send(JSON.stringify({
@@ -418,6 +419,81 @@ class WebSocketManager {
         game.broadcast({
           type: 'crocodile_response',
           data: { questionId, userId: sender.id, value }
+        });
+      }
+    } else if (data.type === 'drawing_start') {
+      // The single designated drawer (crocodile performer or cat-in-the-bag
+      // chosen player) (re)starts a live drawing. A restart (refresh mid-draw)
+      // mints a new performance id and a fresh backlog — watchers reset their
+      // canvas when the id changes.
+      const { questionId, performanceId } = data.data;
+      const target = game.getDrawingTarget(questionId);
+      const sender = game.onlineUsers.get(ws);
+      if (target && performanceId && sender && sender.id === target) {
+        game.drawing.set(questionId, { id: performanceId, ended: false, batches: [] });
+        game.broadcast({ type: 'drawing_start', data: { questionId, performanceId } });
+      }
+    } else if (data.type === 'drawing_stroke') {
+      // A batch of pen-stroke ops from the drawer: store for late joiners and
+      // relay to everyone else. Ops are tiny normalized JSON; the caps only
+      // guard against something pathological.
+      const { questionId, performanceId, seq, ops } = data.data;
+      const perf = game.drawing.get(questionId);
+      const target = game.getDrawingTarget(questionId);
+      const sender = game.onlineUsers.get(ws);
+      if (perf && perf.id === performanceId && !perf.ended
+        && target && sender && sender.id === target
+        && Array.isArray(ops) && ops.length > 0 && ops.length <= 2000
+        && Number.isFinite(Number(seq))
+        && JSON.stringify(ops).length <= 200000) {
+        const batch = { seq: Number(seq), ops };
+        perf.batches.push(batch);
+        // Bound memory: a very long drawing drops its oldest batches (a late
+        // joiner then misses the very start, never the recent picture).
+        if (perf.batches.length > 6000) perf.batches.shift();
+        const message = JSON.stringify({
+          type: 'drawing_stroke',
+          data: { questionId, performanceId, ...batch }
+        });
+        game.sockets.forEach((client) => {
+          if (client !== ws && client.readyState === WebSocket.OPEN) {
+            client.send(message);
+          }
+        });
+      }
+    } else if (data.type === 'drawing_end') {
+      // The performer pressed Done, or the host ended the round. Unlike karaoke
+      // the backlog is kept: a refresher after the end still replays the
+      // finished picture (cleared only on return_to_game).
+      const { questionId, performanceId } = data.data;
+      const perf = game.drawing.get(questionId);
+      const target = game.getDrawingTarget(questionId);
+      const sender = game.onlineUsers.get(ws);
+      const mayEnd = ws.isHost || (sender && target && sender.id === target);
+      if (perf && perf.id === performanceId && !perf.ended && mayEnd) {
+        perf.ended = true;
+        game.broadcast({ type: 'drawing_end', data: { questionId, performanceId } });
+      }
+    } else if (data.type === 'drawing_sync') {
+      // A (re)joining client catches up: current assignment/performance state,
+      // then the full stroke backlog so its canvas rebuilds the picture so far.
+      // Replayed even when ended (so a refresher sees the finished drawing).
+      const { questionId } = data.data || {};
+      const perf = game.drawing.get(questionId);
+      ws.send(JSON.stringify({
+        type: 'drawing_state',
+        data: {
+          questionId,
+          targetUserId: game.getDrawingTarget(questionId),
+          performance: perf ? { id: perf.id, ended: perf.ended } : null
+        }
+      }));
+      if (perf) {
+        perf.batches.forEach((batch) => {
+          ws.send(JSON.stringify({
+            type: 'drawing_stroke',
+            data: { questionId, performanceId: perf.id, ...batch }
+          }));
         });
       }
     } else if (data.type === 'cast_vote') {

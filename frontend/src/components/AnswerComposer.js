@@ -17,7 +17,7 @@ import { useTranslation } from '../i18n/LanguageContext';
 const MAX_ANSWER_IMAGE_CHARS = 2000000;
 const MAX_ANSWER_IMAGE_BYTES = Math.floor((MAX_ANSWER_IMAGE_CHARS - 100) * 3 / 4);
 
-const AnswerComposer = ({ onSubmit, onPreviewImage, submitLabel, buttonStyle = {} }) => {
+const AnswerComposer = ({ onSubmit, onPreviewImage, submitLabel, buttonStyle = {}, drawStreamQuestionId = null }) => {
   const { t } = useTranslation();
   const [text, setText] = useState('');
   const [image, setImage] = useState(null);
@@ -169,6 +169,7 @@ const AnswerComposer = ({ onSubmit, onPreviewImage, submitLabel, buttonStyle = {
         onClose={() => setDrawOpen(false)}
         onApply={handleApplyDrawing}
         initialImage={typeof image === 'string' && image.startsWith('data:image') ? image : null}
+        streamQuestionId={drawStreamQuestionId}
       />
     </div>
   );

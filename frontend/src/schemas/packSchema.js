@@ -39,7 +39,7 @@
  * @property {Object[]} [options] - Choice options: { content: html, correct: boolean }
  * @property {string} [effect] - Progressive-reveal hiding effect: blur | pixelate | zoom
  * @property {string} [curve] - Progressive-reveal speed curve: linear | slow-start | fast-start
- * @property {string} [crocodile_mode] - Crocodile scoring: 'fastest' | 'dixit'
+ * @property {string} [crocodile_mode] - How guessers answer: 'fastest' (buzz) | 'dixit' (text). The performer always draws live.
  * @property {string} [vote_mode] - Voting visibility: 'open' | 'closed'
  * @property {string} [media] - Karaoke track (audio/video) as a base64 data URL
  * @property {string} [lyrics] - Karaoke lyrics (plain text or LRC)

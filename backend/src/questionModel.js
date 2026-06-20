@@ -23,6 +23,7 @@ function normalizeQuestion(q) {
   const legacy = LEGACY_TYPE_MAP[q.type];
   if (legacy) return { ...q, ...legacy };
   // Crocodile: fold the legacy crocodile_mode into the unified response axis.
+  // The performer always draws live; crocodile_mode only picks the guess method.
   if (q.type === 'crocodile' && q.response === undefined && q.crocodile_mode) {
     return { ...q, response: q.crocodile_mode === 'dixit' ? 'text' : 'buzz' };
   }

@@ -160,6 +160,24 @@ class WebSocketManager {
     this.send({ type: 'crocodile_response', data: { questionId, value } });
   }
 
+  // Crocodile "draw" mode: the performer streams pen-stroke ops live; mirrors
+  // the karaoke chunk pipeline above.
+  sendDrawingStart(questionId, performanceId) {
+    this.send({ type: 'drawing_start', data: { questionId, performanceId } });
+  }
+
+  sendDrawingStroke(questionId, performanceId, seq, ops) {
+    this.send({ type: 'drawing_stroke', data: { questionId, performanceId, seq, ops } });
+  }
+
+  sendDrawingEnd(questionId, performanceId) {
+    this.send({ type: 'drawing_end', data: { questionId, performanceId } });
+  }
+
+  sendDrawingSync(questionId) {
+    this.send({ type: 'drawing_sync', data: { questionId } });
+  }
+
   sendCastVote(questionId, voterId, targetUserId) {
     this.send({ type: 'cast_vote', data: { questionId, voterId, targetUserId } });
   }

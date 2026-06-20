@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
 import { useTranslation } from '../i18n/LanguageContext';
+import { PALETTE, floodFill } from '../utils/drawingEngine';
+import wsManager from '../utils/websocket';
 
 // A freehand drawing pad shown as a fullscreen modal. Players use it to draw
 // their answer to a text-answer question; on apply it exports a PNG data URL
@@ -14,7 +17,6 @@ const DEFAULT_W = 720;
 const DEFAULT_H = 420;
 const MAX_W = 1280;
 const MAX_H = 720;
-const PALETTE = ['#000000', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
 // Checkerboard shown behind the (transparent) canvas so the user can tell
 // where it is see-through.
 const CHECKER = {
@@ -33,19 +35,19 @@ const loadImage = (src) =>
     img.src = src;
   });
 
-const hexToRgba = (hex) => {
-  let h = hex.replace('#', '');
-  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
-  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 255];
-};
-
-const DrawCanvas = ({ open, onClose, onApply, initialImage }) => {
+// streamQuestionId: when set, the strokes drawn here are streamed live over the
+// socket (drawing_* messages) so watchers see the drawing develop in real time.
+// Used by the single designated answerer of a watchable question (crocodile
+// performer / cat-in-the-bag chosen player). null = no streaming (private draw).
+const DrawCanvas = ({ open, onClose, onApply, initialImage, streamQuestionId = null }) => {
   const { t } = useTranslation();
   const canvasRef = useRef(null);
   const bgInputRef = useRef(null);
   const drawingRef = useRef(false);
   const lastRef = useRef(null);
   const historyRef = useRef([]);
+  // Live-stream state (only used when streamQuestionId is set).
+  const streamRef = useRef({ perfId: null, seq: 0, ops: [], raf: null, strokeId: 0 });
 
   const [dims, setDims] = useState({ w: DEFAULT_W, h: DEFAULT_H });
   const [baseImage, setBaseImage] = useState(null);
@@ -122,7 +124,8 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage }) => {
     const prev = historyRef.current.pop();
     if (ctx && prev) ctx.putImageData(prev, 0, 0);
     setCanUndo(historyRef.current.length > 0);
-  }, []);
+    if (streamQuestionId) streamRef.current.ops.push({ op: 'undo' });
+  }, [streamQuestionId]);
 
   // Ctrl+Z / Cmd+Z undoes the last stroke.
   useEffect(() => {
@@ -148,44 +151,47 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage }) => {
     };
   };
 
-  // 4-way flood fill with a small tolerance for anti-aliased edges.
-  const floodFill = (startX, startY) => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    const w = canvas.width;
-    const h = canvas.height;
-    const sx = Math.round(startX);
-    const sy = Math.round(startY);
-    if (sx < 0 || sy < 0 || sx >= w || sy >= h) return;
-    const img = ctx.getImageData(0, 0, w, h);
-    const data = img.data;
-    const at = (x, y) => (y * w + x) * 4;
-    const start = at(sx, sy);
-    const target = [data[start], data[start + 1], data[start + 2], data[start + 3]];
-    const [fr, fg, fb, fa] = hexToRgba(color);
-    if (target[0] === fr && target[1] === fg && target[2] === fb && target[3] === fa) return;
-    const tol = 32;
-    const matches = (i) =>
-      Math.abs(data[i] - target[0]) <= tol &&
-      Math.abs(data[i + 1] - target[1]) <= tol &&
-      Math.abs(data[i + 2] - target[2]) <= tol &&
-      Math.abs(data[i + 3] - target[3]) <= tol;
-    const stack = [sx, sy];
-    while (stack.length) {
-      const y = stack.pop();
-      const x = stack.pop();
-      if (x < 0 || y < 0 || x >= w || y >= h) continue;
-      const i = at(x, y);
-      if (!matches(i)) continue;
-      data[i] = fr;
-      data[i + 1] = fg;
-      data[i + 2] = fb;
-      data[i + 3] = fa;
-      stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+  // Queue a stream op (normalized 0..1), coalescing a frame's points into one.
+  const streamEmit = (op) => {
+    if (!streamQuestionId) return;
+    const buf = streamRef.current.ops;
+    const last = buf[buf.length - 1];
+    if (op.op === 'points' && last && last.op === 'points' && last.id === op.id) {
+      last.pts.push(...op.pts);
+    } else {
+      buf.push(op);
     }
-    ctx.putImageData(img, 0, 0);
   };
+  // Normalized point/size against the current canvas backing store.
+  const nx = (x) => x / (canvasRef.current?.width || DEFAULT_W);
+  const ny = (y) => y / (canvasRef.current?.height || DEFAULT_H);
+
+  // Open/close the live performance and pump queued ops once per frame.
+  useEffect(() => {
+    if (!open || !streamQuestionId) return undefined;
+    const s = streamRef.current;
+    s.perfId = `${streamQuestionId}-${Date.now()}-${Math.floor(performance.now())}`;
+    s.seq = 0;
+    s.ops = [];
+    s.strokeId = 0;
+    wsManager.sendDrawingStart(streamQuestionId, s.perfId);
+    const flush = () => {
+      if (s.ops.length) {
+        const ops = s.ops;
+        s.ops = [];
+        wsManager.sendDrawingStroke(streamQuestionId, s.perfId, s.seq++, ops);
+      }
+      s.raf = window.requestAnimationFrame(flush);
+    };
+    s.raf = window.requestAnimationFrame(flush);
+    return () => {
+      if (s.raf) window.cancelAnimationFrame(s.raf);
+      // Flush any tail, then end the performance (watchers freeze the picture).
+      if (s.ops.length) wsManager.sendDrawingStroke(streamQuestionId, s.perfId, s.seq++, s.ops);
+      s.ops = [];
+      wsManager.sendDrawingEnd(streamQuestionId, s.perfId);
+    };
+  }, [open, streamQuestionId]);
 
   const handlePointerDown = (e) => {
     e.preventDefault();
@@ -194,7 +200,9 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage }) => {
     const p = pointFromEvent(e);
     if (tool === 'fill') {
       pushHistory();
-      floodFill(p.x, p.y);
+      ctx.globalCompositeOperation = 'source-over';
+      floodFill(ctx, color, p.x, p.y);
+      streamEmit({ op: 'fill', color, x: nx(p.x), y: ny(p.y) });
       return;
     }
     canvasRef.current?.setPointerCapture(e.pointerId);
@@ -207,6 +215,8 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage }) => {
     ctx.fillStyle = color;
     ctx.arc(p.x, p.y, size / 2, 0, Math.PI * 2);
     ctx.fill();
+    streamRef.current.strokeId += 1;
+    streamEmit({ op: 'begin', id: streamRef.current.strokeId, tool, color, size: nx(size), x: nx(p.x), y: ny(p.y) });
   };
 
   const handlePointerMove = (e) => {
@@ -224,9 +234,11 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage }) => {
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
     lastRef.current = p;
+    streamEmit({ op: 'points', id: streamRef.current.strokeId, pts: [nx(p.x), ny(p.y)] });
   };
 
   const endStroke = () => {
+    if (drawingRef.current) streamEmit({ op: 'end', id: streamRef.current.strokeId });
     drawingRef.current = false;
     lastRef.current = null;
     const ctx = canvasRef.current?.getContext('2d');
@@ -240,6 +252,7 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage }) => {
     pushHistory();
     ctx.globalCompositeOperation = 'source-over';
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    streamEmit({ op: 'clear' });
   };
 
   const handleBgChange = (e) => {
@@ -294,7 +307,11 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage }) => {
   const swatchBorder = (c) =>
     c.toLowerCase() === '#ffffff' ? '1px solid var(--glass-border)' : '1px solid transparent';
 
-  return (
+  // Portal to document.body: the composer that hosts this modal lives inside a
+  // card with backdrop-filter, which creates its own stacking context and would
+  // otherwise trap the modal's z-index — letting the player list (a later
+  // sibling at the page root) paint over the modal's controls.
+  const modalContent = (
     <div
       onPointerDown={(e) => {
         // Click on the dim backdrop (outside the panel) closes.
@@ -447,6 +464,8 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage }) => {
       </div>
     </div>
   );
+
+  return ReactDOM.createPortal(modalContent, document.body);
 };
 
 export default DrawCanvas;

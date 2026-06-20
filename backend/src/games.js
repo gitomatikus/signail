@@ -48,6 +48,11 @@ class Game {
     // Crocodile: one chosen player privately sees the question and submits a
     // text/image/audio response; everyone else then guesses by buzzing.
     this.crocodile = new Map();
+    // questionId -> { id, ended, batches: [{seq, ops}] }
+    // Crocodile "draw" mode: the assigned performer (kept in `crocodile`)
+    // streams pen-stroke ops live. `batches` is an in-memory backlog so late
+    // joiners can replay the picture so far. Mirrors the karaoke chunk backlog.
+    this.drawing = new Map();
     // Voting: everyone submits an answer (reusing questionAnswers), the host
     // reveals them, then each player casts one final vote for someone else's
     // answer. questionId -> Map(voterId -> targetUserId).
@@ -141,6 +146,7 @@ class Game {
     this.secretAssignments.clear();
     this.karaoke.clear();
     this.crocodile.clear();
+    this.drawing.clear();
     this.votes.clear();
     this.revealedVotes.clear();
     this.questionClicks.clear();
@@ -160,6 +166,25 @@ class Game {
     }
   }
 
+  // Same idea for live crocodile drawings: once everyone is back on the board
+  // the stroke backlog is dead weight.
+  closeDrawingPerformances() {
+    for (const perf of this.drawing.values()) {
+      perf.ended = true;
+      perf.batches = [];
+    }
+  }
+
+  // The single player allowed to stream a live drawing for a question: the
+  // crocodile performer, or the cat-in-the-bag (exclusive selection) chosen
+  // player. Used to gate the drawing_* messages.
+  getDrawingTarget(questionId) {
+    const croc = this.crocodile.get(questionId);
+    if (croc && croc.targetUserId) return croc.targetUserId;
+    const secret = this.secretAssignments.get(questionId);
+    return secret ? secret.targetUserId : null;
+  }
+
   getSecretInfo(questionId) {
     return {
       selectorId: this.questionSelectors.get(questionId) || null,
@@ -176,7 +201,12 @@ class Game {
       selectorId: (entry && entry.selectorUserId) || this.questionSelectors.get(questionId) || null,
       targetUserId: entry ? entry.targetUserId : null,
       response: entry ? entry.response : null,
-      revealed: this.revealedQuestions.has(questionId)
+      revealed: this.revealedQuestions.has(questionId),
+      // Draw mode: tells a (re)joining client there is a live/finished drawing
+      // to catch up on via a drawing_sync over the socket.
+      drawing: this.drawing.has(questionId)
+        ? { id: this.drawing.get(questionId).id, ended: this.drawing.get(questionId).ended }
+        : null
     };
   }
 

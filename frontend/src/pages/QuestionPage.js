@@ -6,6 +6,7 @@ import KaraokeQuestion from '../components/KaraokeQuestion';
 import ProgressiveImage from '../components/ProgressiveImage';
 import ImageLightbox from '../components/ImageLightbox';
 import AnswerComposer from '../components/AnswerComposer';
+import CrocodileDrawing from '../components/CrocodileDrawing';
 import Settings from '../components/Settings';
 import Logo from '../components/Logo';
 import config from '../config';
@@ -570,9 +571,9 @@ const QuestionPage = () => {
     if (isExclusiveSelection(question) && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
       return;
     }
-    // Crocodile: the guess countdown only runs once the performer's response
-    // is on screen for everyone
-    if (question?.type === 'crocodile' && !crocodileResponse) {
+    // Crocodile: the guess countdown runs once a performer is chosen and starts
+    // drawing live (guessers race/answer during the draw)
+    if (question?.type === 'crocodile' && !crocodileTargetId) {
       return;
     }
     // Progressive reveal: pause while any buzz awaits the admin's verdict
@@ -593,7 +594,7 @@ const QuestionPage = () => {
 
       return () => clearInterval(interval);
     }
-  }, [isQuestionRevealed, isReadOnly, question, secretTargetId, crocodileResponse, userTimes, redJudgedUsers]);
+  }, [isQuestionRevealed, isReadOnly, question, secretTargetId, crocodileResponse, crocodileTargetId, userTimes, redJudgedUsers]);
 
   // Question audio/video follows the reveal-image rule: while any buzz awaits
   // the admin's verdict, everything pauses; once every buzz is judged wrong,
@@ -764,10 +765,10 @@ const QuestionPage = () => {
       }
       if (question?.type === 'crocodile') {
         // Buzzing is only for the "fastest" mode; in "dixit" mode guessers
-        // submit a text answer instead. Only guessers buzz, and only once the
-        // performer's response is shown. The performer and host never guess.
+        // submit a text answer instead. Only guessers buzz, and only once a
+        // performer is drawing live. The performer and host never guess.
         const crocodileMode = question.crocodile_mode || 'fastest';
-        if (crocodileMode === 'dixit' || !crocodileResponse || isAdmin || currentUserId === crocodileTargetId) {
+        if (crocodileMode === 'dixit' || !crocodileTargetId || isAdmin || currentUserId === crocodileTargetId) {
           return;
         }
       }
@@ -803,8 +804,8 @@ const QuestionPage = () => {
     if (isExclusiveSelection(question) && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
       return;
     }
-    // Crocodile: the buzz clock starts only once the performer's response is in
-    if (question.type === 'crocodile' && !crocodileResponse) {
+    // Crocodile: the buzz clock starts once a performer is chosen and draws live
+    if (question.type === 'crocodile' && !crocodileTargetId) {
       return;
     }
     if ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) {
@@ -815,7 +816,7 @@ const QuestionPage = () => {
       setUserTimes({}); // Reset all user times when starting new question
       setClickedIndices(new Set()); // Reset clicked indices for new question!
     }
-  }, [question, isQuestionRevealed, isAnswerRevealed, isAdmin, secretTargetId, crocodileResponse]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [question, isQuestionRevealed, isAnswerRevealed, isAdmin, secretTargetId, crocodileResponse, crocodileTargetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync clickedIndices when page is loaded/refreshed and user has already recorded time
   useEffect(() => {
@@ -1699,8 +1700,24 @@ const QuestionPage = () => {
     const hasSubmitted = myAnswer !== undefined;
     // With exclusive selection (e.g. "draw a cat") only the chosen player gets
     // the composer; everyone else just sees the question and waits.
-    const exclusiveLocked = isExclusiveSelection(question) && currentUserId !== secretTargetId;
-    if (isAdmin || exclusiveLocked) return null;
+    const exclusive = isExclusiveSelection(question);
+    const exclusiveLocked = exclusive && currentUserId !== secretTargetId;
+    if (isAdmin || exclusiveLocked) {
+      // Cat-in-the-bag: everyone else (incl. host) watches the chosen player's
+      // drawing live if/when they draw. Renders nothing until a drawing starts.
+      if (exclusive && secretTargetId) {
+        return (
+          <CrocodileDrawing
+            key={`watchdraw-${questionId}`}
+            questionId={parseInt(questionId)}
+            mode="watcher"
+            currentUserId={currentUserId}
+            idleHidden
+          />
+        );
+      }
+      return null;
+    }
 
     return (
       <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
@@ -1716,6 +1733,9 @@ const QuestionPage = () => {
             onPreviewImage={setLightboxImage}
             submitLabel={t('question.submitAnswer')}
             buttonStyle={buttonStyle}
+            // The chosen player of a cat-in-the-bag question streams their
+            // drawing live so the table can watch it develop.
+            drawStreamQuestionId={exclusive ? parseInt(questionId) : null}
           />
         )}
       </div>
@@ -2041,50 +2061,119 @@ const QuestionPage = () => {
       </div>
     );
 
-    // PHASE 2: performer assigned, waiting for their response
+    // The original request (the prompt the performer was drawing). Hidden from
+    // guessers until the host presses "Show original request"; the performer
+    // and host always see it through their own question card.
+    const requestCard = isAnswerRevealed ? (
+      <div style={cardStyle}>
+        <div style={cardBadgeStyle}>{t('question.crocodileRequestLabel')}</div>
+        {(question.rules || []).map((rule, index) => (
+          <div key={index} style={{ marginBottom: '8px', width: '100%' }}>
+            {renderRule(rule)}
+          </div>
+        ))}
+      </div>
+    ) : null;
+
+    // PHASE 2: a performer is assigned and draws LIVE. Everyone watches the
+    // strokes stream in; guessers answer concurrently by the configured method
+    // (dixit = type a guess, fastest = buzz, choice = pick). The performer's
+    // "Done" or the host's "End" flattens the drawing into the response, which
+    // drops everyone into PHASE 3 reveal/scoring.
     if (!crocodileResponse) {
+      const liveCanvas = (mode) => (
+        <div style={{ ...cardStyle, minHeight: 'auto', padding: mode === 'performer' ? '1.5rem' : '1rem' }}>
+          {mode === 'performer' && (
+            <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              {t('question.crocodileDrawPrompt')}
+            </div>
+          )}
+          <CrocodileDrawing
+            key={`crocodraw-${questionId}`}
+            questionId={parseInt(questionId)}
+            mode={mode}
+            currentUserId={currentUserId}
+            onFinish={mode === 'performer' ? handleSubmitCrocodileResponse : undefined}
+          />
+        </div>
+      );
+
       if (isPerformer) {
-        // The performer sees the prompt in the same plain question card the host
-        // gets for a normal question (no bespoke crocodile header), plus the
-        // composer to respond.
+        // The performer sees the prompt (their plain question card) and draws.
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {renderNormalContent()}
-            <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
-              <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                {t('question.crocodileYourTurn')}
-              </div>
-              <AnswerComposer
-                key={`crocodile-${questionId}`}
-                onSubmit={handleSubmitCrocodileResponse}
-                onPreviewImage={setLightboxImage}
-                submitLabel={t('question.sendResponse')}
-                buttonStyle={buttonStyle}
-              />
-            </div>
+            {liveCanvas('performer')}
           </div>
         );
       }
       if (isAdmin) {
-        // Host watches the prompt (same plain question card as a normal question)
-        // and waits for the response
+        // Host watches the prompt + the live drawing, and can End the round.
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {renderNormalContent()}
-            <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem', color: 'var(--text-secondary)' }}>
-              {t('question.crocodileWaitingResponse', { name: targetUser ? targetUser.name : '...' })}
+            {liveCanvas('host')}
+          </div>
+        );
+      }
+
+      // Guessers: watch the live drawing and answer concurrently.
+      const guessMethod = responseMethod(question);
+      if (guessMethod === 'choice') {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {header}
+            {liveCanvas('watcher')}
+            {requestCard}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {renderChoiceOptionsBlock()}
             </div>
           </div>
         );
       }
-      // Everyone else waits without seeing the question
+      if (guessMethod === 'text') {
+        const myGuess = currentUserId ? numberAnswers[currentUserId] : undefined;
+        const hasGuessed = myGuess !== undefined;
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {header}
+            {liveCanvas('watcher')}
+            {requestCard}
+            <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+              {hasGuessed ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
+                  {renderAnswerValue(myGuess)}
+                </div>
+              ) : (
+                <AnswerComposer
+                  key={`crocodile-guess-${questionId}`}
+                  onSubmit={handleSubmitTextAnswer}
+                  onPreviewImage={setLightboxImage}
+                  submitLabel={t('question.submitAnswer')}
+                  buttonStyle={buttonStyle}
+                />
+              )}
+            </div>
+          </div>
+        );
+      }
+      // Fastest: guessers buzz while watching; the quickest correct one scores.
+      const hasBuzzed = hasRecordedTime || (currentUserId && userTimes[currentUserId] !== undefined);
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {header}
-          <div style={cardStyle}>
-            <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)' }}>
-              {t('question.crocodilePreparing', { name: targetUser ? targetUser.name : '...' })}
-            </div>
+          {liveCanvas('watcher')}
+          {requestCard}
+          <div className="glass-panel" style={{
+            padding: '1rem 2rem',
+            fontSize: '1.3rem',
+            fontWeight: '700',
+            color: 'var(--text-primary)',
+            textAlign: 'center',
+            border: '1px solid var(--glass-border)'
+          }}>
+            {hasBuzzed ? t('question.answerAccepted') : t('question.pressSpace')}
           </div>
         </div>
       );
@@ -2118,6 +2207,7 @@ const QuestionPage = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {header}
           {responseCard}
+          {requestCard}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {renderChoiceOptionsBlock()}
           </div>
@@ -2134,6 +2224,7 @@ const QuestionPage = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {header}
           {responseCard}
+          {requestCard}
           <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
             {hasGuessed ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
@@ -2162,6 +2253,7 @@ const QuestionPage = () => {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {header}
         {responseCard}
+        {requestCard}
         {!answerCard && !hasBuzzed && (
           <div className="glass-panel" style={{
             padding: '1rem 2rem',
@@ -2703,7 +2795,9 @@ const QuestionPage = () => {
       </div>
       {/* Action buttons (Show Question/Show Answer/Show Response/Back to Game) */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        {isAdmin && !isQuestionRevealed && (
+        {/* Crocodile needs no "Show Question": the performer sees the prompt as
+            soon as they're picked, and guessers must not see it (they guess). */}
+        {isAdmin && !isQuestionRevealed && question.type !== 'crocodile' && (
           <button
             onClick={handleShowQuestion}
             className="btn-primary"
@@ -2712,7 +2806,7 @@ const QuestionPage = () => {
             {t('question.showQuestion')}
           </button>
         )}
-        {isAdmin && isQuestionRevealed && !isAnswerRevealed && question.type !== 'voting' && (
+        {isAdmin && isQuestionRevealed && !isAnswerRevealed && question.type !== 'voting' && question.type !== 'crocodile' && (
           <button
             onClick={handleShowAnswer}
             className="btn-primary"
@@ -2727,7 +2821,8 @@ const QuestionPage = () => {
         {isAdmin && !answersRevealed && (
           ((question.type === 'close-enough' || question.type === 'voting'
             || (responseMethod(question) === 'text' && question.type !== 'crocodile')) && isQuestionRevealed) ||
-          // Crocodile dixit/choice collect guesses once the performer responds
+          // Crocodile dixit/choice: guesses are collected live while the
+          // performer draws, but only revealed once the drawing is finished.
           (question.type === 'crocodile' && responseMethod(question) !== 'buzz' && crocodileResponse)
         ) && (
           <button
@@ -2735,7 +2830,25 @@ const QuestionPage = () => {
             className="btn-primary"
             style={buttonStyle}
           >
-            {question.type === 'voting' ? t('question.showAnswers') : t('question.showResult')}
+            {question.type === 'voting'
+              ? t('question.showAnswers')
+              : question.type === 'crocodile'
+                ? t('question.revealPlayersAnswers')
+                : t('question.showResult')}
+          </button>
+        )}
+        {/* Crocodile: reveal the prompt the performer was drawing ("a cat") to
+            everyone — only after the guessers' answers have been shown (for
+            buzz mode there is no answer-reveal step, so the finished drawing
+            gates it instead). */}
+        {isAdmin && question.type === 'crocodile' && crocodileResponse && !isAnswerRevealed
+          && (responseMethod(question) === 'buzz' || answersRevealed) && (
+          <button
+            onClick={handleShowAnswer}
+            className="btn-primary"
+            style={buttonStyle}
+          >
+            {t('question.showOriginalRequest')}
           </button>
         )}
         {/* Voting: once answers are out and votes are in, lock/reveal them */}

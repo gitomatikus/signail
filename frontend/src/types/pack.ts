@@ -37,7 +37,7 @@ export interface Question {
   options?: ChoiceOption[];
   effect?: RevealEffect;
   curve?: RevealCurve;
-  /** Crocodile scoring mode: 'fastest' (only the quickest correct guesser scores) or 'dixit' (everyone submits a text guess and anyone can score) */
+  /** How guessers answer a crocodile question: 'fastest' (quickest correct buzz scores) or 'dixit' (everyone submits a text guess). The performer always draws live. */
   crocodile_mode?: 'fastest' | 'dixit';
   /** Voting visibility: 'open' (everyone sees votes live) or 'closed' (hidden until the host reveals) */
   vote_mode?: 'open' | 'closed';
