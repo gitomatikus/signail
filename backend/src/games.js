@@ -67,6 +67,10 @@ class Game {
     // alongside questionTypes (pack metadata, not per-round state).
     this.questionHidden = new Map();
     this.lastGreenFrameUser = null;
+    // The question the room is currently on (set on select/reveal, cleared on
+    // return-to-game). A (re)connecting client reads it to land on the right
+    // screen instead of being stuck on whatever page it had before the drop.
+    this.currentQuestionId = null;
   }
 
   get packPath() {
@@ -138,6 +142,7 @@ class Game {
   }
 
   resetQuestionState() {
+    this.currentQuestionId = null;
     this.selectedQuestions.clear();
     this.revealedQuestions.clear();
     this.questionTimes.clear();

@@ -1280,6 +1280,11 @@ input[type="range"].volume-slider::-moz-range-track {
     }
 }
 
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
 
     body::before,

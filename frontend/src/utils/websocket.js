@@ -1,13 +1,46 @@
 import config from '../config';
 
+// Client-side liveness check. Browsers do NOT reliably fire onclose/onerror for
+// a half-open socket (Wi-Fi switch, sleep, backgrounded tab, proxy hiccup), so
+// without an app-level heartbeat the client thinks it is still connected and
+// never reconnects - the user has to refresh. We ping every PING_INTERVAL_MS;
+// if no pong comes back within PONG_TIMEOUT_MS the socket is treated as dead.
+const PING_INTERVAL_MS = 10000;
+const PONG_TIMEOUT_MS = 10000;
+
+// Reconnect cadence: start near-immediate and back off exponentially up to a
+// cap, with jitter so a crowd of clients doesn't reconnect in lockstep after a
+// server blip. Mirrors Socket.IO's defaults (fast first retry is what makes
+// reconnection feel instant). The counter resets to 0 on a successful open.
+const RECONNECT_BASE_MS = 500;
+const RECONNECT_MAX_MS = 5000;
+const RECONNECT_JITTER = 0.5;
+
 class WebSocketManager {
   constructor() {
     this.ws = null;
     this.subscribers = new Set();
     this.selectedQuestions = new Set();
     this.reconnectTimer = null;
+    this.reconnectAttempts = 0;
+    this.heartbeatTimer = null;
+    this.pongTimer = null;
     this.intentionalClose = false;
     this.connectionParams = null; // { gameId, hostToken, password } of the active game
+
+    // A device waking up (tab refocus, network back) is the moment a half-open
+    // socket needs to be re-checked / replaced - probe or reconnect immediately
+    // instead of waiting out the next ping interval.
+    if (typeof window !== 'undefined') {
+      const wake = () => this.handleNetworkWake();
+      window.addEventListener('online', wake);
+      window.addEventListener('focus', wake);
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') wake();
+        });
+      }
+    }
   }
 
   // Connect to a specific game room. Reconnects (manual or automatic) reuse
@@ -19,6 +52,7 @@ class WebSocketManager {
       if (!sameGame && this.ws) {
         // Switching rooms: drop the old socket first
         this.intentionalClose = true;
+        this.stopHeartbeat();
         this.ws.close();
         this.ws = null;
       }
@@ -47,6 +81,8 @@ class WebSocketManager {
 
     socket.onopen = () => {
       console.log('WebSocket connected');
+      this.reconnectAttempts = 0; // fresh connection: reset the backoff
+      this.startHeartbeat();
       // Let subscribers (re)introduce themselves, e.g. re-send user_login
       this.notifySubscribers({ type: 'ws_open' });
     };
@@ -56,6 +92,14 @@ class WebSocketManager {
         return; // stale socket that was replaced - ignore its messages
       }
       const data = JSON.parse(event.data);
+      if (data.type === 'pong') {
+        // The socket is alive: cancel the pending dead-connection timeout
+        if (this.pongTimer) {
+          clearTimeout(this.pongTimer);
+          this.pongTimer = null;
+        }
+        return;
+      }
       this.notifySubscribers(data);
     };
 
@@ -64,13 +108,98 @@ class WebSocketManager {
       if (this.ws !== socket || this.intentionalClose) {
         return; // replaced or deliberately closed - no auto-reconnect
       }
-      // Attempt to reconnect after 5 seconds
-      this.reconnectTimer = setTimeout(() => this.connect(), 5000);
+      this.stopHeartbeat();
+      // Tell the UI we're offline so it can show a "reconnecting" indicator
+      this.notifySubscribers({ type: 'ws_closed' });
+      this.scheduleReconnect();
     };
 
     socket.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
+  }
+
+  startHeartbeat() {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => this.sendPing(), PING_INTERVAL_MS);
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    if (this.pongTimer) {
+      clearTimeout(this.pongTimer);
+      this.pongTimer = null;
+    }
+  }
+
+  sendPing() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    this.ws.send(JSON.stringify({ type: 'ping' }));
+    if (this.pongTimer) {
+      return; // already awaiting a pong; one outstanding probe is enough
+    }
+    this.pongTimer = setTimeout(() => {
+      this.pongTimer = null;
+      // No pong in time: the connection is half-open. Drop it (ignoring its
+      // late onclose) and reconnect immediately.
+      const dead = this.ws;
+      this.ws = null;
+      if (dead) {
+        try { dead.close(); } catch (e) { /* already closing */ }
+      }
+      this.notifySubscribers({ type: 'ws_closed' }); // half-open: tell the UI
+      this.reconnectNow();
+    }, PONG_TIMEOUT_MS);
+  }
+
+  // Backoff between reconnect attempts: RECONNECT_BASE_MS * 2^attempts, jittered
+  // by +/-RECONNECT_JITTER and clamped to RECONNECT_MAX_MS.
+  scheduleReconnect() {
+    if (this.intentionalClose || !this.connectionParams || this.reconnectTimer) {
+      return;
+    }
+    const raw = RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempts);
+    const deviation = raw * RECONNECT_JITTER * Math.random();
+    const jittered = Math.random() < 0.5 ? raw - deviation : raw + deviation;
+    const delay = Math.max(0, Math.min(RECONNECT_MAX_MS, Math.round(jittered)));
+    this.reconnectAttempts += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
+  }
+
+  // Immediate reconnect (watchdog / device wake): a genuine fresh recovery, so
+  // reset the backoff first for a fast first attempt. If it fails, onclose
+  // falls back to scheduleReconnect with growing delays.
+  reconnectNow() {
+    if (this.intentionalClose || !this.connectionParams) {
+      return;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempts = 0;
+    this.connect();
+  }
+
+  // Device woke / network returned / tab refocused: a still-"OPEN" socket may
+  // actually be dead, so probe it; if it is already closed, reconnect now.
+  handleNetworkWake() {
+    if (this.intentionalClose || !this.connectionParams) {
+      return;
+    }
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.sendPing();
+    } else if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
+      this.reconnectNow();
+    }
   }
 
   subscribe(callback) {
@@ -245,6 +374,8 @@ class WebSocketManager {
   disconnect() {
     this.intentionalClose = true;
     this.connectionParams = null;
+    this.reconnectAttempts = 0;
+    this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

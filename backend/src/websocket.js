@@ -81,6 +81,17 @@ class WebSocketManager {
         type: 'online_users',
         data: Array.from(game.persistentUsers.values())
       }));
+      // The screen the room is currently on, so a (re)joining client can
+      // navigate straight to it (per-question state then rehydrates via REST).
+      if (game.currentQuestionId != null) {
+        ws.send(JSON.stringify({
+          type: 'current_question',
+          data: {
+            questionId: game.currentQuestionId,
+            revealed: game.revealedQuestions.has(game.currentQuestionId)
+          }
+        }));
+      }
 
       ws.on('message', (message) => {
         try {
@@ -111,6 +122,14 @@ class WebSocketManager {
   }
 
   handleMessage(game, ws, data) {
+    if (data.type === 'ping') {
+      // Client-side liveness check: answer so the client knows the socket is
+      // still alive (a missed pong is how the client detects a half-open drop)
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'pong' }));
+      }
+      return;
+    }
     if (data.type === 'user_login') {
       const userData = data.data;
       if (!userData.id) {
@@ -165,6 +184,7 @@ class WebSocketManager {
         game.questionSelectors.set(questionId, selectorId);
       }
       game.selectedQuestions.add(questionId);
+      game.currentQuestionId = questionId; // the room is now on this question
       game.broadcast({ type: 'question_select', data: data.data });
       game.broadcastSelectedQuestions();
     } else if (data.type === 'question_toggle') {
@@ -180,12 +200,14 @@ class WebSocketManager {
       game.broadcastSelectedQuestions();
     } else if (data.type === 'question_reveal') {
       game.revealedQuestions.add(data.data.questionId);
+      game.currentQuestionId = data.data.questionId; // reveal may arrive without a prior select
       game.broadcast({ type: 'question_reveal', data: data.data });
     } else if (data.type === 'answer_reveal') {
       game.broadcast({ type: 'answer_reveal', data: data.data });
     } else if (data.type === 'response_reveal') {
       game.broadcast({ type: 'response_reveal', data: data.data });
     } else if (data.type === 'return_to_game') {
+      game.currentQuestionId = null; // back on the board
       game.closeKaraokePerformances();
       game.closeDrawingPerformances();
       game.broadcast({ type: 'return_to_game' });

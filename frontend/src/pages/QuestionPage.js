@@ -747,9 +747,12 @@ const QuestionPage = () => {
         return;
       }
       // Typing a space in a field or activating a focused button must keep
-      // its normal meaning — the buzz keys only apply outside form controls
+      // its normal meaning — the buzz keys only apply outside form controls.
+      // A range slider is an exception: Space does nothing on it (arrows adjust
+      // it), so the volume slider keeping focus must not swallow the buzz.
       const target = event.target;
-      if (target instanceof HTMLElement && (
+      const isRangeSlider = target instanceof HTMLInputElement && target.type === 'range';
+      if (!isRangeSlider && target instanceof HTMLElement && (
         ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName) || target.isContentEditable
       )) {
         return;

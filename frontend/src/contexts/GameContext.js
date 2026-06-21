@@ -6,6 +6,7 @@ import { indexedDBService } from '../services/indexedDB';
 import { getHostToken, getGamePassword } from '../services/gameAuth';
 import config from '../config';
 import { useTranslation } from '../i18n/LanguageContext';
+import { normalizeQuestion, hasUserSelection } from '../utils/questionModel';
 
 const GameContext = createContext(null);
 
@@ -24,6 +25,13 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
   const [pack, setPack] = useState(null);
   const [packLoading, setPackLoading] = useState(true);
   const [downloadProgress, setDownloadProgress] = useState(null);
+  // The question the room is on at (re)connect time, per the server snapshot.
+  // Held until the pack is loaded, then resolved into a navigation below.
+  const [pendingQuestionNav, setPendingQuestionNav] = useState(null);
+  // Live socket status, used to show a "reconnecting" indicator. Starts true so
+  // the indicator only appears after a real drop, not during the initial load
+  // (which has its own "Connecting..." screen below).
+  const [connected, setConnected] = useState(true);
 
   const hostToken = getHostToken(gameId);
   const isHost = !!hostToken;
@@ -161,10 +169,13 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
 
     const unsubscribe = wsManager.subscribe((data) => {
       if (data.type === 'ws_open') {
+        setConnected(true);
         // (Re)introduce ourselves on every (re)connect; the host is not a player
         if (!getHostToken(gameId) && userRef.current) {
           wsManager.sendUserLogin(userRef.current);
         }
+      } else if (data.type === 'ws_closed') {
+        setConnected(false);
       } else if (data.type === 'game_info') {
         gameInfoRef.current = data.data;
         setGameInfo(data.data);
@@ -172,6 +183,11 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
         setGameInfo(prev => (prev ? { ...prev, status: 'started' } : prev));
       } else if (data.type === 'online_users') {
         setOnlineUsers(data.data);
+      } else if (data.type === 'current_question') {
+        // On (re)connect the server tells us which question the room is on, so
+        // we can navigate there even if we missed the live select/reveal while
+        // disconnected. Resolved once the pack is available (effect below).
+        setPendingQuestionNav(data.data);
       } else if (data.type === 'game_not_found' || data.type === 'game_deleted') {
         setError('game.noLongerExists');
         setTimeout(() => navigateRef.current('/'), 1500);
@@ -197,6 +213,35 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
       wsManager.disconnect();
     };
   }, [gameId, loadPack]);
+
+  // Resolve the server's "current question" snapshot into a navigation. We wait
+  // for the pack so we can apply the same rule the live handlers use in
+  // GameBoard: the host always follows; a player follows only once the question
+  // is revealed or it is a user-selection type (cat-in-the-bag, karaoke,
+  // crocodile...). The question page then rehydrates its own per-question state.
+  useEffect(() => {
+    if (!pendingQuestionNav || !pack) return;
+    const { questionId, revealed } = pendingQuestionNav;
+    setPendingQuestionNav(null);
+
+    let found = null;
+    for (const round of pack.rounds || []) {
+      for (const theme of round.themes || []) {
+        const q = (theme.questions || []).find(item => item.id === questionId);
+        if (q) { found = q; break; }
+      }
+      if (found) break;
+    }
+    if (!found) return;
+
+    const userSelection = hasUserSelection(normalizeQuestion(found));
+    if (!(isHost || revealed || userSelection)) return;
+
+    const target = `/game/${gameId}/question/${questionId}`;
+    if (window.location.pathname !== target) {
+      navigateRef.current(target);
+    }
+  }, [pendingQuestionNav, pack, isHost, gameId]);
 
   const startGame = useCallback(() => {
     wsManager.sendStartGame();
@@ -228,6 +273,38 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
 
   return (
     <GameContext.Provider value={{ gameId, isHost, user, onUpdateUser: handleUpdateUser, gameInfo, onlineUsers, startGame, pack, packLoading, downloadProgress, loadPack }}>
+      {!connected && (
+        <div style={{
+          position: 'fixed',
+          top: 12,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 99999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.45rem 0.9rem',
+          borderRadius: '999px',
+          background: 'rgba(0,0,0,0.78)',
+          border: '1px solid var(--glass-border)',
+          color: '#fbbf24',
+          fontSize: '0.85rem',
+          fontWeight: 600,
+          boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
+          pointerEvents: 'none',
+        }}>
+          <span style={{
+            width: 12,
+            height: 12,
+            border: '2px solid rgba(251,191,36,0.35)',
+            borderTopColor: '#fbbf24',
+            borderRadius: '50%',
+            display: 'inline-block',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          {t('game.reconnecting')}
+        </div>
+      )}
       {children}
     </GameContext.Provider>
   );
