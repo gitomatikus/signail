@@ -12,6 +12,7 @@ export interface Round {
 export interface Theme {
   name: string;
   description: string;
+  /** Ordered theme: questions can only be opened left to right (each unlocks once all to its left are closed). */
   ordered: boolean;
   questions: Question[];
 }
@@ -51,8 +52,8 @@ export interface Question {
   user_selection?: boolean;
   /** When user_selection is on, the picker may choose themselves. */
   allow_self_pick?: boolean;
-  /** Answer method for normal/progressive-reveal/crocodile questions: buzz race, text field, or pick from options. Defaults to 'buzz'. */
-  response?: 'buzz' | 'text' | 'choice';
+  /** Answer method for normal/progressive-reveal/crocodile questions: buzz race, multi-buzz (a judged answer lets the player buzz again), text field, or pick from options. Defaults to 'buzz'. */
+  response?: 'buzz' | 'multi-buzz' | 'text' | 'choice';
   /** Keep submitted answers masked from other players until the host reveals them. Defaults by type (text/numeric hidden, choice live). */
   hidden_until_reveal?: boolean;
 }

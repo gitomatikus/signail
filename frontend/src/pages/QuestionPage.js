@@ -23,6 +23,7 @@ import {
   hasUserSelection,
   usesSecretSelection,
   isExclusiveSelection,
+  isMultiBuzz,
   isMultiWinner,
   usesNumberAnswers,
   isHiddenUntilReveal,
@@ -473,22 +474,46 @@ const QuestionPage = () => {
         // Progressive reveal: a judged-wrong buzz no longer pauses the reveal
         setRedJudgedUsers(prev => new Set([...prev, data.data.userId]));
       } else if (data.type === 'admin_clicked_green_number') {
-        // Progressive reveal: a correct answer uncovers the image completely
-        if (question?.type === 'progressive-reveal' || questionHasReveal(question)) {
-          setTimer(0);
+        // Multi-buzz: a correct answer resolves one attempt, the question
+        // keeps running (the server clears the buzz via buzz_cleared) — so
+        // neither complete the reveal nor stop the media.
+        if (!isMultiBuzz(question)) {
+          // Progressive reveal: a correct answer uncovers the image completely
+          if (question?.type === 'progressive-reveal' || questionHasReveal(question)) {
+            setTimer(0);
+          }
+          // A correct answer stops question media for everyone (the admin can
+          // still resume playback manually) — except in multi-winner types,
+          // where other players may still be answering
+          if (!isMultiWinner(question)) {
+            adminPausedMediaRef.current = true;
+            autoPausedMediaRef.current.clear();
+            getQuestionMedia().forEach((el) => {
+              if (!el.paused) {
+                suppressMediaEvents(el);
+                el.pause();
+              }
+            });
+          }
         }
-        // A correct answer stops question media for everyone (the admin can
-        // still resume playback manually) — except in multi-winner types,
-        // where other players may still be answering
-        if (!isMultiWinner(question)) {
-          adminPausedMediaRef.current = true;
-          autoPausedMediaRef.current.clear();
-          getQuestionMedia().forEach((el) => {
-            if (!el.paused) {
-              suppressMediaEvents(el);
-              el.pause();
-            }
-          });
+      } else if (data.type === 'buzz_cleared' && data.data.questionId === parseInt(questionId)) {
+        // Multi-buzz: the host judged this player's answer, the buzz is
+        // consumed — the player may race again while the timer runs
+        setUserTimes(prev => {
+          if (!(data.data.userId in prev)) return prev;
+          const next = { ...prev };
+          delete next[data.data.userId];
+          return next;
+        });
+        setRedJudgedUsers(prev => {
+          if (!prev.has(data.data.userId)) return prev;
+          const next = new Set(prev);
+          next.delete(data.data.userId);
+          return next;
+        });
+        if (data.data.userId === currentUserId) {
+          setHasRecordedTime(false);
+          setElapsedTime(null);
         }
       } else if (data.type === 'media_control' && data.data.questionId === parseInt(questionId)) {
         // The admin is the playback authority; the admin client ignores the
@@ -576,8 +601,9 @@ const QuestionPage = () => {
     if (question?.type === 'crocodile' && !crocodileTargetId) {
       return;
     }
-    // Progressive reveal: pause while any buzz awaits the admin's verdict
-    if ((question?.type === 'progressive-reveal' || questionHasReveal(question))
+    // Progressive reveal and multi-buzz: pause while any buzz awaits the
+    // admin's verdict — judging an answer must not eat the question time
+    if ((question?.type === 'progressive-reveal' || questionHasReveal(question) || isMultiBuzz(question))
       && Object.keys(userTimes).some(uid => !redJudgedUsers.has(uid))) {
       return;
     }
@@ -775,6 +801,10 @@ const QuestionPage = () => {
           return;
         }
       }
+      // Multi-buzz respects the countdown: no more answers once time is up
+      if (isMultiBuzz(question) && timer <= 0) {
+        return;
+      }
       if (startTime &&
         ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) &&
         !hasRecordedTime &&
@@ -794,7 +824,7 @@ const QuestionPage = () => {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isQuestionRevealed, isAnswerRevealed, startTime, question, isAdmin, hasRecordedTime, questionId, currentUserId, userTimes, secretTargetId, crocodileResponse, crocodileTargetId]);
+  }, [isQuestionRevealed, isAnswerRevealed, startTime, question, isAdmin, hasRecordedTime, questionId, currentUserId, userTimes, secretTargetId, crocodileResponse, crocodileTargetId, timer]);
 
   // Start timer when question is revealed or when non-admin user sees the question
   // For cat-in-the-bag, wait until a player is chosen and the admin shows the question
@@ -2449,8 +2479,10 @@ const QuestionPage = () => {
   // and whether answers are masked until reveal.
   const renderAnswerTypeBadge = () => {
     if (!isAdmin || !question || question.type === 'empty') return null;
-    const emojiByType = { buzz: '⚡', text: '⌨️', choice: '🔘', numeric: '🔢', click: '🖱️', audio: '🎤', voting: '🗳️' };
-    const key = question.type === 'voting' ? 'voting' : responseMethod(question);
+    const emojiByType = { buzz: '⚡', multiBuzz: '🔁', text: '⌨️', choice: '🔘', numeric: '🔢', click: '🖱️', audio: '🎤', voting: '🗳️' };
+    const key = question.type === 'voting'
+      ? 'voting'
+      : isMultiBuzz(question) ? 'multiBuzz' : responseMethod(question);
     const rm = responseMethod(question);
     const extras = [];
     if (hasUserSelection(question)) extras.push(t('answerType.selected'));
@@ -2749,6 +2781,24 @@ const QuestionPage = () => {
       </div>
       {/* Admin-only: how players answer this question */}
       {renderAnswerTypeBadge()}
+      {/* Multi-buzz: tell players a judged answer doesn't end their race */}
+      {!isAdmin && isMultiBuzz(question) && !isAnswerRevealed && (
+        <div className="glass-panel" style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.4rem 1rem',
+          borderRadius: '999px',
+          border: '1px solid var(--glass-border)',
+          marginBottom: '1rem',
+          fontSize: '0.9rem',
+          fontWeight: '600',
+          color: 'var(--text-secondary)'
+        }}>
+          <span>🔁</span>
+          <span>{t('question.multiBuzzHint')}</span>
+        </div>
+      )}
       {/* Players have no native media controls, so give them a volume slider.
           Karaoke streams play through a hidden element with no controls at
           all, so there the host needs the slider too. */}

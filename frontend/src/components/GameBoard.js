@@ -273,9 +273,19 @@ const GameBoard = ({ isAdmin = false }) => {
         maxWidth: '1400px',
         overflowX: 'auto'
       }}>
-        {themes.map((theme, rowIdx) => [
-          <div key={`theme-${rowIdx}`} className="board-theme">
+        {themes.map((theme, rowIdx) => {
+          // Ordered theme: only the leftmost still-open question is playable.
+          // The host can right-click-close a tile to skip it, unlocking the next.
+          const nextOrderedId = theme.ordered
+            ? (theme.questions.find(q => q && q.type !== 'empty' && !selectedQuestions.has(q.id))?.id ?? null)
+            : null;
+
+          return [
+          <div key={`theme-${rowIdx}`} className="board-theme" title={theme.ordered ? t('board.orderedTheme') : undefined}>
             {theme.name}
+            {theme.ordered && (
+              <span aria-hidden="true" style={{ marginLeft: '0.4em', opacity: 0.6 }}>⇢</span>
+            )}
           </div>,
           ...Array.from({ length: maxQuestions }).map((_, colIdx) => {
             const question = theme.questions[colIdx];
@@ -284,7 +294,8 @@ const GameBoard = ({ isAdmin = false }) => {
             }
 
             const isAnswered = selectedQuestions.has(question.id);
-            const isLocked = !isAnswered && selectedQuestionId && question.id !== selectedQuestionId;
+            const isOrderLocked = theme.ordered && !isAnswered && question.id !== nextOrderedId;
+            const isLocked = !isAnswered && ((selectedQuestionId && question.id !== selectedQuestionId) || isOrderLocked);
             const isDisabled = isLocked || isAnswered;
             // The tile being played right now: the server marks it answered
             // immediately on selection, so without this it would gray out and
@@ -325,7 +336,8 @@ const GameBoard = ({ isAdmin = false }) => {
               </div>
             );
           })
-        ])}
+        ];
+        })}
       </div>
       {settingsOpen && <Settings onClose={handleSettingsClose} isAdmin={isAdmin} />}
     </div>

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const WebSocket = require('ws');
-const { normalizeQuestion, isHiddenUntilReveal } = require('./questionModel');
+const { normalizeQuestion, isHiddenUntilReveal, isMultiBuzz } = require('./questionModel');
 
 const PACKS_DIR = path.join(__dirname, '..', 'packs');
 const EMPTY_GAME_TTL_MS = 15 * 60 * 1000; // remove a game 15 minutes after the last person left
@@ -66,6 +66,13 @@ class Game {
     // other players until the host reveals them. Indexed from the pack
     // alongside questionTypes (pack metadata, not per-round state).
     this.questionHidden = new Map();
+    // questionId -> bool. Multi-buzz questions: the host's verdict consumes
+    // the player's buzz (cleared server-side) so they may buzz again.
+    this.questionMultiBuzz = new Map();
+    // questionId -> [prior question ids in the same theme]. Only questions in
+    // ordered themes are indexed: they unlock strictly left to right, so a
+    // question is selectable only once all of its predecessors are closed.
+    this.questionPredecessors = new Map();
     this.lastGreenFrameUser = null;
     // The question the room is currently on (set on select/reveal, cleared on
     // return-to-game). A (re)connecting client reads it to land on the right
@@ -103,6 +110,19 @@ class Game {
 
   getQuestionType(questionId) {
     return this.questionTypes.get(questionId) || null;
+  }
+
+  isMultiBuzzQuestion(questionId) {
+    return this.questionMultiBuzz.get(questionId) === true;
+  }
+
+  // Ordered themes: a question may be selected only once every question to its
+  // left in the theme is closed. The host can skip one by closing it from the
+  // board (question_toggle), which unlocks the next.
+  isQuestionSelectable(questionId) {
+    const predecessors = this.questionPredecessors.get(questionId);
+    if (!predecessors) return true;
+    return predecessors.every((id) => this.selectedQuestions.has(id));
   }
 
   broadcast(payload) {
@@ -321,8 +341,13 @@ class GameManager {
     const types = new Map();
     const voteModes = new Map();
     const hidden = new Map();
+    const multiBuzz = new Map();
+    const predecessors = new Map();
     for (const round of pack.rounds) {
       for (const theme of round.themes || []) {
+        // Ordered theme: questions unlock left to right. Empty placeholders
+        // can never be selected, so they don't take part in the chain.
+        const priorIds = theme.ordered === true ? [] : null;
         for (const rawQ of theme.questions || []) {
           // Normalize legacy types (secret / text-answer) to base type + options
           const q = normalizeQuestion(rawQ);
@@ -332,6 +357,15 @@ class GameManager {
               voteModes.set(q.id, q.vote_mode === 'closed' ? 'closed' : 'open');
             }
             hidden.set(q.id, isHiddenUntilReveal(q));
+            if (isMultiBuzz(q)) {
+              multiBuzz.set(q.id, true);
+            }
+            if (priorIds && q.type !== 'empty') {
+              if (priorIds.length > 0) {
+                predecessors.set(q.id, [...priorIds]);
+              }
+              priorIds.push(q.id);
+            }
           }
         }
       }
@@ -339,6 +373,8 @@ class GameManager {
     game.questionTypes = types;
     game.questionVoteModes = voteModes;
     game.questionHidden = hidden;
+    game.questionMultiBuzz = multiBuzz;
+    game.questionPredecessors = predecessors;
     game.packName = typeof pack.name === 'string' ? pack.name : 'Unnamed pack';
     game.packAuthor = typeof pack.author === 'string' ? pack.author : '';
     try {

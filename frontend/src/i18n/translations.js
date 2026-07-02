@@ -87,6 +87,7 @@ export const translations = {
 
     "board.downloadingPack": "Downloading Quiz... {progress}",
     "board.errorLoadingPack": "Error loading quiz",
+    "board.orderedTheme": "Ordered theme — questions open left to right",
 
     "settings.title": "Settings",
     "settings.design": "Design",
@@ -250,6 +251,7 @@ export const translations = {
     "question.confirmRevealCorrectAnswer": "Reveal the correct answer to everyone?",
     "question.answerTypeLabel": "Players answer",
     "answerType.buzz": "Buzz race",
+    "answerType.multiBuzz": "Multi buzz (repeat answers)",
     "answerType.text": "Text field",
     "answerType.choice": "Multiple choice",
     "answerType.numeric": "Number",
@@ -258,6 +260,7 @@ export const translations = {
     "answerType.voting": "Voting",
     "answerType.selected": "one chosen player",
     "answerType.hidden": "hidden until reveal",
+    "question.multiBuzzHint": "Multi buzz: after the host judges your answer you can buzz again while time remains",
     "question.voteButton": "Vote",
     "question.yourVote": "Your vote ✓",
     "question.votingInstructions": "Vote for the best answer — you can't vote for your own",
@@ -370,6 +373,7 @@ export const translations = {
 
     "board.downloadingPack": "Завантаження квізу... {progress}",
     "board.errorLoadingPack": "Помилка завантаження квізу",
+    "board.orderedTheme": "Впорядкована тема — питання відкриваються зліва направо",
 
     "settings.title": "Налаштування",
     "settings.design": "Дизайн",
@@ -534,6 +538,7 @@ export const translations = {
     "question.confirmRevealCorrectAnswer": "Показати правильну відповідь усім?",
     "question.answerTypeLabel": "Гравці відповідають",
     "answerType.buzz": "Гонка на кнопці",
+    "answerType.multiBuzz": "Мультикнопка (повторні відповіді)",
     "answerType.text": "Текстове поле",
     "answerType.choice": "Вибір варіанта",
     "answerType.numeric": "Число",
@@ -542,6 +547,8 @@ export const translations = {
     "answerType.voting": "Голосування",
     "answerType.selected": "один обраний гравець",
     "answerType.hidden": "приховано до показу",
+    "question.multiBuzzHint":
+      "Мультикнопка: після вердикту ведучого можна натискати знову, поки є час",
     "question.voteButton": "Голосувати",
     "question.yourVote": "Ваш голос ✓",
     "question.votingInstructions": "Проголосуйте за найкращу відповідь — за власну не можна",

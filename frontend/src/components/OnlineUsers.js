@@ -5,7 +5,7 @@ import ImageLightbox from './ImageLightbox';
 import { useGame } from '../contexts/GameContext';
 import { HIDE_HOST_KEY, HIDE_HOST_EVENT } from '../utils/hostVisibility';
 import { useTranslation } from '../i18n/LanguageContext';
-import { responseMethod } from '../utils/questionModel';
+import { responseMethod, isMultiBuzz } from '../utils/questionModel';
 
 const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, selectedTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false }) => {
   const location = useLocation();
@@ -46,13 +46,30 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
           localStorage.setItem(`greenFramedUsers-${gameId}`, JSON.stringify([data.data.userId]));
           return newSet;
         });
+      } else if (data.type === 'elapsed_time' && isMultiBuzz(question)) {
+        // Multi-buzz: a fresh buzz starts a fresh attempt — the verdict marks
+        // from this player's previous answer must not block the award buttons
+        // (the red/green frame stays up until they re-enter the race)
+        const rebuzzedId = data.data.userId;
+        setPenalizedUsers(prev => {
+          if (!prev.has(rebuzzedId)) return prev;
+          const next = new Set(prev);
+          next.delete(rebuzzedId);
+          return next;
+        });
+        setUpdatedUsers(prev => {
+          if (!prev.has(rebuzzedId)) return prev;
+          const next = new Set(prev);
+          next.delete(rebuzzedId);
+          return next;
+        });
       }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [gameId]);
+  }, [gameId, question]);
 
   const sortedUsers = [...users].sort((a, b) => {
     const timeA = userTimes[a.id] ?? (a.id === currentUserId ? elapsedTime : null);

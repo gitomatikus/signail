@@ -179,6 +179,9 @@ class WebSocketManager {
       }
     } else if (data.type === 'question_select') {
       const { questionId, userId } = data.data;
+      // Ordered themes unlock strictly left to right; an out-of-order select
+      // (stale board, race) is ignored so the room state never skips ahead
+      if (!game.isQuestionSelectable(questionId)) return;
       const selectorId = userId || game.lastGreenFrameUser;
       if (selectorId) {
         game.questionSelectors.set(questionId, selectorId);
@@ -226,9 +229,11 @@ class WebSocketManager {
       game.broadcastSelectedQuestions();
     } else if (data.type === 'admin_clicked_red_number') {
       game.broadcast({ type: 'admin_clicked_red_number', data: data.data });
+      this.clearMultiBuzz(game, data.data.userId);
     } else if (data.type === 'admin_clicked_green_number') {
       game.lastGreenFrameUser = data.data.userId;
       game.broadcast({ type: 'admin_clicked_green_number', data: data.data });
+      this.clearMultiBuzz(game, data.data.userId);
     } else if (data.type === 'cat_clicks') {
       const { questionId, userId, clicksLeft } = data.data;
       if (userId && Number.isFinite(Number(clicksLeft))) {
@@ -592,6 +597,21 @@ class WebSocketManager {
           data: { questionId, action, time, mediaIndex, src }
         });
       }
+    }
+  }
+
+  // Multi-buzz: the host's verdict (green or red) consumes the player's buzz.
+  // Dropping the recorded time re-opens the race for that player — the
+  // elapsed_time handler accepts a new buzz once the old one is gone — and
+  // buzz_cleared tells clients to reset their local buzz state too.
+  clearMultiBuzz(game, userId) {
+    const questionId = game.currentQuestionId;
+    if (questionId == null || !userId || !game.isMultiBuzzQuestion(questionId)) {
+      return;
+    }
+    const times = game.questionTimes.get(questionId);
+    if (times && times.delete(userId)) {
+      game.broadcast({ type: 'buzz_cleared', data: { questionId, userId } });
     }
   }
 

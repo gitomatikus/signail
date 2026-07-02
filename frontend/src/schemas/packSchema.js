@@ -15,7 +15,7 @@
  * @typedef {Object} Theme
  * @property {string} name - The name of the theme
  * @property {string} description - Description of the theme
- * @property {boolean} ordered - Whether questions should be ordered
+ * @property {boolean} ordered - Ordered theme: questions can only be opened left to right (each unlocks once all to its left are closed)
  * @property {Question[]} questions - Array of questions in the theme
  */
 
@@ -46,7 +46,7 @@
  * @property {string} [lyrics_format] - 'plain' | 'lrc'
  * @property {boolean} [user_selection] - Option: designate one player (only-answerer for buzz types, only-scorer for parallel types)
  * @property {boolean} [allow_self_pick] - Option: the selector may pick themselves
- * @property {string} [response] - Option: answer method for normal/reveal — 'buzz' | 'text'
+ * @property {string} [response] - Option: answer method for normal/reveal/crocodile — 'buzz' | 'multi-buzz' (a judged answer lets the player buzz again) | 'text' | 'choice'
  * @property {boolean} [hidden_until_reveal] - Option: keep submitted answers masked until the host reveals
  */
 

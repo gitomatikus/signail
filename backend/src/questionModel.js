@@ -51,7 +51,9 @@ function allowsSelfPick(q) {
   return hasUserSelection(q) && !!q.allow_self_pick;
 }
 
-// How a player submits their answer.
+// How a player submits their answer. 'multi-buzz' is a buzz race whose
+// buzzes are consumed per-verdict (see isMultiBuzz), so it maps to 'buzz'
+// here and all buzz-race mechanics apply unchanged.
 function responseMethod(q) {
   if (!q) return 'buzz';
   switch (q.type) {
@@ -60,12 +62,24 @@ function responseMethod(q) {
     case 'karaoke': return 'audio';
     case 'voting': return 'text';
     case 'crocodile':
-      return q.response || (q.crocodile_mode === 'dixit' ? 'text' : 'buzz');
+      return q.response === 'multi-buzz'
+        ? 'buzz'
+        : q.response || (q.crocodile_mode === 'dixit' ? 'text' : 'buzz');
     case 'normal':
     case 'progressive-reveal':
-      return q.response || 'buzz';
+      return q.response === 'multi-buzz' ? 'buzz' : q.response || 'buzz';
     default: return 'buzz';
   }
+}
+
+// Multi-buzz: a buzz race where the host's verdict (correct or not) consumes
+// the buzz instead of ending the player's participation — the same player may
+// buzz again while the timer runs. Made for open questions with many valid
+// answers ("name a film with DiCaprio").
+function isMultiBuzz(q) {
+  if (!q) return false;
+  return (q.type === 'normal' || q.type === 'progressive-reveal' || q.type === 'crocodile')
+    && q.response === 'multi-buzz';
 }
 
 // Selection that runs through the shared "secret" assignment channel
@@ -100,6 +114,7 @@ module.exports = {
   hasUserSelection,
   allowsSelfPick,
   responseMethod,
+  isMultiBuzz,
   usesSecretSelection,
   isExclusiveSelection,
   isHiddenUntilReveal,
