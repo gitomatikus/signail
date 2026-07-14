@@ -9,7 +9,7 @@ import { responseMethod, isMultiBuzz } from '../utils/questionModel';
 import { pointDistancePercent, isPointAnswerCorrect } from '../utils/pointOnImage';
 import { getPlayerAccentFrame, getPlayerColor } from '../utils/playerIdentity';
 
-const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, selectedTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, pointAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false }) => {
+const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, selectedTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, pointAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false, spectrumAnswererIds = [], spectrumHostSubmitted = false, spectrumSuggestions = {}, spectrumMultipliers = {} }) => {
   const location = useLocation();
   const { t } = useTranslation();
   const isQuestionPage = location.pathname.includes('/question/');
@@ -42,7 +42,31 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
     const unsubscribe = wsManager.subscribe((data) => {
       if (data.type === 'admin_clicked_red_number') {
         setPenalizedUsers(prev => new Set([...prev, data.data.userId]));
+        setUpdatedUsers(prev => {
+          const next = new Set(prev);
+          next.delete(data.data.userId);
+          return next;
+        });
       } else if (data.type === 'admin_clicked_green_number') {
+        if (data.data.reason === 'selection') {
+          setUpdatedUsers(prev => {
+            const next = new Set(prev);
+            next.delete(data.data.userId);
+            return next;
+          });
+          setPenalizedUsers(prev => {
+            const next = new Set(prev);
+            next.delete(data.data.userId);
+            return next;
+          });
+        } else {
+          setUpdatedUsers(prev => new Set([...prev, data.data.userId]));
+          setPenalizedUsers(prev => {
+            const next = new Set(prev);
+            next.delete(data.data.userId);
+            return next;
+          });
+        }
         setGreenFrameUsers(prev => {
           const newSet = new Set([data.data.userId]);
           localStorage.setItem(`greenFramedUsers-${gameId}`, JSON.stringify([data.data.userId]));
@@ -97,6 +121,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
   const respMethod = responseMethod(question);
   const isCrocodileQuestion = question?.type === 'crocodile';
   const isKaraokeQuestion = question?.type === 'karaoke';
+  const isSpectrumQuestion = question?.type === 'spectrum';
   // Choice/text answers on a normal/reveal question (crocodile guesses are
   // text/choice too but have their own collect-then-score handling below)
   const isChoiceQuestion = respMethod === 'choice' && !isCrocodileQuestion
@@ -184,11 +209,21 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
 
     if (value > 0) {
       setUpdatedUsers(prev => new Set([...prev, userId]));
+      setPenalizedUsers(prev => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
       if (grantsMove) {
         wsManager.sendAdminClickedGreenNumber(userId);
       }
     } else {
       setPenalizedUsers(prev => new Set([...prev, userId]));
+      setUpdatedUsers(prev => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
       wsManager.sendAdminClickedRedNumber(userId);
     }
   };
@@ -243,7 +278,12 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
         // questions (only they can score), every finisher for find-a-cat, every
         // user once close-enough numbers are revealed, every answerer for
         // choice/text, the fastest player otherwise
-        const showAwardRow = isAdmin && !isUpdated && !isPenalized && (
+        const hasSpectrumSuggestion = isSpectrumQuestion
+          && Object.prototype.hasOwnProperty.call(spectrumSuggestions, user.id);
+        const hasSpectrumAnswer = isSpectrumQuestion && spectrumAnswererIds.includes(user.id);
+        const spectrumSuggestion = hasSpectrumSuggestion ? Number(spectrumSuggestions[user.id]) : null;
+        const showSpectrumSuggestion = isAdmin && hasSpectrumSuggestion && !isUpdated && !isPenalized;
+        const showAwardRow = !isSpectrumQuestion && isAdmin && !isUpdated && !isPenalized && (
           selectedTargetId
             ? user.id === selectedTargetId
             : isFindACat
@@ -322,12 +362,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               : true;
 
         const getFrameStyle = () => {
-          if (hasGreenFrame) {
-            // On the board this is the player currently entitled to choose the
-            // next question, so identity color is more useful than generic green.
-            if (!isQuestionPage) {
-              return getPlayerAccentFrame(user, { animated: true });
-            }
+          if (isUpdated) {
             return {
               border: '3px solid #4ade80',
               boxShadow: '0 0 20px rgba(74, 222, 128, 0.6)'
@@ -341,6 +376,10 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             };
           }
 
+          if (hasGreenFrame) {
+            return getPlayerAccentFrame(user, { animated: true });
+          }
+
           // Player ran out of find-a-cat clicks without finding everything
           if (hasFailedClicks) {
             return {
@@ -351,13 +390,17 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
 
           // Highlight the player chosen for a user-selection question
           if (selectedTargetId && user.id === selectedTargetId) {
-            if (isKaraokeQuestion) {
+            if (isKaraokeQuestion || isSpectrumQuestion) {
               return getPlayerAccentFrame(user, { animated: true });
             }
             return {
               border: '3px solid #ffd600',
               boxShadow: '0 0 25px rgba(255, 214, 0, 0.6)'
             };
+          }
+
+          if (isSpectrumQuestion && (hasSpectrumAnswer || hasSpectrumSuggestion)) {
+            return getPlayerAccentFrame(user);
           }
 
           // Active performers carry their identity color. Red/green scoring
@@ -526,7 +569,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   onContextMenu={(e) => {
                     e.preventDefault();
                     if (isAdmin) {
-                      wsManager.sendAdminClickedGreenNumber(user.id);
+                      wsManager.sendAdminClickedGreenNumber(user.id, 'selection');
                     }
                   }}
                 />
@@ -587,6 +630,29 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               >
                 {previousScore}
               </span>
+
+              {/* Spectrum never mutates a score automatically. This highlighted
+                  recommendation is itself the host's explicit apply action. */}
+              {showSpectrumSuggestion && (
+                <div className="glass-panel" style={{
+                  display: 'flex', gap: '6px', alignItems: 'center', padding: '5px 9px',
+                  marginTop: '4px', borderRadius: '8px', whiteSpace: 'nowrap',
+                  border: `1px solid ${spectrumSuggestion > 0 ? '#4ade80' : spectrumSuggestion < 0 ? '#ef4444' : 'var(--glass-border)'}`,
+                }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '.72rem', fontWeight: 700 }}>🌈</span>
+                  <span
+                    onClick={() => spectrumSuggestion !== 0 && handleScoreClick(user.id, previousScore, spectrumSuggestion, false)}
+                    title={spectrumMultipliers[user.id] !== undefined ? `${spectrumMultipliers[user.id] * 100}%` : undefined}
+                    style={{
+                      fontWeight: 900,
+                      color: spectrumSuggestion > 0 ? '#4ade80' : spectrumSuggestion < 0 ? '#ef4444' : 'var(--text-muted)',
+                      cursor: spectrumSuggestion === 0 ? 'default' : 'pointer',
+                    }}
+                  >
+                    {spectrumSuggestion > 0 ? '+' : ''}{spectrumSuggestion}
+                  </span>
+                </div>
+              )}
 
               {/* Award buttons: chosen player for cat-in-the-bag, every finisher for find-a-cat (only +X), fastest player otherwise */}
               {showAwardRow && (
@@ -791,9 +857,12 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               borderRadius: '24px',
               overflow: 'hidden',
               marginBottom: '1rem',
+              position: 'relative',
               background: 'var(--bg-dark)',
-              border: '3px solid var(--accent)',
-              boxShadow: '0 0 20px var(--accent-glow)',
+              border: `3px solid ${gameInfo.hostColor || 'var(--accent)'}`,
+              boxShadow: spectrumHostSubmitted && isSpectrumQuestion
+                ? `0 0 28px ${gameInfo.hostColor || 'var(--accent)'}`
+                : `0 0 20px ${gameInfo.hostColor || 'var(--accent-glow)'}`,
               opacity: gameInfo.hostOnline === false ? 0.5 : 1
             }}>
               {gameInfo.hostImageUrl ? (
@@ -811,6 +880,15 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   />
                 )
               ) : null}
+              {spectrumHostSubmitted && isSpectrumQuestion && (
+                <div style={{
+                  position: 'absolute', right: 4, top: 4, width: 25, height: 25,
+                  display: 'grid', placeItems: 'center', borderRadius: '50%',
+                  color: '#fff', background: gameInfo.hostColor || 'var(--accent)',
+                  border: '2px solid var(--bg-dark)', fontWeight: 900,
+                  boxShadow: `0 0 12px ${gameInfo.hostColor || 'var(--accent)'}`,
+                }}>✓</div>
+              )}
             </div>
             <span style={{
               fontWeight: '600',

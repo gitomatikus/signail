@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const config = require('./config');
 const { isNormalizedPoint, createPointHint } = require('./pointGeometry');
 const { normalizePlayerColor } = require('./profile');
+const { createSpectrumTarget, wrapSpectrumPosition } = require('./spectrum');
 
 // Routes every WebSocket connection into its game room (?gameId=...) and
 // scopes all message handling and broadcasts to that room.
@@ -242,7 +243,9 @@ class WebSocketManager {
     } else if (data.type === 'admin_clicked_green_number') {
       game.lastGreenFrameUser = data.data.userId;
       game.broadcast({ type: 'admin_clicked_green_number', data: data.data });
-      this.clearMultiBuzz(game, data.data.userId);
+      if (data.data.reason !== 'selection') {
+        this.clearMultiBuzz(game, data.data.userId);
+      }
     } else if (data.type === 'cat_clicks') {
       const { questionId, userId, clicksLeft } = data.data;
       if (userId && Number.isFinite(Number(clicksLeft))) {
@@ -282,7 +285,11 @@ class WebSocketManager {
       const answers = game.pointAnswers.get(questionId);
       if (!answers.has(sender.id)) {
         const storedPoint = { x: point.x, y: point.y };
-        const hint = createPointHint(storedPoint, game.getQuestionImageAspect(questionId));
+        const hint = createPointHint(
+          storedPoint,
+          game.getQuestionImageAspect(questionId),
+          game.getQuestionAccuracyPercent(questionId)
+        );
         answers.set(sender.id, storedPoint);
         game.pointHints.get(questionId).set(sender.id, hint);
         // Only the randomized circle is public until the host reveals answers.
@@ -570,6 +577,96 @@ class WebSocketManager {
           }));
         });
       }
+    } else if (data.type === 'spectrum_assign') {
+      const { questionId, targetUserId } = data.data || {};
+      if (game.getQuestionType(questionId) !== 'spectrum' || !targetUserId
+        || !game.persistentUsers.has(targetUserId)) {
+        return;
+      }
+      const sender = game.onlineUsers.get(ws);
+      const existing = game.spectrum.get(questionId);
+      const selectorId = (existing && existing.selectorId)
+        || game.questionSelectors.get(questionId)
+        || null;
+      const mayAssign = ws.isHost || (!!sender && sender.id === selectorId);
+      const mayReplace = !existing
+        || (ws.isHost && !existing.clue && !existing.guessingEndsAt && !existing.revealed);
+      if (!mayAssign || !mayReplace) return;
+
+      const config = game.getSpectrumConfig(questionId);
+      if (!config || (!config.allowSelfPick && targetUserId === selectorId)) return;
+      const guessingStartedAt = config.clueMode === 'verbal' ? Date.now() : null;
+      game.spectrum.set(questionId, {
+        selectorId,
+        clueGiverId: targetUserId,
+        target: createSpectrumTarget(config),
+        clueMode: config.clueMode,
+        clue: null,
+        guesses: new Map(),
+        guessTimes: new Map(),
+        hostGuess: null,
+        hostGuessTime: null,
+        revealed: false,
+        guessingStartedAt,
+        guessingEndsAt: config.clueMode === 'verbal'
+          ? guessingStartedAt + config.duration * 1000
+          : null,
+      });
+      this.broadcastSpectrumState(game, questionId);
+    } else if (data.type === 'spectrum_clue') {
+      const { questionId, clue } = data.data || {};
+      const entry = game.spectrum.get(questionId);
+      const sender = game.onlineUsers.get(ws);
+      const normalizedClue = typeof clue === 'string' ? clue.trim().slice(0, 300) : '';
+      const clueMode = entry && (entry.clueMode || game.getSpectrumConfig(questionId)?.clueMode || 'text');
+      if (!entry || clueMode === 'verbal' || entry.clue || entry.revealed || !normalizedClue
+        || !sender || sender.id !== entry.clueGiverId) {
+        return;
+      }
+      entry.clue = normalizedClue;
+      const config = game.getSpectrumConfig(questionId);
+      entry.guessingStartedAt = Date.now();
+      entry.guessingEndsAt = entry.guessingStartedAt + ((config && config.duration) || 60) * 1000;
+      this.broadcastSpectrumState(game, questionId);
+    } else if (data.type === 'spectrum_guess') {
+      const { questionId, position } = data.data || {};
+      const entry = game.spectrum.get(questionId);
+      const sender = game.onlineUsers.get(ws);
+      const clueMode = entry && (entry.clueMode || game.getSpectrumConfig(questionId)?.clueMode || 'text');
+      const guessingStarted = clueMode === 'verbal' || !!entry?.clue;
+      if (!entry || !guessingStarted || entry.revealed || !sender
+        || sender.id === entry.clueGiverId || !Number.isFinite(Number(position))) {
+        return;
+      }
+      // A marker is editable right up until the host reveals the spectrum.
+      entry.guesses.set(sender.id, wrapSpectrumPosition(Number(position)));
+      if (!entry.guessTimes) entry.guessTimes = new Map();
+      entry.guessTimes.set(sender.id, Math.max(0, Date.now() - (entry.guessingStartedAt || Date.now())));
+      this.broadcastSpectrumState(game, questionId);
+    } else if (data.type === 'spectrum_host_guess') {
+      const { questionId, position } = data.data || {};
+      const entry = game.spectrum.get(questionId);
+      const clueMode = entry && (entry.clueMode || game.getSpectrumConfig(questionId)?.clueMode || 'text');
+      const guessingStarted = clueMode === 'verbal' || !!entry?.clue;
+      if (!ws.isHost || !entry || !guessingStarted || entry.revealed
+        || !Number.isFinite(Number(position))) {
+        return;
+      }
+      entry.hostGuess = wrapSpectrumPosition(Number(position));
+      entry.hostGuessTime = Math.max(0, Date.now() - (entry.guessingStartedAt || Date.now()));
+      this.broadcastSpectrumState(game, questionId);
+    } else if (data.type === 'spectrum_reveal') {
+      const { questionId } = data.data || {};
+      const entry = game.spectrum.get(questionId);
+      const clueMode = entry && (entry.clueMode || game.getSpectrumConfig(questionId)?.clueMode || 'text');
+      const guessingStarted = clueMode === 'verbal' || !!entry?.clue;
+      if (!ws.isHost || !entry || !guessingStarted || entry.revealed) return;
+      entry.revealed = true;
+      this.broadcastSpectrumState(game, questionId);
+    } else if (data.type === 'spectrum_sync') {
+      const { questionId } = data.data || {};
+      if (game.getQuestionType(questionId) !== 'spectrum') return;
+      this.sendSpectrumState(game, ws, questionId);
     } else if (data.type === 'cast_vote') {
       // Voting: each player casts one final vote for another player's answer.
       // Only after the answers have been revealed, never for your own answer,
@@ -645,6 +742,73 @@ class WebSocketManager {
         });
       }
     }
+  }
+
+  spectrumStateFor(game, ws, questionId) {
+    const entry = game.spectrum.get(questionId);
+    const sender = game.onlineUsers.get(ws);
+    const requesterId = sender ? sender.id : null;
+    if (!entry) {
+      return {
+        questionId,
+        phase: 'assigning',
+        selectorId: game.questionSelectors.get(questionId) || null,
+        clueGiverId: null,
+        clueMode: null,
+        clue: null,
+        submittedUserIds: [],
+        revealed: false,
+        target: null,
+        guesses: {},
+        guessTimes: {},
+        ownGuess: null,
+        hostSubmitted: false,
+        hostGuess: null,
+        hostGuessTime: null,
+        guessingEndsAt: null,
+      };
+    }
+    const clueMode = entry.clueMode || game.getSpectrumConfig(questionId)?.clueMode || 'text';
+    const maySeeTarget = entry.revealed || requesterId === entry.clueGiverId;
+    const hasHostGuess = entry.hostGuess !== null && entry.hostGuess !== undefined
+      && Number.isFinite(Number(entry.hostGuess));
+    return {
+      questionId,
+      phase: entry.revealed ? 'revealed' : (clueMode === 'verbal' || entry.clue) ? 'guessing' : 'clue',
+      selectorId: entry.selectorId,
+      clueGiverId: entry.clueGiverId,
+      clueMode,
+      clue: entry.clue,
+      submittedUserIds: Array.from(entry.guesses.keys()),
+      revealed: entry.revealed,
+      target: maySeeTarget ? entry.target : null,
+      guesses: entry.revealed ? Object.fromEntries(entry.guesses) : {},
+      guessTimes: entry.revealed ? Object.fromEntries(entry.guessTimes || new Map()) : {},
+      ownGuess: requesterId && entry.guesses.has(requesterId)
+        ? entry.guesses.get(requesterId)
+        : null,
+      hostSubmitted: hasHostGuess,
+      hostGuess: (entry.revealed || ws.isHost) && hasHostGuess
+        ? entry.hostGuess
+        : null,
+      hostGuessTime: (entry.revealed || ws.isHost) && hasHostGuess
+        && Number.isFinite(Number(entry.hostGuessTime))
+        ? entry.hostGuessTime
+        : null,
+      guessingEndsAt: entry.guessingEndsAt || null,
+    };
+  }
+
+  sendSpectrumState(game, ws, questionId) {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({
+      type: 'spectrum_state',
+      data: this.spectrumStateFor(game, ws, questionId),
+    }));
+  }
+
+  broadcastSpectrumState(game, questionId) {
+    game.sockets.forEach(client => this.sendSpectrumState(game, client, questionId));
   }
 
   // Multi-buzz: the host's verdict (green or red) consumes the player's buzz.

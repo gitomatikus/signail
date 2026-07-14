@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import wsManager from '../utils/websocket';
 import OnlineUsers from '../components/OnlineUsers';
@@ -8,6 +8,7 @@ import ImageLightbox from '../components/ImageLightbox';
 import AnswerComposer from '../components/AnswerComposer';
 import CrocodileDrawing from '../components/CrocodileDrawing';
 import PointOnImageQuestion from '../components/PointOnImageQuestion';
+import SpectrumQuestion from '../components/SpectrumQuestion';
 import Settings from '../components/Settings';
 import Logo from '../components/Logo';
 import config from '../config';
@@ -194,6 +195,8 @@ const QuestionPage = () => {
   // meaning "this player voted but the target is still hidden")
   const [votes, setVotes] = useState({});
   const [votesRevealed, setVotesRevealed] = useState(false);
+  const [spectrumMeta, setSpectrumMeta] = useState({ clueGiverId: null, answererIds: [], hostSubmitted: false, suggestions: {}, multipliers: {}, revealed: false });
+  const handleSpectrumMeta = useCallback(meta => setSpectrumMeta(meta), []);
   const [answerInput, setAnswerInput] = useState('');
   const [selectedOptions, setSelectedOptions] = useState(new Set());
   const [lightboxImage, setLightboxImage] = useState(null);
@@ -236,6 +239,7 @@ const QuestionPage = () => {
     setAnswersRevealed(false);
     setVotes({});
     setVotesRevealed(false);
+    setSpectrumMeta({ clueGiverId: null, answererIds: [], hostSubmitted: false, suggestions: {}, multipliers: {}, revealed: false });
     setAnswerInput('');
     setSelectedOptions(new Set());
     setCrocodileSelectorId(null);
@@ -496,6 +500,7 @@ const QuestionPage = () => {
         // Progressive reveal: a judged-wrong buzz no longer pauses the reveal
         setRedJudgedUsers(prev => new Set([...prev, data.data.userId]));
       } else if (data.type === 'admin_clicked_green_number') {
+        if (data.data.reason === 'selection') return;
         // Multi-buzz: a correct answer resolves one attempt, the question
         // keeps running (the server clears the buzz via buzz_cleared) — so
         // neither complete the reveal nor stop the media.
@@ -615,6 +620,7 @@ const QuestionPage = () => {
   }, [question, currentRuleIndex, currentAfterRoundIndex, showAfterRound, secretTargetId, isAdmin, isQuestionRevealed]);
 
   useEffect(() => {
+    if (question?.type === 'spectrum') return undefined;
     // For exclusive selection (cat-in-the-bag), the countdown waits until a
     // player is chosen and (for players) the admin has shown the question
     if (isExclusiveSelection(question) && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
@@ -748,6 +754,7 @@ const QuestionPage = () => {
       // Answer-writing window; informational, the host reveals when ready
       return question.duration || 60;
     }
+    if (question.type === 'spectrum') return question.duration || 60;
     if (question.type === 'karaoke') {
       // Placeholder while the singer gets ready; karaoke_start resets the
       // countdown to the actual track length
@@ -861,6 +868,7 @@ const QuestionPage = () => {
     if (!question) {
       return;
     }
+    if (question.type === 'spectrum') return;
     if (isExclusiveSelection(question) && (!secretTargetId || (!isAdmin && !isQuestionRevealed))) {
       return;
     }
@@ -2516,6 +2524,17 @@ const QuestionPage = () => {
     if (question.type === 'voting') {
       return renderVotingContent();
     }
+    if (question.type === 'spectrum') {
+      return (
+        <SpectrumQuestion
+          question={question}
+          currentUserId={currentUserId}
+          isAdmin={isAdmin}
+          onlineUsers={onlineUsers}
+          onMetaChange={handleSpectrumMeta}
+        />
+      );
+    }
     // user-selection option (normal / reveal / find-a-cat)
     if (usesSecretSelection(question)) {
       return renderSelectionGate(renderCore);
@@ -2528,7 +2547,7 @@ const QuestionPage = () => {
   // and whether answers are masked until reveal.
   const renderAnswerTypeBadge = () => {
     if (!isAdmin || !question || question.type === 'empty') return null;
-    const emojiByType = { buzz: '⚡', multiBuzz: '🔁', text: '⌨️', choice: '🔘', numeric: '🔢', click: '🖱️', point: '📍', audio: '🎤', voting: '🗳️' };
+    const emojiByType = { buzz: '⚡', multiBuzz: '🔁', text: '⌨️', choice: '🔘', numeric: '🔢', click: '🖱️', point: '📍', audio: '🎤', voting: '🗳️', spectrum: '🌈' };
     const key = question.type === 'voting'
       ? 'voting'
       : isMultiBuzz(question) ? 'multiBuzz' : responseMethod(question);
@@ -2785,6 +2804,9 @@ const QuestionPage = () => {
             </div>
           )}
         </div>
+        {question.type === 'spectrum' ? (
+          <div className="glass-panel timer-pill" style={{ fontSize: '2rem', padding: '0.75rem 1.5rem', borderRadius: '24px' }}>🌈</div>
+        ) : (
         <div className={`glass-panel timer-pill${timer <= 5 ? ' timer-pill--low' : ''}`} style={{
           fontSize: '2.5rem',
           color: timer <= 5 ? 'var(--danger)' : 'var(--text-primary)',
@@ -2795,6 +2817,7 @@ const QuestionPage = () => {
         }}>
           {timer}
         </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
           {question.price?.text && (
             <div className="glass-panel" style={{
@@ -2810,7 +2833,7 @@ const QuestionPage = () => {
               {question.price.text}
             </div>
           )}
-          {question.price?.incorrect === 0 && (
+          {(question.price?.incorrect === 0 || (question.type === 'spectrum' && question.spectrum_risk_mode === 'safe')) && (
             <div className="glass-panel" style={{
               padding: '0.4rem 0.85rem',
               borderRadius: '12px',
@@ -2899,7 +2922,7 @@ const QuestionPage = () => {
       <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
         {/* Crocodile needs no "Show Question": the performer sees the prompt as
             soon as they're picked, and guessers must not see it (they guess). */}
-        {isAdmin && !isQuestionRevealed && question.type !== 'crocodile' && (
+        {isAdmin && !isQuestionRevealed && question.type !== 'crocodile' && question.type !== 'spectrum' && (
           <button
             onClick={handleShowQuestion}
             className="btn-primary"
@@ -2909,7 +2932,7 @@ const QuestionPage = () => {
           </button>
         )}
         {isAdmin && isQuestionRevealed && !isAnswerRevealed && question.type !== 'voting'
-          && question.type !== 'crocodile' && question.type !== 'point-on-image' && (
+          && question.type !== 'crocodile' && question.type !== 'point-on-image' && question.type !== 'spectrum' && (
           <button
             onClick={handleShowAnswer}
             className="btn-primary"
@@ -3030,6 +3053,8 @@ const QuestionPage = () => {
           selectedTargetId={
             question?.type === 'karaoke'
               ? karaokeTargetId // the singer gets the same highlight + award buttons
+              : question?.type === 'spectrum'
+                ? spectrumMeta.clueGiverId
               : usesSecretSelection(question)
                 ? secretTargetId
                 : null
@@ -3042,6 +3067,10 @@ const QuestionPage = () => {
           responseRevealed={isResponseRevealed}
           votes={votes}
           votesRevealed={votesRevealed}
+          spectrumAnswererIds={spectrumMeta.answererIds}
+          spectrumHostSubmitted={spectrumMeta.hostSubmitted}
+          spectrumSuggestions={spectrumMeta.suggestions}
+          spectrumMultipliers={spectrumMeta.multipliers}
         />
       </div>
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} isAdmin={isAdmin} />}

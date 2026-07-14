@@ -1,4 +1,6 @@
-const POINT_HINT_RADIUS = 0.12; // 12% of the image's shorter side
+const DEFAULT_POINT_ACCURACY_PERCENT = 2;
+const POINT_HINT_RADIUS_MULTIPLIER = 5;
+const MAX_POINT_HINT_RADIUS_PERCENT = 40;
 
 function imageSpace(aspectRatio) {
   const aspect = Number(aspectRatio);
@@ -18,10 +20,23 @@ function isNormalizedPoint(value) {
     && value.y >= 0 && value.y <= 1;
 }
 
-function createPointHint(point, aspectRatio, random = Math.random) {
+function pointHintRadius(accuracyPercent, aspectRatio) {
   const space = imageSpace(aspectRatio);
+  const parsedAccuracy = Number(accuracyPercent);
+  const safeAccuracy = Number.isFinite(parsedAccuracy) && parsedAccuracy > 0
+    ? parsedAccuracy
+    : DEFAULT_POINT_ACCURACY_PERCENT;
+  const diagonal = Math.hypot(space.width, space.height);
+  const correctnessRadius = (safeAccuracy / 100) * diagonal;
+  const maximumRadius = (MAX_POINT_HINT_RADIUS_PERCENT / 100) * diagonal;
+  return Math.min(correctnessRadius * POINT_HINT_RADIUS_MULTIPLIER, maximumRadius);
+}
+
+function createPointHint(point, aspectRatio, accuracyPercent, random = Math.random) {
+  const space = imageSpace(aspectRatio);
+  const radius = pointHintRadius(accuracyPercent, aspectRatio);
   const angle = random() * Math.PI * 2;
-  const offset = Math.sqrt(random()) * POINT_HINT_RADIUS;
+  const offset = Math.sqrt(random()) * radius;
   const answerX = point.x * space.width;
   const answerY = point.y * space.height;
   const centerX = Math.max(0, Math.min(space.width, answerX + Math.cos(angle) * offset));
@@ -29,8 +44,16 @@ function createPointHint(point, aspectRatio, random = Math.random) {
   return {
     x: centerX / space.width,
     y: centerY / space.height,
-    radius: POINT_HINT_RADIUS,
+    radius,
   };
 }
 
-module.exports = { POINT_HINT_RADIUS, imageSpace, isNormalizedPoint, createPointHint };
+module.exports = {
+  DEFAULT_POINT_ACCURACY_PERCENT,
+  POINT_HINT_RADIUS_MULTIPLIER,
+  MAX_POINT_HINT_RADIUS_PERCENT,
+  imageSpace,
+  isNormalizedPoint,
+  pointHintRadius,
+  createPointHint,
+};

@@ -37,8 +37,8 @@ export function normalizeQuestion(q) {
 export const SELECTION_EXCLUSIVE_TYPES = ['normal', 'progressive-reveal'];
 // Everyone answers in parallel, but only the selected player can score.
 export const SELECTION_PARALLEL_TYPES = ['find-a-cat'];
-// One performer is always picked (selection is intrinsic to the type).
-export const SELECTION_MANDATORY_TYPES = ['karaoke', 'crocodile'];
+// One performer/clue-giver is always picked (selection is intrinsic to the type).
+export const SELECTION_MANDATORY_TYPES = ['karaoke', 'crocodile', 'spectrum'];
 
 export function hasUserSelection(q) {
   if (!q) return false;
@@ -65,6 +65,7 @@ export function responseMethod(q) {
     case 'point-on-image': return 'point';
     case 'karaoke': return 'audio';
     case 'voting': return 'text';
+    case 'spectrum': return 'spectrum';
     case 'crocodile':
       // guessers' answer method (legacy crocodile_mode: fastest=buzz, dixit=text)
       return q.response === 'multi-buzz'
@@ -88,7 +89,7 @@ export function isMultiBuzz(q) {
 }
 
 // Selection that runs through the shared "secret" assignment channel
-// (normal / reveal / find-a-cat). Karaoke and crocodile have their own
+// (normal / reveal / find-a-cat). Karaoke, crocodile and Spectrum have their own
 // assignment channels.
 export function usesSecretSelection(q) {
   return hasUserSelection(q)

@@ -50,6 +50,14 @@
  * @property {boolean} [user_selection] - Option: designate one player (only-answerer for buzz types, only-scorer for parallel types)
  * @property {boolean} [allow_self_pick] - Option: the selector may pick themselves
  * @property {string} [response] - Option: answer method for normal/reveal/crocodile — 'buzz' | 'multi-buzz' (a judged answer lets the player buzz again) | 'text' | 'choice'
+ * @property {string} [spectrum_left] - Label at the left edge of a Spectrum question
+ * @property {string} [spectrum_right] - Label at the right edge of a Spectrum question
+ * @property {number} [spectrum_range] - Total positive-zone width (1..50 percent)
+ * @property {'random'|'fixed'} [spectrum_target_mode] - Runtime target selection mode
+ * @property {number} [spectrum_target] - Fixed circular target position (0..100)
+ * @property {'risk'|'safe'} [spectrum_risk_mode] - Whether negative suggestions are enabled
+ * @property {'text'|'verbal'} [spectrum_clue_mode] - Whether the clue is submitted as text or spoken aloud
+ * @property {number} [spectrum_clue_bonus] - Extra clue-giver points for every correct guess after the first
  * @property {boolean} [hidden_until_reveal] - Option: keep submitted answers masked until the host reveals
  */
 
@@ -86,7 +94,8 @@ const QuestionType = {
     Karaoke: 'karaoke',
     Crocodile: 'crocodile',
     Voting: 'voting',
-    PointOnImage: 'point-on-image'
+    PointOnImage: 'point-on-image',
+    Spectrum: 'spectrum'
 };
 
 /**

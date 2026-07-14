@@ -315,6 +315,30 @@ class WebSocketManager {
     this.send({ type: 'drawing_sync', data: { questionId } });
   }
 
+  sendSpectrumSync(questionId) {
+    this.send({ type: 'spectrum_sync', data: { questionId } });
+  }
+
+  sendSpectrumAssign(questionId, targetUserId) {
+    this.send({ type: 'spectrum_assign', data: { questionId, targetUserId } });
+  }
+
+  sendSpectrumClue(questionId, clue) {
+    this.send({ type: 'spectrum_clue', data: { questionId, clue } });
+  }
+
+  sendSpectrumGuess(questionId, position) {
+    this.send({ type: 'spectrum_guess', data: { questionId, position } });
+  }
+
+  sendSpectrumHostGuess(questionId, position) {
+    this.send({ type: 'spectrum_host_guess', data: { questionId, position } });
+  }
+
+  sendSpectrumReveal(questionId) {
+    this.send({ type: 'spectrum_reveal', data: { questionId } });
+  }
+
   sendCastVote(questionId, voterId, targetUserId) {
     this.send({ type: 'cast_vote', data: { questionId, voterId, targetUserId } });
   }
@@ -335,8 +359,8 @@ class WebSocketManager {
     this.send({ type: 'update_score', data: { userId, score } });
   }
 
-  sendAdminClickedGreenNumber(userId) {
-    this.send({ type: 'admin_clicked_green_number', data: { userId } });
+  sendAdminClickedGreenNumber(userId, reason = 'correct') {
+    this.send({ type: 'admin_clicked_green_number', data: { userId, reason } });
   }
 
   sendAdminClickedRedNumber(userId) {

@@ -63,6 +63,18 @@ export interface Question {
   response?: 'buzz' | 'multi-buzz' | 'text' | 'choice';
   /** Keep submitted answers masked from other players until the host reveals them. Defaults by type (text/numeric hidden, choice live). */
   hidden_until_reveal?: boolean;
+  /** Spectrum pole shown at the left edge of the circular linear scale. */
+  spectrum_left?: string;
+  /** Spectrum pole shown at the right edge of the circular linear scale. */
+  spectrum_right?: string;
+  /** Total width of the three positive bands, as 1..50 percent of the scale. */
+  spectrum_range?: number;
+  /** Random target per play, or an authored fixed target. */
+  spectrum_target_mode?: 'random' | 'fixed';
+  /** Fixed target position on the circular 0..100 scale. */
+  spectrum_target?: number;
+  /** Risk mode suggests negative scores; safe mode clamps them to zero. */
+  spectrum_risk_mode?: 'risk' | 'safe';
 }
 
 export interface ChoiceOption {
@@ -118,7 +130,8 @@ export enum QuestionType {
   Karaoke = 'karaoke',
   Crocodile = 'crocodile',
   Voting = 'voting',
-  PointOnImage = 'point-on-image'
+  PointOnImage = 'point-on-image',
+  Spectrum = 'spectrum'
 }
 
 export enum RuleType {

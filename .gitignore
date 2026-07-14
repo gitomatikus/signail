@@ -5,3 +5,4 @@ frontend/build/
 .env
 backend/.env
 frontend/.env
+*Zone.Identifier

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const WebSocket = require('ws');
 const { normalizeQuestion, isHiddenUntilReveal, isMultiBuzz } = require('./questionModel');
 const { normalizePlayerColor } = require('./profile');
+const { normalizeSpectrumConfig } = require('./spectrum');
 
 const PACKS_DIR = path.join(__dirname, '..', 'packs');
 const EMPTY_GAME_TTL_MS = 15 * 60 * 1000; // remove a game 15 minutes after the last person left
@@ -77,6 +78,8 @@ class Game {
     // the player's buzz (cleared server-side) so they may buzz again.
     this.questionMultiBuzz = new Map();
     this.questionImageAspects = new Map();
+    this.questionAccuracyPercents = new Map();
+    this.questionSpectrumConfigs = new Map();
     // questionId -> [prior question ids in the same theme]. Only questions in
     // ordered themes are indexed: they unlock strictly left to right, so a
     // question is selectable only once all of its predecessors are closed.
@@ -86,6 +89,10 @@ class Game {
     // return-to-game). A (re)connecting client reads it to land on the right
     // screen instead of being stuck on whatever page it had before the drop.
     this.currentQuestionId = null;
+    // questionId -> { selectorId, clueGiverId, target, clue, guesses, revealed }
+    // Scores remain host-controlled; this state only powers the reveal and
+    // client-side score suggestions.
+    this.spectrum = new Map();
   }
 
   get packPath() {
@@ -123,6 +130,10 @@ class Game {
 
   isMultiBuzzQuestion(questionId) {
     return this.questionMultiBuzz.get(questionId) === true;
+  }
+
+  getSpectrumConfig(questionId) {
+    return this.questionSpectrumConfigs.get(questionId) || null;
   }
 
   // Ordered themes: a question may be selected only once every question to its
@@ -189,6 +200,7 @@ class Game {
     this.pointAnswers.clear();
     this.pointHints.clear();
     this.revealedPointAnswers.clear();
+    this.spectrum.clear();
     this.broadcastSelectedQuestions();
   }
 
@@ -273,6 +285,11 @@ class Game {
   getQuestionImageAspect(questionId) {
     const aspect = this.questionImageAspects.get(questionId);
     return Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  }
+
+  getQuestionAccuracyPercent(questionId) {
+    const accuracy = this.questionAccuracyPercents.get(questionId);
+    return Number.isFinite(accuracy) && accuracy > 0 ? accuracy : 2;
   }
 
   getVoteMode(questionId) {
@@ -369,6 +386,8 @@ class GameManager {
     const hidden = new Map();
     const multiBuzz = new Map();
     const imageAspects = new Map();
+    const accuracyPercents = new Map();
+    const spectrumConfigs = new Map();
     const predecessors = new Map();
     for (const round of pack.rounds) {
       for (const theme of round.themes || []) {
@@ -389,7 +408,12 @@ class GameManager {
             }
             if (q.type === 'point-on-image') {
               const aspect = Number(q.image_aspect_ratio);
+              const accuracy = Number(q.accuracy_percent);
               imageAspects.set(q.id, Number.isFinite(aspect) && aspect > 0 ? aspect : 1);
+              accuracyPercents.set(q.id, Number.isFinite(accuracy) && accuracy > 0 ? accuracy : 2);
+            }
+            if (q.type === 'spectrum') {
+              spectrumConfigs.set(q.id, normalizeSpectrumConfig(q));
             }
             if (priorIds && q.type !== 'empty') {
               if (priorIds.length > 0) {
@@ -406,6 +430,8 @@ class GameManager {
     game.questionHidden = hidden;
     game.questionMultiBuzz = multiBuzz;
     game.questionImageAspects = imageAspects;
+    game.questionAccuracyPercents = accuracyPercents;
+    game.questionSpectrumConfigs = spectrumConfigs;
     game.questionPredecessors = predecessors;
     game.packName = typeof pack.name === 'string' ? pack.name : 'Unnamed pack';
     game.packAuthor = typeof pack.author === 'string' ? pack.author : '';
