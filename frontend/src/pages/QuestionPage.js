@@ -14,7 +14,7 @@ import Logo from '../components/Logo';
 import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
 import { getHostLayout, HOST_LAYOUT_EVENT } from '../utils/hostLayout';
-import { isAutoSubmitSingleChoice } from '../utils/answerSettings';
+import { answersNeedNoConfirmation } from '../utils/answerSettings';
 import { getPlayerColor } from '../utils/playerIdentity';
 import { getHostToken } from '../services/gameAuth';
 import { useGame } from '../contexts/GameContext';
@@ -1611,7 +1611,7 @@ const QuestionPage = () => {
     }
     // Opt-in setting: a single-choice pick is the whole answer, so send it
     // right away instead of waiting for the Confirm button
-    if (!question.multiple && isAutoSubmitSingleChoice()) {
+    if (!question.multiple && answersNeedNoConfirmation()) {
       setSelectedOptions(new Set([idx]));
       submitChoicePicks([idx]);
       return;

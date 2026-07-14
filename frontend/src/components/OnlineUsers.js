@@ -8,6 +8,7 @@ import { useTranslation } from '../i18n/LanguageContext';
 import { responseMethod, isMultiBuzz } from '../utils/questionModel';
 import { pointDistancePercent, isPointAnswerCorrect } from '../utils/pointOnImage';
 import { getPlayerAccentFrame, getPlayerColor } from '../utils/playerIdentity';
+import { formatSpectrumPoints } from '../utils/spectrum';
 
 const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, selectedTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, pointAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false, spectrumAnswererIds = [], spectrumHostSubmitted = false, spectrumSuggestions = {}, spectrumMultipliers = {} }) => {
   const location = useLocation();
@@ -642,7 +643,9 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   <span style={{ color: 'var(--text-muted)', fontSize: '.72rem', fontWeight: 700 }}>🌈</span>
                   <span
                     onClick={() => spectrumSuggestion !== 0 && handleScoreClick(user.id, previousScore, spectrumSuggestion, false)}
-                    title={spectrumMultipliers[user.id] !== undefined ? `${spectrumMultipliers[user.id] * 100}%` : undefined}
+                    title={spectrumMultipliers[user.id] !== undefined
+                      ? formatSpectrumPoints(spectrumMultipliers[user.id], correctValue, question?.spectrum_risk_mode)
+                      : undefined}
                     style={{
                       fontWeight: 900,
                       color: spectrumSuggestion > 0 ? '#4ade80' : spectrumSuggestion < 0 ? '#ef4444' : 'var(--text-muted)',
@@ -833,7 +836,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
           When the row wraps, the host lands on the last line - the divider and
           the HOST badge keep them visually distinct. Players can hide this
           in Settings. */}
-      {gameInfo && !hideHost && (
+      {gameInfo && gameInfo.mode !== 'spectrogram' && !hideHost && (
         <div
           className="fade-in"
           style={{

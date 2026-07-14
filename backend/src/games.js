@@ -13,18 +13,20 @@ const SWEEP_INTERVAL_MS = 60 * 1000;
 // One running game: lobby metadata + the per-game state that used to be
 // global (scores, selections, reveals, times, answers...) + its sockets.
 class Game {
-  constructor({ id, hostToken, hostName, hostImageUrl, hostColor, password }) {
+  constructor({ id, hostToken, hostName, hostImageUrl, hostColor, password, mode, spectrogramClueMode }) {
     this.id = id;
     this.hostToken = hostToken;
     this.hostName = hostName;
     this.hostImageUrl = hostImageUrl || '';
     this.hostColor = normalizePlayerColor(hostColor);
     this.password = password || null;
-    this.status = 'awaiting_pack'; // awaiting_pack -> lobby -> started
+    this.mode = mode === 'spectrogram' ? 'spectrogram' : 'quiz';
+    this.spectrogramClueMode = spectrogramClueMode === 'verbal' ? 'verbal' : 'text';
+    this.status = this.mode === 'spectrogram' ? 'lobby' : 'awaiting_pack'; // awaiting_pack -> lobby -> started
     this.createdAt = Date.now();
     this.emptySince = Date.now(); // nobody is connected right after creation
 
-    this.packName = null;
+    this.packName = this.mode === 'spectrogram' ? 'Спектрограма' : null;
     this.packAuthor = null;
     this.packSize = 0;
     this.questionTypes = new Map(); // questionId -> type; the only pack data kept in memory
@@ -93,6 +95,11 @@ class Game {
     // Scores remain host-controlled; this state only powers the reveal and
     // client-side score suggestions.
     this.spectrum = new Map();
+    // Endless Spectrogram rooms do not use a quiz pack. The active generated
+    // spectrum lives here and is replaced only when the host advances.
+    this.spectrogramRound = null;
+    this.spectrogramRoundNumber = 0;
+    this.spectrogramRecentPairIds = [];
   }
 
   get packPath() {
@@ -110,6 +117,8 @@ class Game {
   toListInfo() {
     return {
       id: this.id,
+      mode: this.mode,
+      spectrogramClueMode: this.spectrogramClueMode,
       packName: this.packName,
       packAuthor: this.packAuthor,
       packSize: this.packSize,
@@ -125,6 +134,9 @@ class Game {
   }
 
   getQuestionType(questionId) {
+    if (this.mode === 'spectrogram' && Number(questionId) === Number(this.spectrogramRound?.question?.id)) {
+      return 'spectrum';
+    }
     return this.questionTypes.get(questionId) || null;
   }
 
@@ -133,6 +145,9 @@ class Game {
   }
 
   getSpectrumConfig(questionId) {
+    if (this.mode === 'spectrogram' && Number(questionId) === Number(this.spectrogramRound?.question?.id)) {
+      return normalizeSpectrumConfig(this.spectrogramRound.question);
+    }
     return this.questionSpectrumConfigs.get(questionId) || null;
   }
 
@@ -325,14 +340,16 @@ class GameManager {
     this.sweeper = setInterval(() => this.sweepEmptyGames(), SWEEP_INTERVAL_MS);
   }
 
-  createGame({ hostName, hostImageUrl, hostColor, password }) {
+  createGame({ hostName, hostImageUrl, hostColor, password, mode, spectrogramClueMode }) {
     const game = new Game({
       id: crypto.randomBytes(4).toString('hex'),
       hostToken: crypto.randomUUID(),
       hostName,
       hostImageUrl,
       hostColor,
-      password
+      password,
+      mode,
+      spectrogramClueMode,
     });
     this.games.set(game.id, game);
     return game;

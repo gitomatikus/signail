@@ -2,8 +2,16 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import wsManager from '../utils/websocket';
 import { useTranslation } from '../i18n/LanguageContext';
 import { useGame } from '../contexts/GameContext';
-import { buildSpectrumScoreSuggestions, getSpectrumSegments, SPECTRUM_ZONE_LABELS, wrapSpectrumPosition } from '../utils/spectrum';
+import {
+  buildSpectrumScoreSuggestions,
+  formatSpectrumPoints,
+  getSpectrumSegments,
+  SPECTRUM_ZONE_COLORS,
+  SPECTRUM_ZONE_MULTIPLIERS,
+  wrapSpectrumPosition,
+} from '../utils/spectrum';
 import { getPlayerColor } from '../utils/playerIdentity';
+import { answersNeedNoConfirmation } from '../utils/answerSettings';
 
 const emptyState = {
   phase: 'assigning', selectorId: null, clueGiverId: null, clueMode: null, clue: null,
@@ -22,19 +30,28 @@ const SpectrumTrack = ({
   markerColor = '#f97316',
   markerLabel = '',
   previousValue = null,
+  onCommit = null,
 }) => {
   const { t } = useTranslation();
   const trackRef = useRef(null);
   const draggingRef = useRef(false);
   const segments = colored && Number.isFinite(Number(target))
-    ? getSpectrumSegments(Number(target), question.spectrum_range || 20)
+    ? getSpectrumSegments(
+        Number(target),
+        question.spectrum_range || 20,
+        question.price?.correct || 0,
+        question.spectrum_risk_mode || 'risk'
+      )
     : [];
+  const baseScore = Math.abs(Number(question.price?.correct) || 0);
 
   const updateFromPointer = (event) => {
-    if (!onChange || !trackRef.current) return;
+    if (!onChange || !trackRef.current) return null;
     const rect = trackRef.current.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    onChange(Math.round(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100)) * 10) / 10);
+    if (rect.width <= 0) return null;
+    const next = Math.round(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100)) * 10) / 10;
+    onChange(next);
+    return next;
   };
 
   const zoneHeight = 82;
@@ -65,8 +82,12 @@ const SpectrumTrack = ({
         tabIndex={onChange ? 0 : undefined}
         onKeyDown={event => {
           if (!onChange || value === null) return;
-          if (event.key === 'ArrowLeft') { event.preventDefault(); onChange(wrapSpectrumPosition(value - 1)); }
-          if (event.key === 'ArrowRight') { event.preventDefault(); onChange(wrapSpectrumPosition(value + 1)); }
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            event.preventDefault();
+            const next = wrapSpectrumPosition(value + (event.key === 'ArrowLeft' ? -1 : 1));
+            onChange(next);
+            if (onCommit) onCommit(next);
+          }
         }}
         onPointerDown={event => {
           if (!onChange) return;
@@ -75,7 +96,11 @@ const SpectrumTrack = ({
           updateFromPointer(event);
         }}
         onPointerMove={event => { if (draggingRef.current) updateFromPointer(event); }}
-        onPointerUp={() => { draggingRef.current = false; }}
+        onPointerUp={event => {
+          const finalPosition = draggingRef.current ? updateFromPointer(event) : null;
+          draggingRef.current = false;
+          if (onCommit && finalPosition !== null) onCommit(finalPosition);
+        }}
         onPointerCancel={() => { draggingRef.current = false; }}
         style={{
           height: markers.length > 0 ? 154 : zoneHeight,
@@ -171,7 +196,7 @@ const SpectrumTrack = ({
             ? t('spectrum.secondsShort', { value: (Number(marker.time) / 1000).toFixed(1) })
             : null;
           return (
-            <div key={marker.user.id} title={`${marker.user.name}: ${marker.position.toFixed(1)}%${answerTime ? ` · ${answerTime}` : ''}`} style={{
+            <div key={marker.user.id} title={`${marker.user.name}${answerTime ? ` · ${answerTime}` : ''}`} style={{
               position: 'absolute', left: `${marker.position}%`, top: 0, bottom: 0,
               transform: 'translateX(-50%)', zIndex: 5,
             }}>
@@ -204,6 +229,27 @@ const SpectrumTrack = ({
                   <span style={{ color: '#facc15', fontSize: '.7rem', fontWeight: 900 }}>★ +{marker.firstCorrectBonus}</span>
                 )}
               </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px 14px',
+        marginTop: 12, color: 'var(--text-secondary)', fontSize: '.8rem', fontWeight: 750,
+      }}>
+        {SPECTRUM_ZONE_MULTIPLIERS.map(multiplier => {
+          const color = SPECTRUM_ZONE_COLORS[String(multiplier)];
+          const label = formatSpectrumPoints(multiplier, baseScore, question.spectrum_risk_mode || 'risk');
+          return (
+            <div key={multiplier} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                width: 14, height: 14, borderRadius: 4, display: 'inline-block',
+                background: multiplier < 0
+                  ? `linear-gradient(rgba(75, 85, 99, 0.48), rgba(75, 85, 99, 0.48)), ${color}`
+                  : color,
+                border: '1px solid rgba(255,255,255,.16)',
+              }} />
+              <span>{label}</span>
             </div>
           );
         })}
@@ -252,27 +298,33 @@ const SpectrumQuestion = ({ question, currentUserId, isAdmin, onlineUsers, onMet
   const clueGiver = onlineUsers.find(user => user.id === state.clueGiverId) || null;
   const selector = onlineUsers.find(user => user.id === state.selectorId) || null;
   const currentPlayer = onlineUsers.find(user => user.id === currentUserId) || null;
+  const hostIsPlayer = isAdmin && gameInfo?.mode === 'spectrogram' && !!currentPlayer;
   const hostMarkerOwner = {
     id: '__spectrum_host__',
     name: gameInfo?.hostName || t('spectrum.host'),
     imageUrl: gameInfo?.hostImageUrl || '',
     color: gameInfo?.hostColor || '#f59e0b',
   };
-  const markerOwner = isAdmin ? hostMarkerOwner : currentPlayer;
+  const markerOwner = hostIsPlayer ? currentPlayer : (isAdmin ? hostMarkerOwner : currentPlayer);
   const markerColor = getPlayerColor(markerOwner || currentUserId);
   const isClueGiver = !!currentUserId && currentUserId === state.clueGiverId;
   const canAssign = isAdmin || (!!currentUserId && currentUserId === state.selectorId);
-  const hasSubmitted = isAdmin ? state.hostSubmitted : state.submittedUserIds.includes(currentUserId);
+  const hasSubmitted = hostIsPlayer
+    ? state.submittedUserIds.includes(currentUserId)
+    : isAdmin ? state.hostSubmitted : state.submittedUserIds.includes(currentUserId);
   const secondsLeft = state.guessingEndsAt ? Math.max(0, Math.ceil((state.guessingEndsAt - now) / 1000)) : null;
   const canGuess = !isClueGiver && state.phase === 'guessing' && (isAdmin || !!currentUserId);
   const isVerbalClue = (state.clueMode || question.spectrum_clue_mode) === 'verbal';
+  const autoSubmit = answersNeedNoConfirmation();
 
-  const submitMarker = () => {
-    if (isAdmin) {
-      wsManager.sendSpectrumHostGuess(question.id, marker);
+  const submitMarker = (position = marker) => {
+    const numericPosition = Number(position);
+    if (!Number.isFinite(numericPosition)) return;
+    if (isAdmin && !hostIsPlayer) {
+      wsManager.sendSpectrumHostGuess(question.id, numericPosition);
       return;
     }
-    wsManager.sendSpectrumGuess(question.id, marker);
+    wsManager.sendSpectrumGuess(question.id, numericPosition);
   };
 
   const result = useMemo(() => {
@@ -284,12 +336,13 @@ const SpectrumQuestion = ({ question, currentUserId, isAdmin, onlineUsers, onMet
       guessTimes: state.guessTimes,
       firstCorrectBonus: question.first_place_bonus ?? 100,
       clueGiverCorrectBonus: question.spectrum_clue_bonus ?? 50,
-      hostGuess: state.hostGuess,
+      hostGuess: hostIsPlayer ? null : state.hostGuess,
     });
-  }, [state.revealed, state.target, state.guesses, state.guessTimes, state.clueGiverId, state.hostGuess, question]);
+  }, [state.revealed, state.target, state.guesses, state.guessTimes, state.clueGiverId, state.hostGuess, question, hostIsPlayer]);
 
   useEffect(() => {
     onMetaChange({
+      questionId: question.id,
       clueGiverId: state.clueGiverId,
       answererIds: state.submittedUserIds || [],
       hostSubmitted: state.hostSubmitted,
@@ -297,24 +350,35 @@ const SpectrumQuestion = ({ question, currentUserId, isAdmin, onlineUsers, onMet
       multipliers: result?.multipliers || {},
       revealed: state.revealed,
     });
-  }, [state.clueGiverId, state.submittedUserIds, state.hostSubmitted, state.revealed, result, onMetaChange]);
+  }, [question.id, state.clueGiverId, state.submittedUserIds, state.hostSubmitted, state.revealed, result, onMetaChange]);
 
   const markers = state.revealed
     ? Object.entries(state.guesses).map(([userId, position]) => ({
         user: onlineUsers.find(user => user.id === userId),
         position: Number(position),
         time: state.guessTimes?.[userId],
+        resultLabel: result?.multipliers?.[userId] !== undefined
+          ? formatSpectrumPoints(
+              result.multipliers[userId],
+              question.price?.correct || 0,
+              question.spectrum_risk_mode || 'risk'
+            )
+          : null,
         firstCorrect: result?.firstCorrectUserId === userId,
         firstCorrectBonus: Math.max(0, Number(question.first_place_bonus ?? 100) || 0),
       })).filter(item => item.user && Number.isFinite(item.position))
     : [];
-  if (state.revealed && state.hostGuess !== null) {
+  if (state.revealed && state.hostGuess !== null && !hostIsPlayer) {
     markers.push({
       user: hostMarkerOwner,
       position: Number(state.hostGuess),
       time: state.hostGuessTime,
       resultLabel: result?.hostMultiplier !== null && result?.hostMultiplier !== undefined
-        ? SPECTRUM_ZONE_LABELS[String(result.hostMultiplier)]
+        ? formatSpectrumPoints(
+            result.hostMultiplier,
+            question.price?.correct || 0,
+            question.spectrum_risk_mode || 'risk'
+          )
         : null,
     });
   }
@@ -322,7 +386,7 @@ const SpectrumQuestion = ({ question, currentUserId, isAdmin, onlineUsers, onMet
     ? onlineUsers
     : onlineUsers.filter(user => user.id !== state.selectorId);
   const card = {
-    width: 'min(100%, 1040px)', padding: 'clamp(1rem, 3vw, 2rem)', borderRadius: 24,
+    width: 'min(100%, 1040px)', margin: '0 auto', padding: 'clamp(1rem, 3vw, 2rem)', borderRadius: 24,
     border: '1px solid var(--glass-border)',
     background: 'linear-gradient(145deg, var(--glass-bg), rgba(10,12,18,.28))',
     boxShadow: 'var(--glass-shadow)', boxSizing: 'border-box',
@@ -398,24 +462,25 @@ const SpectrumQuestion = ({ question, currentUserId, isAdmin, onlineUsers, onMet
         onChange={canGuess ? setMarker : null}
         markerColor={markerColor}
         markerLabel={markerOwner?.name || ''}
-        previousValue={hasSubmitted ? (isAdmin ? state.hostGuess : state.ownGuess) : null}
+        previousValue={hasSubmitted ? (isAdmin && !hostIsPlayer ? state.hostGuess : state.ownGuess) : null}
+        onCommit={canGuess && autoSubmit ? submitMarker : null}
       />
       {state.phase === 'guessing' && <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexWrap: 'wrap', gap: 10, marginTop: 16,
       }}>
-        {canGuess && (
-          <button style={actionButton(markerColor)} onClick={submitMarker}>
+        {canGuess && !autoSubmit && (
+          <button style={actionButton(markerColor)} onClick={() => submitMarker()}>
             {hasSubmitted ? t('spectrum.updateMarker') : t('spectrum.lockMarker')}
           </button>
         )}
         {(isAdmin || isClueGiver) && <div style={{
           padding: '9px 13px', borderRadius: 10, background: 'var(--surface-soft)',
           border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontWeight: 750,
-        }}>{t('spectrum.answersCount', { count: state.submittedUserIds.length + (state.hostSubmitted ? 1 : 0) })}</div>}
+        }}>{t('spectrum.answersCount', { count: state.submittedUserIds.length + (!hostIsPlayer && state.hostSubmitted ? 1 : 0) })}</div>}
         {isAdmin && <button className="btn-primary" style={{ margin: 0 }} onClick={() => wsManager.sendSpectrumReveal(question.id)}>{t('spectrum.reveal')}</button>}
       </div>}
-      {isAdmin && state.phase === 'guessing' && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '.8rem', marginBottom: 0 }}>{t('spectrum.hostGuessHint')}</p>}
+      {isAdmin && !hostIsPlayer && state.phase === 'guessing' && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '.8rem', marginBottom: 0 }}>{t('spectrum.hostGuessHint')}</p>}
       {isClueGiver && state.phase === 'guessing' && <p style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{t('spectrum.clueGiverWait')}</p>}
     </div>
   );

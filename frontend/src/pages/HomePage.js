@@ -197,6 +197,7 @@ const HomePage = ({ user, onRequestLogin }) => {
                   <div style={{ flex: 1, minWidth: '200px' }}>
                     <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.1rem' }}>
                       {game.hasPassword && <span title={t('home.passwordProtected')} style={{ marginRight: '0.4rem' }}>🔒</span>}
+                      {game.mode === 'spectrogram' && <span title={t('create.spectrogramTab')} style={{ marginRight: '0.4rem' }}>🌈</span>}
                       {game.packName}
                     </div>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>

@@ -25,6 +25,8 @@ test('normalizes authored spectrum settings', () => {
     targetMode: 'fixed',
     target: 92,
     riskMode: 'safe',
+    clueMode: 'text',
+    allowSelfPick: false,
     duration: 60,
   });
   assert.equal(clampSpectrumRange(0), 1);

@@ -4,6 +4,7 @@ const config = require('./config');
 const { isNormalizedPoint, createPointHint } = require('./pointGeometry');
 const { normalizePlayerColor } = require('./profile');
 const { createSpectrumTarget, wrapSpectrumPosition } = require('./spectrum');
+const { startSpectrogramRound } = require('./spectrogram');
 
 // Routes every WebSocket connection into its game room (?gameId=...) and
 // scopes all message handling and broadcasts to that room.
@@ -84,6 +85,10 @@ class WebSocketManager {
         type: 'online_users',
         data: Array.from(game.persistentUsers.values())
       }));
+      if (game.mode === 'spectrogram' && game.spectrogramRound) {
+        ws.send(JSON.stringify({ type: 'spectrogram_round', data: game.spectrogramRound }));
+        this.sendSpectrumState(game, ws, game.spectrogramRound.question.id);
+      }
       // The screen the room is currently on, so a (re)joining client can
       // navigate straight to it (per-question state then rehydrates via REST).
       if (game.currentQuestionId != null) {
@@ -166,10 +171,33 @@ class WebSocketManager {
     } else if (data.type === 'start_game') {
       // Only the host can move the lobby into a running game
       if (ws.isHost && game.status === 'lobby') {
+        if (game.mode === 'spectrogram' && game.persistentUsers.size === 0) return;
         game.status = 'started';
         game.broadcast({ type: 'game_started', data: { gameId: game.id } });
         game.broadcastGameInfo();
+        if (game.mode === 'spectrogram') {
+          const round = startSpectrogramRound(game);
+          if (round) {
+            game.broadcast({ type: 'spectrogram_round', data: round });
+            this.broadcastSpectrumState(game, round.question.id);
+          }
+        }
       }
+    } else if (data.type === 'spectrogram_sync') {
+      if (game.mode !== 'spectrogram' || !game.spectrogramRound) return;
+      ws.send(JSON.stringify({ type: 'spectrogram_round', data: game.spectrogramRound }));
+      this.sendSpectrumState(game, ws, game.spectrogramRound.question.id);
+    } else if (data.type === 'spectrogram_next') {
+      if (!ws.isHost || game.mode !== 'spectrogram' || game.status !== 'started') return;
+      const active = game.spectrogramRound
+        ? game.spectrum.get(game.spectrogramRound.question.id)
+        : null;
+      // Results should be shown before a round can be replaced.
+      if (active && !active.revealed) return;
+      const round = startSpectrogramRound(game);
+      if (!round) return;
+      game.broadcast({ type: 'spectrogram_round', data: round });
+      this.broadcastSpectrumState(game, round.question.id);
     } else if (data.type === 'update_host_profile') {
       // Host edits their own nickname/avatar from the profile modal; apply it
       // to the game and rebroadcast so every client updates live.

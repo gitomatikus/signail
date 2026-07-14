@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Settings from '../components/Settings';
 import { useGame } from '../contexts/GameContext';
 import GamePage from './GamePage';
+import SpectrogramPage from './SpectrogramPage';
 import config from '../config';
 import { getHostToken, removeHostToken } from '../services/gameAuth';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -209,7 +210,8 @@ const Lobby = () => {
 // One game room: the lobby until the host starts the game, the board after
 const GameRoomPage = () => {
   const { gameInfo } = useGame();
-  return gameInfo.status === 'started' ? <GamePage /> : <Lobby />;
+  if (gameInfo.status !== 'started') return <Lobby />;
+  return gameInfo.mode === 'spectrogram' ? <SpectrogramPage /> : <GamePage />;
 };
 
 export default GameRoomPage;

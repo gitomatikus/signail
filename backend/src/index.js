@@ -135,7 +135,7 @@ app.get('/api/games', (req, res) => {
 });
 
 app.post('/api/games', (req, res) => {
-  const { hostName, hostImageUrl, hostColor, password } = req.body || {};
+  const { hostName, hostImageUrl, hostColor, password, mode, spectrogramClueMode } = req.body || {};
   if (!hostName || typeof hostName !== 'string') {
     return res.status(400).json({ status: 'error', message: 'hostName is required' });
   }
@@ -143,7 +143,9 @@ app.post('/api/games', (req, res) => {
     hostName: hostName.trim(),
     hostImageUrl: typeof hostImageUrl === 'string' ? hostImageUrl.trim() : '',
     hostColor: normalizePlayerColor(hostColor),
-    password: typeof password === 'string' && password.length > 0 ? password : null
+    password: typeof password === 'string' && password.length > 0 ? password : null,
+    mode: mode === 'spectrogram' ? 'spectrogram' : 'quiz',
+    spectrogramClueMode: spectrogramClueMode === 'verbal' ? 'verbal' : 'text'
   });
   res.json({
     status: 'success',

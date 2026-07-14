@@ -58,6 +58,10 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
       wsManager.sendUserLogin(updatedUser);
     } else if (isHost) {
       wsManager.sendUpdateHostProfile(updatedData.name, updatedData.imageUrl, updatedData.color);
+      // In Spectrogram the host is also a scored participant.
+      if (gameInfoRef.current?.mode === 'spectrogram' && userRef.current) {
+        wsManager.sendUserLogin({ ...userRef.current, ...updatedData });
+      }
     }
   }, [onUpdateUser, isHost]);
 
@@ -69,6 +73,12 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
   }, [navigate]);
 
   const loadPack = useCallback(async (info) => {
+    if (info?.mode === 'spectrogram') {
+      setPack(null);
+      setPackLoading(false);
+      setDownloadProgress(null);
+      return;
+    }
     try {
       setPackLoading(true);
       setDownloadProgress(null);
@@ -170,8 +180,9 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
     const unsubscribe = wsManager.subscribe((data) => {
       if (data.type === 'ws_open') {
         setConnected(true);
-        // (Re)introduce ourselves on every (re)connect; the host is not a player
-        if (!getHostToken(gameId) && userRef.current) {
+        // (Re)introduce ourselves on every (re)connect. Quiz hosts stay out of
+        // the player list; Spectrogram hosts participate and score normally.
+        if ((!getHostToken(gameId) || gameInfoRef.current?.mode === 'spectrogram') && userRef.current) {
           wsManager.sendUserLogin(userRef.current);
         }
       } else if (data.type === 'ws_closed') {
@@ -196,6 +207,7 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
         setError('game.wrongPassword');
         setTimeout(() => navigateRef.current('/'), 1500);
       } else if (data.type === 'cache_key_update' && data.data?.cacheKey) {
+        if (gameInfoRef.current?.mode === 'spectrogram') return;
         // Server rotated the cache key (new pack uploaded / cache cleared).
         // Drop local caches and reload from the board so everyone picks up
         // the fresh pack and reset question state.

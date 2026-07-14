@@ -11,6 +11,8 @@ import { useTranslation } from '../i18n/LanguageContext';
 // as-is - the server validates it and stores it on disk.
 const CreateGamePage = ({ user }) => {
     const { t, translateMessage } = useTranslation();
+    const [gameMode, setGameMode] = useState('quiz');
+    const [spectrogramClueMode, setSpectrogramClueMode] = useState('text');
     const [file, setFile] = useState(null);
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -97,7 +99,7 @@ const CreateGamePage = ({ user }) => {
     };
 
     const handleCreate = async () => {
-        if (!file) {
+        if (gameMode === 'quiz' && !file) {
             setError('create.noFile');
             return;
         }
@@ -114,7 +116,9 @@ const CreateGamePage = ({ user }) => {
                     hostName: user?.name || 'Host',
                     hostImageUrl: user?.imageUrl || '',
                     hostColor: user?.color || '',
-                    password: password || null
+                    password: password || null,
+                    mode: gameMode,
+                    spectrogramClueMode
                 })
             });
             const result = await response.json();
@@ -124,8 +128,10 @@ const CreateGamePage = ({ user }) => {
             created = result.data;
             saveHostToken(created.gameId, created.hostToken);
 
-            const uploaded = await uploadPack(created.gameId, created.hostToken);
-            await cacheUploadedPack(created.gameId, uploaded.cacheKey);
+            if (gameMode === 'quiz') {
+                const uploaded = await uploadPack(created.gameId, created.hostToken);
+                await cacheUploadedPack(created.gameId, uploaded.cacheKey);
+            }
             navigate(`/game/${created.gameId}`);
         } catch (err) {
             setError(err.message);
@@ -179,7 +185,27 @@ const CreateGamePage = ({ user }) => {
                     flexDirection: 'column',
                     gap: '1.5rem'
                 }}>
-                    <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.5rem', padding: '.35rem', borderRadius: '14px', background: 'var(--surface-soft)', border: '1px solid var(--glass-border)' }}>
+                        {['quiz', 'spectrogram'].map(mode => (
+                            <button
+                                key={mode}
+                                type="button"
+                                onClick={() => { setGameMode(mode); setError(''); }}
+                                disabled={isUploading}
+                                style={{
+                                    padding: '.85rem 1rem', borderRadius: '10px', cursor: 'pointer',
+                                    border: gameMode === mode ? '1px solid var(--accent)' : '1px solid transparent',
+                                    background: gameMode === mode ? 'var(--accent-soft)' : 'transparent',
+                                    color: gameMode === mode ? 'var(--accent)' : 'var(--text-secondary)',
+                                    fontWeight: 800, fontSize: '1rem'
+                                }}
+                            >
+                                {mode === 'quiz' ? `🧠 ${t('create.quizTab')}` : `🌈 ${t('create.spectrogramTab')}`}
+                            </button>
+                        ))}
+                    </div>
+
+                    {gameMode === 'quiz' ? <div>
                         <label style={{
                             display: 'block',
                             marginBottom: '0.75rem',
@@ -219,7 +245,37 @@ const CreateGamePage = ({ user }) => {
                                 {t('create.selected', { name: file.name })}
                             </div>
                         )}
-                    </div>
+                    </div> : (
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '.75rem', color: 'var(--text-secondary)', fontSize: '.875rem', fontWeight: 500 }}>
+                                {t('create.clueMode')}
+                            </label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.75rem' }}>
+                                {['text', 'verbal'].map(mode => (
+                                    <button
+                                        key={mode}
+                                        type="button"
+                                        onClick={() => setSpectrogramClueMode(mode)}
+                                        disabled={isUploading}
+                                        className="glass-panel"
+                                        style={{
+                                            padding: '1rem', cursor: 'pointer', textAlign: 'left',
+                                            border: spectrogramClueMode === mode ? '2px solid var(--accent)' : '1px solid var(--glass-border)',
+                                            color: 'var(--text-primary)', background: spectrogramClueMode === mode ? 'var(--accent-soft)' : 'var(--surface-soft)'
+                                        }}
+                                    >
+                                        <div style={{ fontWeight: 800 }}>{mode === 'text' ? `⌨️ ${t('create.textMode')}` : `🎙️ ${t('create.verbalMode')}`}</div>
+                                        <div style={{ color: 'var(--text-secondary)', fontSize: '.8rem', marginTop: '.35rem', lineHeight: 1.35 }}>
+                                            {mode === 'text' ? t('create.textModeHint') : t('create.verbalModeHint')}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '.85rem', lineHeight: 1.5, margin: '1rem 0 0' }}>
+                                {t('create.spectrogramHint')}
+                            </p>
+                        </div>
+                    )}
 
                     <div>
                         <label style={{
@@ -242,18 +298,18 @@ const CreateGamePage = ({ user }) => {
 
                     <button
                         onClick={handleCreate}
-                        disabled={!file || isUploading}
+                        disabled={(gameMode === 'quiz' && !file) || isUploading}
                         className="btn-primary"
                         style={{
                             width: '100%',
-                            opacity: (!file || isUploading) ? 0.5 : 1,
-                            cursor: (!file || isUploading) ? 'not-allowed' : 'pointer'
+                            opacity: ((gameMode === 'quiz' && !file) || isUploading) ? 0.5 : 1,
+                            cursor: ((gameMode === 'quiz' && !file) || isUploading) ? 'not-allowed' : 'pointer'
                         }}
                     >
                         {isUploading ? t('create.uploading') : t('create.title')}
                     </button>
 
-                    {isUploading && (
+                    {isUploading && gameMode === 'quiz' && (
                         <div style={{
                             display: 'flex',
                             flexDirection: 'column',

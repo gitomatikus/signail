@@ -328,15 +328,27 @@ class WebSocketManager {
   }
 
   sendSpectrumGuess(questionId, position) {
-    this.send({ type: 'spectrum_guess', data: { questionId, position } });
+    const numericPosition = Number(position);
+    if (!Number.isFinite(numericPosition)) return;
+    this.send({ type: 'spectrum_guess', data: { questionId, position: numericPosition } });
   }
 
   sendSpectrumHostGuess(questionId, position) {
-    this.send({ type: 'spectrum_host_guess', data: { questionId, position } });
+    const numericPosition = Number(position);
+    if (!Number.isFinite(numericPosition)) return;
+    this.send({ type: 'spectrum_host_guess', data: { questionId, position: numericPosition } });
   }
 
   sendSpectrumReveal(questionId) {
     this.send({ type: 'spectrum_reveal', data: { questionId } });
+  }
+
+  sendSpectrogramSync() {
+    this.send({ type: 'spectrogram_sync' });
+  }
+
+  sendSpectrogramNext() {
+    this.send({ type: 'spectrogram_next' });
   }
 
   sendCastVote(questionId, voterId, targetUserId) {

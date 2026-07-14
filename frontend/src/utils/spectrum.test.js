@@ -1,9 +1,16 @@
 import {
   buildSpectrumScoreSuggestions,
+  formatSpectrumPoints,
   getSpectrumMultiplier,
   getSpectrumSegments,
   spectrumDistance,
 } from './spectrum';
+
+test('formats spectrum zones as concrete points instead of percentages', () => {
+  expect(formatSpectrumPoints(0.5, 300, 'risk')).toBe('+150');
+  expect(formatSpectrumPoints(-0.25, 300, 'risk')).toBe('-75');
+  expect(formatSpectrumPoints(-1, 300, 'safe')).toBe('0');
+});
 
 test('uses circular distance across the two visual edges', () => {
   expect(spectrumDistance(98, 2)).toBe(4);
@@ -42,12 +49,12 @@ test('suggests the best positive result to the clue giver', () => {
   expect(result.suggestions).toEqual({ a: 200, b: 100, c: -100, guide: 200 });
 });
 
-test('protects players when nobody hits and clamps all losses in safe mode', () => {
+test('deducts points for misses and clamps losses only in safe mode', () => {
   const miss = buildSpectrumScoreSuggestions({
     guesses: { a: 75, b: 85 }, clueGiverId: 'guide', target: 50,
     range: 40, baseScore: 400, riskMode: 'risk',
   });
-  expect(miss.suggestions).toEqual({ a: 0, b: 0, guide: -400 });
+  expect(miss.suggestions).toEqual({ a: -100, b: -200, guide: -400 });
 
   const safe = buildSpectrumScoreSuggestions({
     guesses: { a: 57, b: 75 }, clueGiverId: 'guide', target: 50,

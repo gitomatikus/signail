@@ -7,13 +7,13 @@ export const SPECTRUM_ZONE_COLORS = {
   '-1': '#ef4444',
 };
 
-export const SPECTRUM_ZONE_LABELS = {
-  1: '+100%',
-  0.5: '+50%',
-  0.25: '+25%',
-  '-0.25': '-25%',
-  '-0.5': '-50%',
-  '-1': '-100%',
+export const SPECTRUM_ZONE_MULTIPLIERS = [1, 0.5, 0.25, -0.25, -0.5, -1];
+
+export const formatSpectrumPoints = (multiplier, baseScore, riskMode = 'risk') => {
+  const points = riskMode === 'safe' && Number(multiplier) < 0
+    ? 0
+    : Math.round(Math.abs(Number(baseScore) || 0) * Number(multiplier));
+  return `${points > 0 ? '+' : ''}${points}`;
 };
 
 export const wrapSpectrumPosition = (value) => {
@@ -71,7 +71,7 @@ const splitWrappedInterval = (start, end, meta) => {
 
 // Converts the six circular distance bands into ordinary 0..100 intervals.
 // A band crossing either edge is returned as two rectangles.
-export const getSpectrumSegments = (targetValue, rangeValue) => {
+export const getSpectrumSegments = (targetValue, rangeValue, baseScore = 100, riskMode = 'risk') => {
   const target = wrapSpectrumPosition(targetValue);
   const segments = [];
   getSpectrumBands(rangeValue).forEach((band) => {
@@ -79,7 +79,7 @@ export const getSpectrumSegments = (targetValue, rangeValue) => {
     const meta = {
       multiplier: band.multiplier,
       color: SPECTRUM_ZONE_COLORS[key],
-      label: SPECTRUM_ZONE_LABELS[key],
+      label: formatSpectrumPoints(band.multiplier, baseScore, riskMode),
     };
     if (band.inner === 0) {
       segments.push(...splitWrappedInterval(target - band.outer, target + band.outer, meta));
@@ -132,7 +132,7 @@ export const buildSpectrumScoreSuggestions = ({
 
   entries.forEach(([userId]) => {
     const raw = Math.round(base * multipliers[userId]);
-    suggestions[userId] = !hasPositiveGuess ? 0 : (safe ? Math.max(0, raw) : raw);
+    suggestions[userId] = safe ? Math.max(0, raw) : raw;
   });
 
   if (firstCorrectUserId) {

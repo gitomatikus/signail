@@ -15,8 +15,8 @@ import {
   TEXT_SUBMIT_MODES,
   getTextSubmitMode,
   setTextSubmitMode,
-  isAutoSubmitSingleChoice,
-  setAutoSubmitSingleChoice
+  answersNeedNoConfirmation,
+  setAnswersNeedNoConfirmation
 } from '../utils/answerSettings';
 import EditProfileModal from './EditProfileModal';
 import MicCheckSetting from './MicCheckSetting';
@@ -36,7 +36,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
   const [theme, setTheme] = useState(() => getTheme());
   const [hostLayout, setHostLayoutChoice] = useState(() => getHostLayout());
   const [textSubmitMode, setTextSubmitModeChoice] = useState(() => getTextSubmitMode());
-  const [autoChoice, setAutoChoice] = useState(() => isAutoSubmitSingleChoice());
+  const [autoChoice, setAutoChoice] = useState(() => answersNeedNoConfirmation());
 
   const handleThemeChange = (e) => {
     const id = e.target.value;
@@ -92,7 +92,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
   const handleToggleAutoChoice = () => {
     const next = !autoChoice;
     setAutoChoice(next);
-    setAutoSubmitSingleChoice(next);
+    setAnswersNeedNoConfirmation(next);
   };
 
   // Leaving just disconnects: GameProvider tears the socket down on unmount
@@ -294,8 +294,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
             </div>
           )}
 
-          {!isAdmin && (
-            <label style={{
+          <label style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -314,8 +313,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
                 onChange={handleToggleAutoChoice}
                 style={{ width: '18px', height: '18px', cursor: 'pointer', flexShrink: 0 }}
               />
-            </label>
-          )}
+          </label>
 
           {isAdmin && gameId && (
             <div style={{

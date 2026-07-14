@@ -18,13 +18,14 @@ export const setTextSubmitMode = (mode) => {
   }
 };
 
-// Single-choice questions: clicking an option submits it right away,
-// skipping the "Confirm answer" button. Off by default.
+// Answers that can be complete in one gesture (single choice, Spectrum):
+// submit that gesture immediately instead of requiring a separate button.
+// Keep the storage key stable so existing preferences survive the rename.
 const AUTO_CHOICE_KEY = 'autoSubmitSingleChoice';
 
-export const isAutoSubmitSingleChoice = () =>
+export const answersNeedNoConfirmation = () =>
   localStorage.getItem(AUTO_CHOICE_KEY) === 'true';
 
-export const setAutoSubmitSingleChoice = (enabled) => {
+export const setAnswersNeedNoConfirmation = (enabled) => {
   localStorage.setItem(AUTO_CHOICE_KEY, enabled ? 'true' : 'false');
 };

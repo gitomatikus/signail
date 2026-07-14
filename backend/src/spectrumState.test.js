@@ -7,6 +7,7 @@ const makeGame = () => ({
     selectorId: 'selector',
     clueGiverId: 'guide',
     target: 98,
+    clueMode: 'text',
     clue: 'Mercury',
     guesses: new Map([['player', 4]]),
     revealed: false,
