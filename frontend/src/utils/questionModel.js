@@ -62,6 +62,7 @@ export function responseMethod(q) {
   switch (q.type) {
     case 'close-enough': return 'numeric';
     case 'find-a-cat': return 'click';
+    case 'point-on-image': return 'point';
     case 'karaoke': return 'audio';
     case 'voting': return 'text';
     case 'crocodile':
@@ -126,6 +127,7 @@ export function usesNumberAnswers(q) {
 // Voting and crocodile guesses are always hidden (guessing games).
 export function isHiddenUntilReveal(q) {
   if (!q || q.type === 'voting' || q.type === 'crocodile') return true;
+  if (q.type === 'point-on-image') return true;
   if (typeof q.hidden_until_reveal === 'boolean') return q.hidden_until_reveal;
   const rm = responseMethod(q);
   return rm === 'text' || rm === 'numeric';

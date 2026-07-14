@@ -113,6 +113,7 @@ const CreateGamePage = ({ user }) => {
                 body: JSON.stringify({
                     hostName: user?.name || 'Host',
                     hostImageUrl: user?.imageUrl || '',
+                    hostColor: user?.color || '',
                     password: password || null
                 })
             });

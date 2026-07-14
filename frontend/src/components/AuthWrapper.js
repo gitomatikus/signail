@@ -5,6 +5,7 @@ import EditProfileModal from './EditProfileModal';
 import MicCheckSetting from './MicCheckSetting';
 import { useTranslation } from '../i18n/LanguageContext';
 import { THEMES, getTheme, applyTheme } from '../utils/theme';
+import { getPlayerColor } from '../utils/playerIdentity';
 
 // Makes sure a user profile (name + avatar) exists before rendering the page.
 // The profile is global: the same identity is used to browse, host and join
@@ -16,7 +17,11 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
   const { t } = useTranslation();
   const [user, setUser] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('user'));
+      const storedUser = JSON.parse(localStorage.getItem('user'));
+      if (!storedUser) return null;
+      const migratedUser = { ...storedUser, color: getPlayerColor(storedUser) };
+      localStorage.setItem('user', JSON.stringify(migratedUser));
+      return migratedUser;
     } catch (error) {
       localStorage.removeItem('user');
       return null;

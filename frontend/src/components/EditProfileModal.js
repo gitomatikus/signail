@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useTranslation } from '../i18n/LanguageContext';
 import { compressImageToDataUrl, isImageDataUrl, dataUrlBytes } from '../utils/compressImage';
+import { getPlayerColor } from '../utils/playerIdentity';
 
 const EditProfileModal = ({ user, onSave, onClose }) => {
   const { t } = useTranslation();
@@ -11,6 +12,7 @@ const EditProfileModal = ({ user, onSave, onClose }) => {
   const initialImage = user?.imageUrl || '';
   const initialIsDataUrl = isImageDataUrl(initialImage);
   const [name, setName] = useState(user?.name || '');
+  const [color, setColor] = useState(getPlayerColor(user));
   const [imageUrl, setImageUrl] = useState(initialIsDataUrl ? '' : initialImage);
   const [pastedImage, setPastedImage] = useState(
     initialIsDataUrl ? { dataUrl: initialImage, bytes: dataUrlBytes(initialImage) } : null
@@ -79,6 +81,7 @@ const EditProfileModal = ({ user, onSave, onClose }) => {
     onSave({
       name: name.trim(),
       imageUrl: pastedImage ? pastedImage.dataUrl : imageUrl.trim(),
+      color,
     });
   };
 
@@ -159,6 +162,43 @@ const EditProfileModal = ({ user, onSave, onClose }) => {
               placeholder={t('login.namePlaceholder')}
               autoFocus
             />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+              {t('profile.playerColor')}
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                aria-label={t('profile.playerColor')}
+                style={{
+                  width: '64px',
+                  height: '44px',
+                  padding: '3px',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  flex: '0 0 auto',
+                }}
+              />
+              <div style={{
+                flex: 1,
+                padding: '0.65rem 0.8rem',
+                borderRadius: '8px',
+                border: `1px solid ${color}`,
+                background: `${color}22`,
+                color: 'var(--text-primary)',
+                fontFamily: 'monospace',
+                fontSize: '0.9rem',
+              }}>
+                {color.toUpperCase()}
+              </div>
+            </div>
+            <div style={{ marginTop: '0.4rem', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+              {t('profile.playerColorHelper')}
+            </div>
           </div>
 
           <div>

@@ -3,6 +3,7 @@ import { useTranslation } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import Logo from './Logo';
 import { compressImageToDataUrl, isImageDataUrl, dataUrlBytes } from '../utils/compressImage';
+import { getPlayerColor } from '../utils/playerIdentity';
 
 // Standalone full-screen login by default; pass onClose to render it as a
 // dismissable overlay on top of the current page (backdrop click / × close).
@@ -74,10 +75,12 @@ const LoginPage = ({ onLogin, onClose }) => {
       }
     }
 
+    const id = `${name.trim()}-${Date.now()}`;
     const userData = {
-      id: `${name.trim()}-${Date.now()}`,
+      id,
       name: name.trim(),
       imageUrl: pastedImage ? pastedImage.dataUrl : imageUrl.trim(),
+      color: getPlayerColor({ id }),
       lastLogin: new Date().toISOString(),
       score: 0
     };

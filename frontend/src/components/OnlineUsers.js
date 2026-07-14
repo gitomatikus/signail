@@ -6,8 +6,10 @@ import { useGame } from '../contexts/GameContext';
 import { HIDE_HOST_KEY, HIDE_HOST_EVENT } from '../utils/hostVisibility';
 import { useTranslation } from '../i18n/LanguageContext';
 import { responseMethod, isMultiBuzz } from '../utils/questionModel';
+import { pointDistancePercent, isPointAnswerCorrect } from '../utils/pointOnImage';
+import { getPlayerAccentFrame, getPlayerColor } from '../utils/playerIdentity';
 
-const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, selectedTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false }) => {
+const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, selectedTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, pointAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false }) => {
   const location = useLocation();
   const { t } = useTranslation();
   const isQuestionPage = location.pathname.includes('/question/');
@@ -91,8 +93,10 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
   const incorrectValue = question?.price?.incorrect ?? 0;
   const hasClickLimit = question?.type === 'find-a-cat' && Number(question?.max_clicks) > 0;
   const isCloseEnoughQuestion = question?.type === 'close-enough';
+  const isPointQuestion = question?.type === 'point-on-image';
   const respMethod = responseMethod(question);
   const isCrocodileQuestion = question?.type === 'crocodile';
+  const isKaraokeQuestion = question?.type === 'karaoke';
   // Choice/text answers on a normal/reveal question (crocodile guesses are
   // text/choice too but have their own collect-then-score handling below)
   const isChoiceQuestion = respMethod === 'choice' && !isCrocodileQuestion
@@ -158,6 +162,15 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
     });
   }
 
+  let fastestCorrectPointId = null;
+  if (isPointQuestion && answersRevealed) {
+    // The server stores points in a Map, so object entry order is the actual
+    // accepted-submission order and cannot be skewed by client clocks.
+    const firstCorrect = Object.entries(pointAnswers)
+      .find(([, point]) => isPointAnswerCorrect(point, question));
+    fastestCorrectPointId = firstCorrect?.[0] || null;
+  }
+
   const handleGrantClick = (userId) => {
     if (!isAdmin || !question) return;
     wsManager.sendCatClicksGrant(question.id, userId, 1);
@@ -198,6 +211,10 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
           0% { background-position: 0% 50%, 0% 50%; }
           100% { background-position: 0% 50%, 200% 50%; }
         }
+        @keyframes playerIdentityPulse {
+          0%, 100% { box-shadow: 0 0 14px var(--player-identity-color); }
+          50% { box-shadow: 0 0 30px var(--player-identity-color); }
+        }
         .rainbow-frame {
           border: 3px solid transparent;
           background-image:
@@ -233,6 +250,8 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               ? userTime !== null
               : isCloseEnoughQuestion
                 ? answersRevealed
+                : isPointQuestion
+                  ? (answersRevealed && pointAnswers[user.id] !== undefined)
                 : isChoiceQuestion
                   // Choice results are live: award as soon as the player answers
                   ? numberAnswers[user.id] !== undefined
@@ -255,19 +274,24 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                         : position === 0
         );
         const submittedAnswer = numberAnswers[user.id];
+        const submittedPoint = pointAnswers[user.id];
         // Choice answers have a known-correct outcome, so the host shouldn't have
         // to guess which button to press: dim the one that contradicts the pick
         // (both stay clickable for a manual override).
         const choiceOutcomeKnown = isChoiceQuestion && submittedAnswer !== undefined;
         const choseCorrectly = choiceOutcomeKnown && isCorrectChoicePicks(submittedAnswer);
-        const minusDimmed = choiceOutcomeKnown && choseCorrectly;
-        const plusDimmed = choiceOutcomeKnown && !choseCorrectly;
+        const pointOutcomeKnown = isPointQuestion && answersRevealed && submittedPoint !== undefined;
+        const pointIsCorrect = pointOutcomeKnown && isPointAnswerCorrect(submittedPoint, question);
+        const minusDimmed = (choiceOutcomeKnown && choseCorrectly) || (pointOutcomeKnown && pointIsCorrect);
+        const plusDimmed = (choiceOutcomeKnown && !choseCorrectly) || (pointOutcomeKnown && !pointIsCorrect);
         // Voting: how many votes this player's answer received (only when visible)
         const voteCountForUser = showVoteCounts ? (votesReceived[user.id] || 0) : null;
         const isVoteWinner = showVoteCounts && voteCountForUser > 0 && voteCountForUser === maxVotesReceived;
         const answerBadge = isCloseEnoughQuestion && submittedAnswer !== undefined
           ? (typeof submittedAnswer === 'number' ? submittedAnswer : '✓')
-          : null;
+          : pointOutcomeKnown
+            ? `${pointDistancePercent(submittedPoint, question.correct_point, question.image_aspect_ratio).toFixed(1)}%`
+            : null;
         // Exact close-enough guess: rainbow frame + optional bonus points
         const isPerfectGuess = isCloseEnoughQuestion && answersRevealed
           && typeof question?.answer === 'number' && submittedAnswer === question.answer;
@@ -279,10 +303,13 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             ? user.id === fastestCorrectChoiceId
             : isTextQuestion
               ? (answersRevealed && position === 0)
+              : isPointQuestion
+                ? user.id === fastestCorrectPointId
               : false;
         const firstPlaceBonus = isFirstPlace ? (Number(question?.first_place_bonus) || 0) : 0;
         const perfectBonus = isPerfectGuess ? (Number(question?.perfect_bonus) || 0) : 0;
         const awardValue = correctValue + firstPlaceBonus + perfectBonus;
+        const playerColor = getPlayerColor(user);
         // Who takes the move (green frame) when awarded points
         const grantsMove = isFindACat
           ? position === 0
@@ -290,10 +317,17 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             ? closestIds.includes(user.id)
             : isChoiceQuestion
               ? user.id === fastestCorrectChoiceId
+              : isPointQuestion
+                ? user.id === fastestCorrectPointId
               : true;
 
         const getFrameStyle = () => {
           if (hasGreenFrame) {
+            // On the board this is the player currently entitled to choose the
+            // next question, so identity color is more useful than generic green.
+            if (!isQuestionPage) {
+              return getPlayerAccentFrame(user, { animated: true });
+            }
             return {
               border: '3px solid #4ade80',
               boxShadow: '0 0 20px rgba(74, 222, 128, 0.6)'
@@ -317,18 +351,19 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
 
           // Highlight the player chosen for a user-selection question
           if (selectedTargetId && user.id === selectedTargetId) {
+            if (isKaraokeQuestion) {
+              return getPlayerAccentFrame(user, { animated: true });
+            }
             return {
               border: '3px solid #ffd600',
               boxShadow: '0 0 25px rgba(255, 214, 0, 0.6)'
             };
           }
 
-          // Highlight the chosen crocodile performer in the signature green
+          // Active performers carry their identity color. Red/green scoring
+          // states above still take precedence after a host verdict.
           if (isCrocodileQuestion && crocodileTargetId && user.id === crocodileTargetId) {
-            return {
-              border: '3px solid #4ade80',
-              boxShadow: '0 0 25px rgba(74, 222, 128, 0.6)'
-            };
+            return getPlayerAccentFrame(user, { animated: true });
           }
 
           // Close-enough winner: the number closest to the correct answer
@@ -396,7 +431,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               position: 'relative',
             }}
           >
-            {userTime !== null && (
+            {userTime !== null && !pointOutcomeKnown && (
               <div style={{
                 position: 'absolute',
                 top: -20,
@@ -436,7 +471,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               </div>
             )}
 
-            {/* Close-enough: a checkmark while numbers are hidden, the number once revealed */}
+            {/* Numeric answer or point distance once results are visible. */}
             {answerBadge !== null && (
               <div style={{
                 position: 'absolute',
@@ -445,7 +480,9 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                 transform: 'translateX(-50%)',
                 background: isPerfectGuess
                   ? 'linear-gradient(90deg, #ff0040, #ff8c00, #ffd700, #00e676, #00b0ff, #d500f9)'
-                  : answersRevealed && closestIds.includes(user.id) ? '#fbbf24' : 'var(--primary)',
+                  : pointOutcomeKnown
+                    ? (pointIsCorrect ? 'rgba(22, 163, 74, 0.92)' : 'rgba(220, 38, 38, 0.92)')
+                    : answersRevealed && closestIds.includes(user.id) ? '#fbbf24' : 'var(--primary)',
                 color: isPerfectGuess ? '#fff' : 'var(--on-primary)',
                 padding: '4px 12px',
                 borderRadius: '9999px',
@@ -454,7 +491,10 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                 zIndex: 10,
                 whiteSpace: 'nowrap',
                 textShadow: isPerfectGuess ? '0 1px 2px rgba(0,0,0,0.6)' : 'none',
-                boxShadow: '0 4px 12px var(--primary-glow)'
+                boxShadow: isCloseEnoughQuestion
+                  ? `0 4px 12px var(--primary-glow), 0 0 10px ${playerColor}55`
+                  : '0 4px 12px var(--primary-glow)',
+                border: isCloseEnoughQuestion ? `2px solid ${playerColor}` : 'none'
               }}>
                 {answerBadge}
               </div>
@@ -676,9 +716,14 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   padding: '6px 10px',
                   borderRadius: '8px',
                   maxWidth: '140px',
-                  border: isChoiceQuestion && (isAdmin || responseRevealed)
-                    ? (isCorrectChoicePicks(submittedAnswer) ? '1px solid #4ade80' : '1px solid #ef4444')
-                    : '1px solid var(--glass-border)'
+                  border: (isTextQuestion || (isCrocodileCollect && !isCrocodileChoice))
+                    ? `2px solid ${playerColor}`
+                    : isChoiceQuestion && (isAdmin || responseRevealed)
+                      ? (isCorrectChoicePicks(submittedAnswer) ? '1px solid #4ade80' : '1px solid #ef4444')
+                      : '1px solid var(--glass-border)',
+                  boxShadow: (isTextQuestion || (isCrocodileCollect && !isCrocodileChoice))
+                    ? `0 0 12px ${playerColor}44`
+                    : 'none'
                 }}>
                   {(isChoiceQuestion || isCrocodileChoice) ? (
                     <span style={{

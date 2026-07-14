@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const WebSocket = require('ws');
 const { normalizeQuestion, isHiddenUntilReveal, isMultiBuzz } = require('./questionModel');
+const { normalizePlayerColor } = require('./profile');
 
 const PACKS_DIR = path.join(__dirname, '..', 'packs');
 const EMPTY_GAME_TTL_MS = 15 * 60 * 1000; // remove a game 15 minutes after the last person left
@@ -11,11 +12,12 @@ const SWEEP_INTERVAL_MS = 60 * 1000;
 // One running game: lobby metadata + the per-game state that used to be
 // global (scores, selections, reveals, times, answers...) + its sockets.
 class Game {
-  constructor({ id, hostToken, hostName, hostImageUrl, password }) {
+  constructor({ id, hostToken, hostName, hostImageUrl, hostColor, password }) {
     this.id = id;
     this.hostToken = hostToken;
     this.hostName = hostName;
     this.hostImageUrl = hostImageUrl || '';
+    this.hostColor = normalizePlayerColor(hostColor);
     this.password = password || null;
     this.status = 'awaiting_pack'; // awaiting_pack -> lobby -> started
     this.createdAt = Date.now();
@@ -37,6 +39,11 @@ class Game {
     this.questionClicks = new Map();
     this.questionAnswers = new Map();
     this.revealedAnswers = new Set();
+    // Kept separate so approximate point circles can be broadcast without
+    // leaking exact coordinates through the generic submission channel.
+    this.pointAnswers = new Map();
+    this.pointHints = new Map();
+    this.revealedPointAnswers = new Set();
     this.questionSelectors = new Map();
     this.secretAssignments = new Map();
     // questionId -> { targetUserId, selectorUserId, performance }
@@ -69,6 +76,7 @@ class Game {
     // questionId -> bool. Multi-buzz questions: the host's verdict consumes
     // the player's buzz (cleared server-side) so they may buzz again.
     this.questionMultiBuzz = new Map();
+    this.questionImageAspects = new Map();
     // questionId -> [prior question ids in the same theme]. Only questions in
     // ordered themes are indexed: they unlock strictly left to right, so a
     // question is selectable only once all of its predecessors are closed.
@@ -100,6 +108,7 @@ class Game {
       packSize: this.packSize,
       hostName: this.hostName,
       hostImageUrl: this.hostImageUrl,
+      hostColor: this.hostColor,
       hasPassword: !!this.password,
       status: this.status,
       playerCount: this.persistentUsers.size,
@@ -177,6 +186,9 @@ class Game {
     this.questionClicks.clear();
     this.questionAnswers.clear();
     this.revealedAnswers.clear();
+    this.pointAnswers.clear();
+    this.pointHints.clear();
+    this.revealedPointAnswers.clear();
     this.broadcastSelectedQuestions();
   }
 
@@ -250,6 +262,19 @@ class Game {
     };
   }
 
+  getPointAnswersInfo(questionId) {
+    return {
+      revealed: this.revealedPointAnswers.has(questionId),
+      answers: this.pointAnswers.get(questionId) || new Map(),
+      hints: this.pointHints.get(questionId) || new Map()
+    };
+  }
+
+  getQuestionImageAspect(questionId) {
+    const aspect = this.questionImageAspects.get(questionId);
+    return Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  }
+
   getVoteMode(questionId) {
     return this.questionVoteModes.get(questionId) === 'closed' ? 'closed' : 'open';
   }
@@ -283,12 +308,13 @@ class GameManager {
     this.sweeper = setInterval(() => this.sweepEmptyGames(), SWEEP_INTERVAL_MS);
   }
 
-  createGame({ hostName, hostImageUrl, password }) {
+  createGame({ hostName, hostImageUrl, hostColor, password }) {
     const game = new Game({
       id: crypto.randomBytes(4).toString('hex'),
       hostToken: crypto.randomUUID(),
       hostName,
       hostImageUrl,
+      hostColor,
       password
     });
     this.games.set(game.id, game);
@@ -342,6 +368,7 @@ class GameManager {
     const voteModes = new Map();
     const hidden = new Map();
     const multiBuzz = new Map();
+    const imageAspects = new Map();
     const predecessors = new Map();
     for (const round of pack.rounds) {
       for (const theme of round.themes || []) {
@@ -360,6 +387,10 @@ class GameManager {
             if (isMultiBuzz(q)) {
               multiBuzz.set(q.id, true);
             }
+            if (q.type === 'point-on-image') {
+              const aspect = Number(q.image_aspect_ratio);
+              imageAspects.set(q.id, Number.isFinite(aspect) && aspect > 0 ? aspect : 1);
+            }
             if (priorIds && q.type !== 'empty') {
               if (priorIds.length > 0) {
                 predecessors.set(q.id, [...priorIds]);
@@ -374,6 +405,7 @@ class GameManager {
     game.questionVoteModes = voteModes;
     game.questionHidden = hidden;
     game.questionMultiBuzz = multiBuzz;
+    game.questionImageAspects = imageAspects;
     game.questionPredecessors = predecessors;
     game.packName = typeof pack.name === 'string' ? pack.name : 'Unnamed pack';
     game.packAuthor = typeof pack.author === 'string' ? pack.author : '';

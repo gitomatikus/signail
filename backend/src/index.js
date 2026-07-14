@@ -5,6 +5,7 @@ const fs = require('fs');
 const wsManager = require('./websocket');
 const { GameManager } = require('./games');
 const config = require('./config');
+const { normalizePlayerColor } = require('./profile');
 
 const app = express();
 const server = http.createServer(app);
@@ -134,13 +135,14 @@ app.get('/api/games', (req, res) => {
 });
 
 app.post('/api/games', (req, res) => {
-  const { hostName, hostImageUrl, password } = req.body || {};
+  const { hostName, hostImageUrl, hostColor, password } = req.body || {};
   if (!hostName || typeof hostName !== 'string') {
     return res.status(400).json({ status: 'error', message: 'hostName is required' });
   }
   const game = gameManager.createGame({
     hostName: hostName.trim(),
     hostImageUrl: typeof hostImageUrl === 'string' ? hostImageUrl.trim() : '',
+    hostColor: normalizePlayerColor(hostColor),
     password: typeof password === 'string' && password.length > 0 ? password : null
   });
   res.json({
@@ -257,6 +259,29 @@ app.get('/api/games/:gameId/questions/:questionId/answers', (req, res) => {
   res.json({
     status: 'success',
     data: { revealed: info.revealed, answers }
+  });
+});
+
+// Point answers have a dedicated representation: before reveal everyone sees
+// stable randomized circles, while a player can restore only their own exact
+// point. After reveal all exact coordinates are returned.
+app.get('/api/games/:gameId/questions/:questionId/point-answers', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  const questionId = parseInt(req.params.questionId);
+  const requesterId = req.query.userId;
+  const info = game.getPointAnswersInfo(questionId);
+  const answers = {};
+  for (const [userId, point] of info.answers) {
+    if (info.revealed || userId === requesterId) answers[userId] = point;
+  }
+  res.json({
+    status: 'success',
+    data: {
+      revealed: info.revealed,
+      answers,
+      hints: Object.fromEntries(info.hints)
+    }
   });
 });
 

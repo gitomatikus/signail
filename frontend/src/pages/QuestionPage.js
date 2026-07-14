@@ -7,12 +7,14 @@ import ProgressiveImage from '../components/ProgressiveImage';
 import ImageLightbox from '../components/ImageLightbox';
 import AnswerComposer from '../components/AnswerComposer';
 import CrocodileDrawing from '../components/CrocodileDrawing';
+import PointOnImageQuestion from '../components/PointOnImageQuestion';
 import Settings from '../components/Settings';
 import Logo from '../components/Logo';
 import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
 import { getHostLayout, HOST_LAYOUT_EVENT } from '../utils/hostLayout';
 import { isAutoSubmitSingleChoice } from '../utils/answerSettings';
+import { getPlayerColor } from '../utils/playerIdentity';
 import { getHostToken } from '../services/gameAuth';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -185,6 +187,8 @@ const QuestionPage = () => {
   const [crocodileResponse, setCrocodileResponse] = useState(null);
   const [clicksLeftMap, setClicksLeftMap] = useState({});
   const [numberAnswers, setNumberAnswers] = useState({});
+  const [pointAnswers, setPointAnswers] = useState({});
+  const [pointHints, setPointHints] = useState({});
   const [answersRevealed, setAnswersRevealed] = useState(false);
   // Voting: voterId -> targetUserId (or `true` in closed mode before reveal,
   // meaning "this player voted but the target is still hidden")
@@ -227,6 +231,8 @@ const QuestionPage = () => {
     window.scrollTo(0, 0);
     setClicksLeftMap({}); // Click budgets are per-question; drop stale entries
     setNumberAnswers({});
+    setPointAnswers({});
+    setPointHints({});
     setAnswersRevealed(false);
     setVotes({});
     setVotesRevealed(false);
@@ -310,6 +316,17 @@ const QuestionPage = () => {
       const query = params.toString() ? `?${params.toString()}` : '';
       hydrate(`/answers${query}`, (data) => {
         setNumberAnswers(prev => ({ ...(data.answers || {}), ...prev }));
+        setAnswersRevealed(prev => prev || !!data.revealed);
+      });
+    }
+
+    if (question.type === 'point-on-image') {
+      const storedUser = localStorage.getItem('user');
+      const myId = storedUser ? JSON.parse(storedUser).id : null;
+      const query = myId ? `?userId=${encodeURIComponent(myId)}` : '';
+      hydrate(`/point-answers${query}`, (data) => {
+        setPointAnswers(prev => ({ ...(data.answers || {}), ...prev }));
+        setPointHints(prev => ({ ...(data.hints || {}), ...prev }));
         setAnswersRevealed(prev => prev || !!data.revealed);
       });
     }
@@ -455,6 +472,11 @@ const QuestionPage = () => {
       } else if (data.type === 'number_answers' && data.data.questionId === parseInt(questionId)) {
         setNumberAnswers(prev => ({ ...prev, ...data.data.answers }));
         setAnswersRevealed(true);
+      } else if (data.type === 'point_answer_submitted' && data.data.questionId === parseInt(questionId)) {
+        setPointHints(prev => ({ ...prev, [data.data.userId]: data.data.hint }));
+      } else if (data.type === 'point_answers' && data.data.questionId === parseInt(questionId)) {
+        setPointAnswers(prev => ({ ...prev, ...data.data.answers }));
+        setAnswersRevealed(true);
       } else if (data.type === 'vote_cast' && data.data.questionId === parseInt(questionId)) {
         // Another player voted. Open mode carries the target; closed mode only
         // tells us they voted (stored as `true`). Our own vote is tracked
@@ -538,6 +560,8 @@ const QuestionPage = () => {
         setCrocodileResponse(null);
         setClicksLeftMap({});
         setNumberAnswers({});
+        setPointAnswers({});
+        setPointHints({});
         setAnswersRevealed(false);
         setVotes({});
         setVotesRevealed(false);
@@ -707,6 +731,9 @@ const QuestionPage = () => {
     if (question.type === 'find-a-cat') {
       return question.duration || 60;
     }
+    if (question.type === 'point-on-image') {
+      return question.duration || 60;
+    }
     if (question.type === 'close-enough' && question.duration) {
       return question.duration;
     }
@@ -865,7 +892,8 @@ const QuestionPage = () => {
       setIsQuestionRevealed(true);
       // find-a-cat, crocodile and voting reveal the answer(s) in a separate
       // step; every other type shows question + answer together
-      if (question.type !== 'find-a-cat' && question.type !== 'crocodile' && question.type !== 'voting') {
+      if (question.type !== 'find-a-cat' && question.type !== 'crocodile'
+        && question.type !== 'voting' && question.type !== 'point-on-image') {
         setIsAnswerRevealed(true);
         setShowAfterRound(true);
         setCurrentAfterRoundIndex(0);
@@ -1535,6 +1563,27 @@ const QuestionPage = () => {
     wsManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
   };
 
+  const handleSubmitPointAnswer = (point) => {
+    if (!currentUserId || answersRevealed || timer <= 0 || pointAnswers[currentUserId]) return;
+    setPointAnswers(prev => ({ ...prev, [currentUserId]: point }));
+    wsManager.sendPointAnswer(parseInt(questionId), point);
+    recordAnswerTime();
+  };
+
+  const renderPointOnImageContent = () => (
+    <PointOnImageQuestion
+      question={question}
+      users={onlineUsers}
+      currentUserId={currentUserId}
+      isAdmin={isAdmin}
+      timer={timer}
+      answers={pointAnswers}
+      hints={pointHints}
+      revealed={answersRevealed}
+      onSubmit={handleSubmitPointAnswer}
+    />
+  );
+
   const submitChoicePicks = (picks) => {
     if (!currentUserId || picks.length === 0) {
       return;
@@ -1837,6 +1886,7 @@ const QuestionPage = () => {
 
     const renderAnswerCard = (uid, val) => {
       const author = onlineUsers.find(u => u.id === uid);
+      const authorColor = getPlayerColor(author || uid);
       const isOwn = uid === currentUserId;
       const count = voteCounts[uid] || 0;
       const votedForThis = hasVoted && myVote === uid;
@@ -1853,16 +1903,12 @@ const QuestionPage = () => {
             padding: '1rem',
             gap: '0.75rem',
             cursor: canVote ? 'pointer' : 'default',
-            border: votedForThis
-              ? '2px solid var(--primary)'
-              : isWinner
-                ? '2px solid #fbbf24'
-                : '1px solid var(--glass-border)',
+            border: `2px solid ${authorColor}`,
             boxShadow: votedForThis
-              ? '0 0 16px var(--primary-glow)'
+              ? `0 0 0 2px var(--primary), 0 0 16px var(--primary-glow), 0 0 12px ${authorColor}55`
               : isWinner
-                ? '0 0 16px rgba(251, 191, 36, 0.4)'
-                : 'var(--glass-shadow)'
+                ? `0 0 0 2px #fbbf24, 0 0 16px rgba(251, 191, 36, 0.4), 0 0 12px ${authorColor}55`
+                : `var(--glass-shadow), 0 0 12px ${authorColor}55`
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', alignSelf: 'stretch' }}>
@@ -2444,6 +2490,9 @@ const QuestionPage = () => {
       if (question.type === 'close-enough') {
         return renderCloseEnoughContent();
       }
+      if (question.type === 'point-on-image') {
+        return renderPointOnImageContent();
+      }
       if (question.type === 'progressive-reveal') {
         return renderProgressiveRevealContent();
       }
@@ -2479,14 +2528,14 @@ const QuestionPage = () => {
   // and whether answers are masked until reveal.
   const renderAnswerTypeBadge = () => {
     if (!isAdmin || !question || question.type === 'empty') return null;
-    const emojiByType = { buzz: '⚡', multiBuzz: '🔁', text: '⌨️', choice: '🔘', numeric: '🔢', click: '🖱️', audio: '🎤', voting: '🗳️' };
+    const emojiByType = { buzz: '⚡', multiBuzz: '🔁', text: '⌨️', choice: '🔘', numeric: '🔢', click: '🖱️', point: '📍', audio: '🎤', voting: '🗳️' };
     const key = question.type === 'voting'
       ? 'voting'
       : isMultiBuzz(question) ? 'multiBuzz' : responseMethod(question);
     const rm = responseMethod(question);
     const extras = [];
     if (hasUserSelection(question)) extras.push(t('answerType.selected'));
-    if (isHiddenUntilReveal(question) && ['text', 'numeric', 'choice'].includes(rm) && question.type !== 'voting') {
+    if (isHiddenUntilReveal(question) && ['text', 'numeric', 'choice', 'point'].includes(rm) && question.type !== 'voting') {
       extras.push(t('answerType.hidden'));
     }
     return (
@@ -2859,7 +2908,8 @@ const QuestionPage = () => {
             {t('question.showQuestion')}
           </button>
         )}
-        {isAdmin && isQuestionRevealed && !isAnswerRevealed && question.type !== 'voting' && question.type !== 'crocodile' && (
+        {isAdmin && isQuestionRevealed && !isAnswerRevealed && question.type !== 'voting'
+          && question.type !== 'crocodile' && question.type !== 'point-on-image' && (
           <button
             onClick={handleShowAnswer}
             className="btn-primary"
@@ -2872,14 +2922,16 @@ const QuestionPage = () => {
             Text-field normals, close-enough and voting collect submissions and
             reveal them in one step. */}
         {isAdmin && !answersRevealed && (
-          ((question.type === 'close-enough' || question.type === 'voting'
+          ((question.type === 'close-enough' || question.type === 'voting' || question.type === 'point-on-image'
             || (responseMethod(question) === 'text' && question.type !== 'crocodile')) && isQuestionRevealed) ||
           // Crocodile dixit/choice: guesses are collected live while the
           // performer draws, but only revealed once the drawing is finished.
           (question.type === 'crocodile' && responseMethod(question) !== 'buzz' && crocodileResponse)
         ) && (
           <button
-            onClick={() => wsManager.sendRevealNumberAnswers(parseInt(questionId))}
+            onClick={() => question.type === 'point-on-image'
+              ? wsManager.sendRevealPointAnswers(parseInt(questionId))
+              : wsManager.sendRevealNumberAnswers(parseInt(questionId))}
             className="btn-primary"
             style={buttonStyle}
           >
@@ -2985,6 +3037,7 @@ const QuestionPage = () => {
           crocodileTargetId={question?.type === 'crocodile' ? crocodileTargetId : null}
           clicksLeftMap={clicksLeftMap}
           numberAnswers={numberAnswers}
+          pointAnswers={pointAnswers}
           answersRevealed={answersRevealed}
           responseRevealed={isResponseRevealed}
           votes={votes}

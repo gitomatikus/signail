@@ -9,10 +9,12 @@ export const translations = {
     "common.settings": "Settings",
     "common.language": "Language",
 
-    "profile.editTooltip": "Edit profile nickname & avatar",
+    "profile.editTooltip": "Edit profile nickname, avatar & color",
     "profile.editTitle": "Edit Profile",
     "profile.save": "Save changes",
     "profile.editProfileBtn": "Edit Profile",
+    "profile.playerColor": "Player color",
+    "profile.playerColorHelper": "Used to identify your answers and may appear elsewhere in the game.",
 
     "login.tagline": "No sign-up needed — log in with any name and image",
     "login.errorName": "Please enter your name",
@@ -215,6 +217,9 @@ export const translations = {
     "question.yourNumber": "Your number",
     "question.submitAnswer": "Answer",
     "question.timeUp": "Time's up — answers are no longer accepted",
+    "question.pointClickHint": "Click once on the image to lock in your answer",
+    "question.pointAnswerLocked": "Your point is locked in ✓",
+    "question.pointCorrectRadius": "The green area is counted as correct ({value}% of the image diagonal).",
     "question.confirmAnswer": "Confirm answer",
     "question.answerAccepted": "Answer accepted ✓",
     "question.textPlaceholder":
@@ -256,6 +261,7 @@ export const translations = {
     "answerType.choice": "Multiple choice",
     "answerType.numeric": "Number",
     "answerType.click": "Click to find",
+    "answerType.point": "Point on image",
     "answerType.audio": "Karaoke",
     "answerType.voting": "Voting",
     "answerType.selected": "one chosen player",
@@ -285,10 +291,12 @@ export const translations = {
     "common.settings": "Налаштування",
     "common.language": "Мова",
 
-    "profile.editTooltip": "Редагувати нікнейм та аватар",
+    "profile.editTooltip": "Редагувати нікнейм, аватар і колір",
     "profile.editTitle": "Редагувати профіль",
     "profile.save": "Зберегти зміни",
     "profile.editProfileBtn": "Редагувати профіль",
+    "profile.playerColor": "Колір гравця",
+    "profile.playerColorHelper": "Використовується для позначення ваших відповідей і може з’являтися в інших частинах гри.",
 
     "login.tagline":
       "Реєстрація не потрібна — увійдіть з будь-яким ім'ям та зображенням",
@@ -501,6 +509,9 @@ export const translations = {
     "question.yourNumber": "Ваше число",
     "question.submitAnswer": "Відповісти",
     "question.timeUp": "Час вийшов — відповіді більше не приймаються",
+    "question.pointClickHint": "Клацніть один раз на зображенні, щоб зафіксувати відповідь",
+    "question.pointAnswerLocked": "Вашу точку зафіксовано ✓",
+    "question.pointCorrectRadius": "Зелена область зараховується як правильна ({value}% діагоналі зображення).",
     "question.confirmAnswer": "Підтвердити відповідь",
     "question.answerAccepted": "Відповідь прийнято ✓",
     "question.textPlaceholder":
@@ -543,6 +554,7 @@ export const translations = {
     "answerType.choice": "Вибір варіанта",
     "answerType.numeric": "Число",
     "answerType.click": "Клік на зображенні",
+    "answerType.point": "Точка на зображенні",
     "answerType.audio": "Караоке",
     "answerType.voting": "Голосування",
     "answerType.selected": "один обраний гравець",

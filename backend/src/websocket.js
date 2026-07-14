@@ -1,6 +1,8 @@
 const WebSocket = require('ws');
 const crypto = require('crypto');
 const config = require('./config');
+const { isNormalizedPoint, createPointHint } = require('./pointGeometry');
+const { normalizePlayerColor } = require('./profile');
 
 // Routes every WebSocket connection into its game room (?gameId=...) and
 // scopes all message handling and broadcasts to that room.
@@ -131,7 +133,10 @@ class WebSocketManager {
       return;
     }
     if (data.type === 'user_login') {
-      const userData = data.data;
+      const userData = { ...(data.data || {}) };
+      const normalizedColor = normalizePlayerColor(userData.color);
+      if (normalizedColor) userData.color = normalizedColor;
+      else delete userData.color;
       if (!userData.id) {
         userData.id = `${userData.name}-${Date.now()}`;
       }
@@ -168,12 +173,16 @@ class WebSocketManager {
       // Host edits their own nickname/avatar from the profile modal; apply it
       // to the game and rebroadcast so every client updates live.
       if (ws.isHost) {
-        const { name, imageUrl } = data.data || {};
+        const { name, imageUrl, color } = data.data || {};
         if (typeof name === 'string' && name.trim()) {
           game.hostName = name.trim();
         }
         if (typeof imageUrl === 'string') {
           game.hostImageUrl = imageUrl.trim();
+        }
+        const normalizedColor = normalizePlayerColor(color);
+        if (normalizedColor) {
+          game.hostColor = normalizedColor;
         }
         game.broadcastGameInfo();
       }
@@ -258,6 +267,44 @@ class WebSocketManager {
           data: { questionId, userId, amount: numericAmount, grantId: crypto.randomUUID() }
         });
       }
+    } else if (data.type === 'point_answer') {
+      const { questionId, point } = data.data || {};
+      const sender = game.onlineUsers.get(ws);
+      if (game.getQuestionType(questionId) !== 'point-on-image'
+        || !sender || !isNormalizedPoint(point)
+        || game.revealedPointAnswers.has(questionId)) {
+        return;
+      }
+      if (!game.pointAnswers.has(questionId)) {
+        game.pointAnswers.set(questionId, new Map());
+        game.pointHints.set(questionId, new Map());
+      }
+      const answers = game.pointAnswers.get(questionId);
+      if (!answers.has(sender.id)) {
+        const storedPoint = { x: point.x, y: point.y };
+        const hint = createPointHint(storedPoint, game.getQuestionImageAspect(questionId));
+        answers.set(sender.id, storedPoint);
+        game.pointHints.get(questionId).set(sender.id, hint);
+        // Only the randomized circle is public until the host reveals answers.
+        game.broadcast({
+          type: 'point_answer_submitted',
+          data: { questionId, userId: sender.id, hint }
+        });
+      }
+    } else if (data.type === 'reveal_point_answers') {
+      const { questionId } = data.data || {};
+      if (!ws.isHost || game.getQuestionType(questionId) !== 'point-on-image'
+        || game.revealedPointAnswers.has(questionId)) {
+        return;
+      }
+      game.revealedPointAnswers.add(questionId);
+      game.broadcast({
+        type: 'point_answers',
+        data: {
+          questionId,
+          answers: Object.fromEntries(game.pointAnswers.get(questionId) || new Map())
+        }
+      });
     } else if (data.type === 'number_answer') {
       // Player submits an answer: a number (close-enough), an array of
       // option indices (choice) or a text/pasted-image string (text-answer).

@@ -57,7 +57,7 @@ export const GameProvider = ({ user, onUpdateUser, children }) => {
       const updatedUser = { ...userRef.current, ...updatedData };
       wsManager.sendUserLogin(updatedUser);
     } else if (isHost) {
-      wsManager.sendUpdateHostProfile(updatedData.name, updatedData.imageUrl);
+      wsManager.sendUpdateHostProfile(updatedData.name, updatedData.imageUrl, updatedData.color);
     }
   }, [onUpdateUser, isHost]);
 

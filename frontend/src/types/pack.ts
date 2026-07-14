@@ -24,13 +24,20 @@ export interface Question {
   rules?: Rule[];
   after_round?: Rule[];
   image?: string;
-  /** Find-a-cat task text shown to players; supports %total% and %left% placeholders */
+  /** Correct normalized point for point-on-image questions (0..1 on each axis). */
+  correct_point?: PointCoordinate;
+  /** Width / height of the authored image. */
+  image_aspect_ratio?: number;
+  /** Correctness radius as a percentage of the image diagonal. */
+  accuracy_percent?: number;
+  /** Task text shown to players; find-a-cat also supports %total% and %left% placeholders. */
   task?: string;
   /** @deprecated Legacy find-a-cat target name (e.g. "котиків"); used when `task` is absent */
   name?: string;
   map?: FindACatArea[];
   duration?: number;
   max_clicks?: number;
+  /** Extra points for the first successful player on supported multi-player types. */
   first_place_bonus?: number;
   answer?: number;
   perfect_bonus?: number;
@@ -78,6 +85,11 @@ export interface FindACatArea {
   };
 }
 
+export interface PointCoordinate {
+  x: number;
+  y: number;
+}
+
 export interface Price {
   text: string;
   correct: number;
@@ -105,10 +117,11 @@ export enum QuestionType {
   ProgressiveReveal = 'progressive-reveal',
   Karaoke = 'karaoke',
   Crocodile = 'crocodile',
-  Voting = 'voting'
+  Voting = 'voting',
+  PointOnImage = 'point-on-image'
 }
 
 export enum RuleType {
   App = 'app',
   Embedded = 'embedded'
-} 
+}

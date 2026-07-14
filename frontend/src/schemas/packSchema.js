@@ -26,13 +26,16 @@
  * @property {QuestionType} type - Type of the question
  * @property {Rule[]} [rules] - Optional rules for the question
  * @property {Rule[]} [after_round] - Optional rules to apply after the round
- * @property {string} [image] - Image path for find-a-cat
- * @property {string} [task] - Find-a-cat task text shown to players; supports %total% (total targets) and %left% (targets left) placeholders
+ * @property {string} [image] - Image for image-based question types
+ * @property {{x: number, y: number}} [correct_point] - Correct normalized point for point-on-image
+ * @property {number} [image_aspect_ratio] - Authored image width / height
+ * @property {number} [accuracy_percent] - Correctness radius as percentage of image diagonal
+ * @property {string} [task] - Task text shown to players; find-a-cat supports %total% and %left% placeholders
  * @property {string} [name] - Legacy find-a-cat target name (e.g. "котиків"); used when task is absent
  * @property {Object[]} [map] - Map areas for find-a-cat
  * @property {number} [duration] - Optional duration for the question
  * @property {number} [max_clicks] - Find-a-cat click budget (hits and misses); 0/absent = unlimited
- * @property {number} [first_place_bonus] - Find-a-cat extra points for the fastest solver, on top of the normal award
+ * @property {number} [first_place_bonus] - Extra points for the first successful player on supported multi-player types
  * @property {number} [answer] - Close-enough numeric correct answer; the closest submitted number wins
  * @property {number} [perfect_bonus] - Close-enough extra points for guessing the exact answer
  * @property {boolean} [multiple] - Choice: whether several options can be correct
@@ -82,7 +85,8 @@ const QuestionType = {
     ProgressiveReveal: 'progressive-reveal',
     Karaoke: 'karaoke',
     Crocodile: 'crocodile',
-    Voting: 'voting'
+    Voting: 'voting',
+    PointOnImage: 'point-on-image'
 };
 
 /**
@@ -93,4 +97,4 @@ const RuleType = {
     Embedded: 'embedded'
 };
 
-export { QuestionType, RuleType }; 
+export { QuestionType, RuleType };

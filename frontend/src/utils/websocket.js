@@ -221,8 +221,8 @@ class WebSocketManager {
     this.send({ type: 'user_login', data: userData });
   }
 
-  sendUpdateHostProfile(name, imageUrl) {
-    this.send({ type: 'update_host_profile', data: { name, imageUrl } });
+  sendUpdateHostProfile(name, imageUrl, color) {
+    this.send({ type: 'update_host_profile', data: { name, imageUrl, color } });
   }
 
   sendUserLogout(userData) {
@@ -255,6 +255,14 @@ class WebSocketManager {
 
   sendRevealNumberAnswers(questionId) {
     this.send({ type: 'reveal_number_answers', data: { questionId } });
+  }
+
+  sendPointAnswer(questionId, point) {
+    this.send({ type: 'point_answer', data: { questionId, point } });
+  }
+
+  sendRevealPointAnswers(questionId) {
+    this.send({ type: 'reveal_point_answers', data: { questionId } });
   }
 
   sendSecretAssign(questionId, targetUserId, selectorUserId = null) {
