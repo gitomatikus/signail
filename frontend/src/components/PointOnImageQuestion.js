@@ -67,9 +67,26 @@ const PointOnImageQuestion = ({
         maxWidth: 900,
         border: '1px solid var(--glass-border)'
       }}>
-        {question.task}
+        {question.task && <div>{question.task}</div>}
+        {question.prompt_image && (
+          <img
+            src={question.prompt_image}
+            alt={question.task || 'Visual prompt'}
+            style={{
+              display: 'block',
+              maxWidth: '100%',
+              maxHeight: '38vh',
+              width: 'auto',
+              height: 'auto',
+              margin: question.task ? '1rem auto 0' : '0 auto',
+              borderRadius: 12,
+              border: '1px solid var(--glass-border)',
+              objectFit: 'contain',
+            }}
+          />
+        )}
         {!isAdmin && (
-          <div style={{ marginTop: '.45rem', color: 'var(--text-secondary)', fontSize: '1rem', fontWeight: 500 }}>
+          <div style={{ marginTop: question.task || question.prompt_image ? '.75rem' : 0, color: 'var(--text-secondary)', fontSize: '1rem', fontWeight: 500 }}>
             {myAnswer
               ? t('question.pointAnswerLocked')
               : timer > 0 && !revealed
@@ -100,7 +117,7 @@ const PointOnImageQuestion = ({
             const image = event.currentTarget;
             if (image.naturalWidth && image.naturalHeight) setLoadedAspect(image.naturalWidth / image.naturalHeight);
           }}
-          style={{ display: 'block', maxWidth: '100%', maxHeight: 'max(calc(100vh - 450px), 320px)', width: 'auto', height: 'auto', pointerEvents: 'none', userSelect: 'none' }}
+          style={{ display: 'block', maxWidth: '100%', maxHeight: question.prompt_image ? '48vh' : 'max(calc(100vh - 450px), 320px)', width: 'auto', height: 'auto', pointerEvents: 'none', userSelect: 'none' }}
         />
         <svg
           viewBox={`0 0 ${space.width} ${space.height}`}

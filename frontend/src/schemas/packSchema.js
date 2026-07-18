@@ -27,6 +27,7 @@
  * @property {Rule[]} [rules] - Optional rules for the question
  * @property {Rule[]} [after_round] - Optional rules to apply after the round
  * @property {string} [image] - Image for image-based question types
+ * @property {string} [prompt_image] - Optional visual clue shown above a point-on-image answer image
  * @property {{x: number, y: number}} [correct_point] - Correct normalized point for point-on-image
  * @property {number} [image_aspect_ratio] - Authored image width / height
  * @property {number} [accuracy_percent] - Correctness radius as percentage of image diagonal

@@ -24,6 +24,8 @@ export interface Question {
   rules?: Rule[];
   after_round?: Rule[];
   image?: string;
+  /** Optional visual clue shown with the prompt above point-on-image questions. */
+  prompt_image?: string;
   /** Correct normalized point for point-on-image questions (0..1 on each axis). */
   correct_point?: PointCoordinate;
   /** Width / height of the authored image. */
