@@ -14,8 +14,9 @@ import Logo from '../components/Logo';
 import config from '../config';
 import { getVolume, setGlobalVolume } from '../utils/volumeManager';
 import { getHostLayout, HOST_LAYOUT_EVENT } from '../utils/hostLayout';
-import { answersNeedNoConfirmation } from '../utils/answerSettings';
+import { answersNeedNoConfirmation, isBuzzAnswerButtonHidden } from '../utils/answerSettings';
 import { getPlayerColor } from '../utils/playerIdentity';
+import { useSettingsDiscovery } from '../utils/settingsDiscovery';
 import { getHostToken } from '../services/gameAuth';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -148,7 +149,7 @@ const QuestionPage = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   // The game host is the admin of their own game; everyone else is a player
-  const { gameId, isHost, onlineUsers, pack, packLoading, downloadProgress } = useGame();
+  const { gameId, isHost, user, onlineUsers, pack, packLoading, downloadProgress } = useGame();
   const isAdmin = isHost;
   const isReadOnly = !isHost;
   const boardPath = `/game/${gameId}`;
@@ -169,6 +170,7 @@ const QuestionPage = () => {
   const [isAnswerRevealed, setIsAnswerRevealed] = useState(false);
   const [isResponseRevealed, setIsResponseRevealed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { highlightSettings, acknowledgeSettings } = useSettingsDiscovery(user?.id, !isAdmin);
   const [currentRuleIndex, setCurrentRuleIndex] = useState(0);
   const [showAfterRound, setShowAfterRound] = useState(false);
   const [currentAfterRoundIndex, setCurrentAfterRoundIndex] = useState(0);
@@ -822,6 +824,7 @@ const QuestionPage = () => {
     && !(isMultiBuzz(question) && timer <= 0)
     && !hasCurrentUserBuzzed
   );
+  const hideBuzzButton = !isAdmin && isBuzzAnswerButtonHidden();
 
   // Shared by physical keyboards and the on-screen mobile button so every
   // input method records and broadcasts the same authoritative buzz time.
@@ -866,6 +869,33 @@ const QuestionPage = () => {
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [isBuzzResponse, handleBuzz]);
+
+  // A three-finger touch is the phone equivalent of the keyboard buzz key.
+  // Listen at window level so it works anywhere on the question, but leave
+  // ordinary one- and two-finger scrolling/zooming untouched.
+  useEffect(() => {
+    if (!isBuzzResponse || isAdmin || settingsOpen || lightboxImage) {
+      return undefined;
+    }
+
+    const handleThreeFingerTap = (event) => {
+      if (!canBuzz || event.touches.length !== 3) {
+        return;
+      }
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      handleBuzz();
+    };
+
+    window.addEventListener('touchstart', handleThreeFingerTap, { passive: false });
+    return () => window.removeEventListener('touchstart', handleThreeFingerTap);
+  }, [canBuzz, handleBuzz, isAdmin, isBuzzResponse, lightboxImage, settingsOpen]);
+
+  const handleSettingsOpen = () => {
+    acknowledgeSettings();
+    setSettingsOpen(true);
+  };
 
   // Start timer when question is revealed or when non-admin user sees the question
   // For cat-in-the-bag, wait until a player is chosen and the admin shows the question
@@ -1211,9 +1241,9 @@ const QuestionPage = () => {
       : t('question.foundAllLegacy', { name: question.name || '' });
 
     const playField = (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '1.5rem' }}>
+      <div className="find-a-cat-play-field" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: '1.5rem' }}>
         {/* Helper message */}
-        <div className="glass-panel" style={{
+        <div className="glass-panel find-a-cat-prompt" style={{
           padding: '1rem 2rem',
           fontSize: '1.4rem',
           fontWeight: '700',
@@ -1233,7 +1263,7 @@ const QuestionPage = () => {
             successText
           )}
           {hasClickLimit && !isAdmin && !hasFailed && remainingCount > 0 && (
-            <div style={{
+            <div className="find-a-cat-clicks" style={{
               fontSize: '1.1rem',
               marginTop: '0.5rem',
               color: myClicksLeft <= 2 ? '#ef4444' : 'var(--text-secondary)'
@@ -1248,6 +1278,7 @@ const QuestionPage = () => {
             map areas always line up with the picture; the image itself is capped
             to the viewport so the whole play field is visible without scrolling */}
         <div
+          className="find-a-cat-image-frame"
           onClick={handleMissClick}
           style={{
             position: 'relative',
@@ -1261,7 +1292,7 @@ const QuestionPage = () => {
           <img
             src={question.image}
             alt={question.task || question.name}
-            className="question-media"
+            className="question-media find-a-cat-image"
             style={{
               maxWidth: '100%',
               maxHeight: 'max(calc(100vh - 500px), 320px)',
@@ -1817,7 +1848,7 @@ const QuestionPage = () => {
     }
 
     return (
-      <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+      <div className="answer-composer-card" style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
         {hasSubmitted ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
             <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
@@ -1977,7 +2008,7 @@ const QuestionPage = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {renderNormalContent()}
           {!isAdmin && (
-            <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+            <div className="answer-composer-card" style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
               {hasSubmitted ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                   <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
@@ -2233,7 +2264,7 @@ const QuestionPage = () => {
             {header}
             {liveCanvas('watcher')}
             {requestCard}
-            <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+            <div className="answer-composer-card" style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
               {hasGuessed ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                   <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
@@ -2319,7 +2350,7 @@ const QuestionPage = () => {
           {header}
           {responseCard}
           {requestCard}
-          <div style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+          <div className="answer-composer-card" style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
             {hasGuessed ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                 <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
@@ -2736,7 +2767,7 @@ const QuestionPage = () => {
   };
 
   return (
-    <div className="question-page" style={pageStyle}>
+    <div className={`question-page${question.type === 'find-a-cat' ? ' question-page--find-a-cat' : ''}`} style={pageStyle}>
       {/* Header: Settings button and the Jeoparty logo */}
       <div className="question-brand-row" style={{
         display: 'flex',
@@ -2748,8 +2779,8 @@ const QuestionPage = () => {
         maxWidth: 1200,
       }}>
         <button
-          onClick={() => setSettingsOpen(true)}
-          className="glass-panel question-settings-button"
+          onClick={handleSettingsOpen}
+          className={`glass-panel question-settings-button${highlightSettings ? ' settings-button--discover' : ''}`}
           style={{
             padding: '0.75rem 1.25rem',
             color: 'var(--text-secondary)',
@@ -2928,7 +2959,7 @@ const QuestionPage = () => {
       {/* Action buttons (Show Question/Show Answer/Show Response/Back to Game) */}
       <div className="question-actions" style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
         {!isAdmin && isBuzzResponse && question.type !== 'crocodile'
-          && !buzzSelectionLocked && buzzWindowOpen && (
+          && !hideBuzzButton && !buzzSelectionLocked && buzzWindowOpen && (
           <button
             type="button"
             onClick={handleBuzz}
@@ -3064,8 +3095,9 @@ const QuestionPage = () => {
           </button>
         </div>
       )}
-      {/* Online users below the board — full width so a long row fits */}
-      <div style={{ width: '100%', margin: 0, padding: 0, lineHeight: 1 }}>
+      {/* Players stay in normal document flow below the question. On phones the
+          list wraps into a fixed five-column strip and the page itself scrolls. */}
+      <div className="question-player-strip" style={{ width: '100%', margin: 0, padding: 0, lineHeight: 1 }}>
         <OnlineUsers
           users={onlineUsers}
           elapsedTime={elapsedTime}

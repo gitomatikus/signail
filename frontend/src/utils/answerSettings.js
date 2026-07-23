@@ -29,3 +29,14 @@ export const answersNeedNoConfirmation = () =>
 export const setAnswersNeedNoConfirmation = (enabled) => {
   localStorage.setItem(AUTO_CHOICE_KEY, enabled ? 'true' : 'false');
 };
+
+// Buzz questions can be answered with Space on a keyboard or a three-finger
+// tap on touch screens, so players may opt out of the on-screen button.
+const HIDE_BUZZ_BUTTON_KEY = 'hideBuzzAnswerButton';
+
+export const isBuzzAnswerButtonHidden = () =>
+  localStorage.getItem(HIDE_BUZZ_BUTTON_KEY) === 'true';
+
+export const setBuzzAnswerButtonHidden = (hidden) => {
+  localStorage.setItem(HIDE_BUZZ_BUTTON_KEY, hidden ? 'true' : 'false');
+};

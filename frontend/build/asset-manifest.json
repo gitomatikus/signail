@@ -1,18 +1,18 @@
 {
   "files": {
-    "main.css": "/static/css/main.cfbf2296.css",
-    "main.js": "/static/js/main.f3db519d.js",
+    "main.css": "/static/css/main.a479f874.css",
+    "main.js": "/static/js/main.d621623f.js",
     "static/media/FixelText-Bold.woff2": "/static/media/FixelText-Bold.82b54d6e9b6f4011eb63.woff2",
     "static/media/FixelText-SemiBold.woff2": "/static/media/FixelText-SemiBold.ce5d69a5f826aa0079b6.woff2",
     "static/media/FixelText-Medium.woff2": "/static/media/FixelText-Medium.83d3b71f27e7cb598eb6.woff2",
     "static/media/FixelText-Light.woff2": "/static/media/FixelText-Light.9423ae3e821e63712556.woff2",
     "static/media/FixelText-Regular.woff2": "/static/media/FixelText-Regular.45eff5dbae2e1bb21bbd.woff2",
     "index.html": "/index.html",
-    "main.cfbf2296.css.map": "/static/css/main.cfbf2296.css.map",
-    "main.f3db519d.js.map": "/static/js/main.f3db519d.js.map"
+    "main.a479f874.css.map": "/static/css/main.a479f874.css.map",
+    "main.d621623f.js.map": "/static/js/main.d621623f.js.map"
   },
   "entrypoints": [
-    "static/css/main.cfbf2296.css",
-    "static/js/main.f3db519d.js"
+    "static/css/main.a479f874.css",
+    "static/js/main.d621623f.js"
   ]
 }

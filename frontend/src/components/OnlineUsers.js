@@ -476,7 +476,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             }}
           >
             {userTime !== null && !pointOutcomeKnown && (
-              <div style={{
+              <div className="online-user-time" style={{
                 position: 'absolute',
                 top: -20,
                 left: '50%',
@@ -607,7 +607,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               )}
             </span>
 
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+            <div className="online-user-details" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
               <span
                 className="online-user-score"
                 contentEditable={isAdmin}

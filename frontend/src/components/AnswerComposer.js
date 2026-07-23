@@ -86,7 +86,7 @@ const AnswerComposer = ({ onSubmit, onPreviewImage, submitLabel, buttonStyle = {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', alignItems: 'center' }}>
+    <div className="answer-composer" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', alignItems: 'center' }}>
       {image ? (
         <div style={{ position: 'relative' }}>
           <img
@@ -105,6 +105,7 @@ const AnswerComposer = ({ onSubmit, onPreviewImage, submitLabel, buttonStyle = {
         </div>
       ) : (
         <textarea
+          className="answer-composer__textarea"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onPaste={handlePaste}
@@ -135,34 +136,39 @@ const AnswerComposer = ({ onSubmit, onPreviewImage, submitLabel, buttonStyle = {
         />
       )}
 
-      {/* Image and audio are alternative inputs; hide one once the other is set */}
-      {!audio && (
+      <div className="answer-composer__actions">
+        {/* Image and audio are alternative inputs; hide one once the other is set */}
+        <div className="answer-composer__tools">
+          {!audio && (
+            <button
+              type="button"
+              className="answer-composer__tool-button"
+              onClick={() => setDrawOpen(true)}
+              style={{
+                ...buttonStyle,
+                background: 'var(--input-bg)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--glass-border)'
+              }}
+            >
+              🖌 {image ? t('question.editDrawing') : t('question.drawAnswer')}
+            </button>
+          )}
+          {!image && !audio && (
+            <AudioRecorder onRecorded={setAudio} buttonStyle={buttonStyle} />
+          )}
+        </div>
+
         <button
           type="button"
-          onClick={() => setDrawOpen(true)}
-          style={{
-            ...buttonStyle,
-            background: 'var(--input-bg)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--glass-border)'
-          }}
+          onClick={submit}
+          className="btn-primary answer-composer__submit"
+          style={{ ...buttonStyle, opacity: canSubmit ? 1 : 0.5 }}
+          disabled={!canSubmit}
         >
-          🖌 {image ? t('question.editDrawing') : t('question.drawAnswer')}
+          {submitLabel}
         </button>
-      )}
-      {!image && !audio && (
-        <AudioRecorder onRecorded={setAudio} buttonStyle={buttonStyle} />
-      )}
-
-      <button
-        type="button"
-        onClick={submit}
-        className="btn-primary"
-        style={{ ...buttonStyle, opacity: canSubmit ? 1 : 0.5 }}
-        disabled={!canSubmit}
-      >
-        {submitLabel}
-      </button>
+      </div>
 
       <DrawCanvas
         open={drawOpen}

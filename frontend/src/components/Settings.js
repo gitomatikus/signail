@@ -16,7 +16,9 @@ import {
   getTextSubmitMode,
   setTextSubmitMode,
   answersNeedNoConfirmation,
-  setAnswersNeedNoConfirmation
+  setAnswersNeedNoConfirmation,
+  isBuzzAnswerButtonHidden,
+  setBuzzAnswerButtonHidden
 } from '../utils/answerSettings';
 import EditProfileModal from './EditProfileModal';
 import MicCheckSetting from './MicCheckSetting';
@@ -37,6 +39,14 @@ const Settings = ({ onClose, isAdmin = false }) => {
   const [hostLayout, setHostLayoutChoice] = useState(() => getHostLayout());
   const [textSubmitMode, setTextSubmitModeChoice] = useState(() => getTextSubmitMode());
   const [autoChoice, setAutoChoice] = useState(() => answersNeedNoConfirmation());
+  const [hideBuzzButton, setHideBuzzButton] = useState(() => isBuzzAnswerButtonHidden());
+  const [usesTouchInput] = useState(() =>
+    typeof window !== 'undefined'
+    && (
+      window.matchMedia?.('(pointer: coarse)').matches
+      || window.innerWidth <= 640
+    )
+  );
 
   const handleThemeChange = (e) => {
     const id = e.target.value;
@@ -93,6 +103,12 @@ const Settings = ({ onClose, isAdmin = false }) => {
     const next = !autoChoice;
     setAutoChoice(next);
     setAnswersNeedNoConfirmation(next);
+  };
+
+  const handleToggleHideBuzzButton = () => {
+    const next = !hideBuzzButton;
+    setHideBuzzButton(next);
+    setBuzzAnswerButtonHidden(next);
   };
 
   // Leaving just disconnects: GameProvider tears the socket down on unmount
@@ -292,6 +308,36 @@ const Settings = ({ onClose, isAdmin = false }) => {
                 ))}
               </select>
             </div>
+          )}
+
+          {!isAdmin && (
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              padding: '0.75rem 1rem',
+              background: 'var(--surface-soft)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '8px',
+              color: 'var(--text-primary)',
+              cursor: 'pointer'
+            }}>
+              <span style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <span>{t('settings.hideBuzzButton')}</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', lineHeight: 1.35 }}>
+                  {t(usesTouchInput
+                    ? 'settings.hideBuzzButtonHintTouch'
+                    : 'settings.hideBuzzButtonHintKeyboard')}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={hideBuzzButton}
+                onChange={handleToggleHideBuzzButton}
+                style={{ width: '18px', height: '18px', cursor: 'pointer', flexShrink: 0 }}
+              />
+            </label>
           )}
 
           <label style={{

@@ -7,14 +7,16 @@ import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
 import { normalizeQuestion, hasUserSelection } from '../utils/questionModel';
 import BoardPlayerSummary from './BoardPlayerSummary';
+import { useSettingsDiscovery } from '../utils/settingsDiscovery';
 
 const GameBoard = ({ isAdmin = false }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { gameId, pack, packLoading, downloadProgress } = useGame();
+  const { gameId, user, pack, packLoading, downloadProgress } = useGame();
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const [selectedQuestions, setSelectedQuestions] = useState(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { highlightSettings, acknowledgeSettings } = useSettingsDiscovery(user?.id, !isAdmin);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(() => {
     const savedRoundIndex = localStorage.getItem(`currentRoundIndex-${gameId}`);
     return savedRoundIndex ? parseInt(savedRoundIndex) : 0;
@@ -140,6 +142,11 @@ const GameBoard = ({ isAdmin = false }) => {
     setSettingsOpen(false);
   };
 
+  const handleSettingsOpen = () => {
+    acknowledgeSettings();
+    setSettingsOpen(true);
+  };
+
   if (packLoading) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
@@ -205,8 +212,8 @@ const GameBoard = ({ isAdmin = false }) => {
         position: 'relative',
       }}>
         <button
-          onClick={() => setSettingsOpen(true)}
-          className="glass-panel board-settings-button"
+          onClick={handleSettingsOpen}
+          className={`glass-panel board-settings-button${highlightSettings ? ' settings-button--discover' : ''}`}
           style={{
             padding: '0.75rem 1.25rem',
             color: 'var(--text-secondary)',

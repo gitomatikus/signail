@@ -7,6 +7,7 @@ import SpectrogramPage from './SpectrogramPage';
 import config from '../config';
 import { getHostToken, removeHostToken } from '../services/gameAuth';
 import { useTranslation } from '../i18n/LanguageContext';
+import { useSettingsDiscovery } from '../utils/settingsDiscovery';
 
 const Avatar = ({ src, alt, size = 72 }) => {
   const style = {
@@ -30,6 +31,12 @@ const Lobby = () => {
   const { t, tp } = useTranslation();
   const { gameId, isHost, gameInfo, onlineUsers, startGame, packLoading, downloadProgress, user } = useGame();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { highlightSettings, acknowledgeSettings } = useSettingsDiscovery(user?.id, !isHost);
+
+  const handleSettingsOpen = () => {
+    acknowledgeSettings();
+    setSettingsOpen(true);
+  };
 
   const handleDelete = async () => {
     if (!window.confirm(t('lobby.deleteConfirm'))) return;
@@ -58,8 +65,8 @@ const Lobby = () => {
       {/* Settings button in the top left corner */}
       <div className="lobby-settings-wrap" style={{ position: 'absolute', top: '1rem', left: '1rem', zIndex: 10 }}>
         <button
-          onClick={() => setSettingsOpen(true)}
-          className="glass-panel"
+          onClick={handleSettingsOpen}
+          className={`glass-panel${highlightSettings ? ' settings-button--discover' : ''}`}
           style={{
             padding: '0.5rem 1rem',
             color: 'var(--text-secondary)',

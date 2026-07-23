@@ -136,9 +136,10 @@ const AudioRecorder = ({ onRecorded, buttonStyle = {}, disabled = false }) => {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
+    <div className="audio-recorder" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
       <button
         type="button"
+        className="answer-composer__tool-button"
         onClick={recording ? stop : start}
         disabled={disabled && !recording}
         style={{
