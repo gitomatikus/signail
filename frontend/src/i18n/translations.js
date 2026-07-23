@@ -103,6 +103,7 @@ export const translations = {
     "board.orderedTheme": "Ordered theme — questions open left to right",
     "board.closeQuestion": "Close question",
     "board.reopenQuestion": "Reopen question",
+    "board.roundNumber": "Round {number}",
 
     "settings.title": "Settings",
     "settings.design": "Design",
@@ -324,6 +325,10 @@ export const translations = {
     "users.perfectBonus": "{value} + exact answer bonus {bonus}",
     "users.host": "HOST",
     "users.you": "YOU",
+    "users.leader": "Leader",
+    "users.scoreboard": "Scoreboard",
+    "users.allPlayers": "Players",
+    "users.playersCountShort": "{count} players",
   },
   uk: {
     "common.loading": "Завантаження...",
@@ -437,6 +442,7 @@ export const translations = {
     "board.orderedTheme": "Впорядкована тема — питання відкриваються зліва направо",
     "board.closeQuestion": "Закрити питання",
     "board.reopenQuestion": "Відкрити питання знову",
+    "board.roundNumber": "Раунд {number}",
 
     "settings.title": "Налаштування",
     "settings.design": "Дизайн",
@@ -660,6 +666,10 @@ export const translations = {
     "users.perfectBonus": "{value} + бонус за точну відповідь {bonus}",
     "users.host": "ВЕДУЧИЙ",
     "users.you": "ВИ",
+    "users.leader": "Лідер",
+    "users.scoreboard": "Рахунок гравців",
+    "users.allPlayers": "Гравці",
+    "users.playersCountShort": "Гравці: {count}",
   },
 };
 

@@ -6,6 +6,7 @@ import wsManager from '../utils/websocket';
 import { useGame } from '../contexts/GameContext';
 import { useTranslation } from '../i18n/LanguageContext';
 import { normalizeQuestion, hasUserSelection } from '../utils/questionModel';
+import BoardPlayerSummary from './BoardPlayerSummary';
 
 const GameBoard = ({ isAdmin = false }) => {
   const navigate = useNavigate();
@@ -250,7 +251,10 @@ const GameBoard = ({ isAdmin = false }) => {
         )}
 
         <h2 className="round-title">
-          {round.name}
+          <span className="round-title__desktop">{round.name}</span>
+          <span className="round-title__mobile">
+            {t('board.roundNumber', { number: currentRoundIndex + 1 })}
+          </span>
         </h2>
 
         {isAdmin && (
@@ -263,6 +267,8 @@ const GameBoard = ({ isAdmin = false }) => {
           </button>
         )}
       </div>
+
+      <BoardPlayerSummary />
 
       <div className={`glass-panel board-scroll board-grid${isAdmin ? ' board-grid--admin' : ''}`} style={{
         display: 'grid',
@@ -282,7 +288,11 @@ const GameBoard = ({ isAdmin = false }) => {
             : null;
 
           return [
-          <div key={`theme-${rowIdx}`} className="board-theme" title={theme.ordered ? t('board.orderedTheme') : undefined}>
+          <div
+            key={`theme-${rowIdx}`}
+            className={`board-theme board-theme--r${rowIdx % 6}`}
+            title={theme.ordered ? t('board.orderedTheme') : undefined}
+          >
             {theme.name}
             {theme.ordered && (
               <span aria-hidden="true" style={{ marginLeft: '0.4em', opacity: 0.6 }}>⇢</span>
@@ -335,7 +345,10 @@ const GameBoard = ({ isAdmin = false }) => {
                     }
                   }}
                 >
-                  {question.price?.text || ''}
+                  <span className="board-cell__value">{question.price?.text || ''}</span>
+                  {isAnswered && !isCurrent && (
+                    <span className="board-cell__status" aria-hidden="true">✓</span>
+                  )}
                 </button>
                 {isAdmin && !isCurrent && (
                   <button
