@@ -797,10 +797,51 @@ const QuestionPage = () => {
     return () => window.removeEventListener(HOST_LAYOUT_EVENT, onLayoutChange);
   }, []);
 
+  const isBuzzResponse = responseMethod(question) === 'buzz';
+  const hasCurrentUserBuzzed = hasRecordedTime
+    || (currentUserId && userTimes[currentUserId] !== undefined);
+  const buzzSelectionLocked = isExclusiveSelection(question)
+    && (!secretTargetId || (!isAdmin && (
+      currentUserId !== secretTargetId || !isQuestionRevealed
+    )));
+  const buzzRoleLocked = question?.type === 'crocodile' && (
+    (question.crocodile_mode || 'fastest') === 'dixit'
+    || !crocodileTargetId
+    || isAdmin
+    || currentUserId === crocodileTargetId
+  );
+  const buzzWindowOpen = Boolean(startTime)
+    && ((isAdmin && isQuestionRevealed && !isAnswerRevealed)
+      || (!isAdmin && !isAnswerRevealed));
+  const canBuzz = Boolean(
+    currentUserId
+    && isBuzzResponse
+    && buzzWindowOpen
+    && !buzzSelectionLocked
+    && !buzzRoleLocked
+    && !(isMultiBuzz(question) && timer <= 0)
+    && !hasCurrentUserBuzzed
+  );
+
+  // Shared by physical keyboards and the on-screen mobile button so every
+  // input method records and broadcasts the same authoritative buzz time.
+  const handleBuzz = useCallback(() => {
+    if (!canBuzz) return;
+
+    const timeTaken = (Date.now() - startTime) / 1000;
+    setElapsedTime(timeTaken);
+    setHasRecordedTime(true);
+    wsManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
+    console.log('=== SCORE LOG ===');
+    console.log(`Score: ${question?.price?.correct || 0} points`);
+    console.log(`Time taken: ${timeTaken.toFixed(3)} seconds`);
+    console.log('================');
+  }, [canBuzz, startTime, questionId, currentUserId, question]);
+
   // Add keyboard event listener for space and right arrow
   useEffect(() => {
     const handleKeyPress = (event) => {
-      if (responseMethod(question) !== 'buzz') {
+      if (!isBuzzResponse) {
         return; // These answer by clicking/typing/singing, not by racing on the spacebar
       }
       if (event.code !== 'Space' && event.code !== 'ArrowRight') {
@@ -819,46 +860,12 @@ const QuestionPage = () => {
       }
       // Space pages the window down by default; buzzing must not scroll
       event.preventDefault();
-      if (isExclusiveSelection(question)) {
-        // Only the chosen player can answer an exclusive-selection question,
-        // and only after the admin has shown the question
-        if (!secretTargetId || (!isAdmin && (currentUserId !== secretTargetId || !isQuestionRevealed))) {
-          return;
-        }
-      }
-      if (question?.type === 'crocodile') {
-        // Buzzing is only for the "fastest" mode; in "dixit" mode guessers
-        // submit a text answer instead. Only guessers buzz, and only once a
-        // performer is drawing live. The performer and host never guess.
-        const crocodileMode = question.crocodile_mode || 'fastest';
-        if (crocodileMode === 'dixit' || !crocodileTargetId || isAdmin || currentUserId === crocodileTargetId) {
-          return;
-        }
-      }
-      // Multi-buzz respects the countdown: no more answers once time is up
-      if (isMultiBuzz(question) && timer <= 0) {
-        return;
-      }
-      if (startTime &&
-        ((isAdmin && isQuestionRevealed && !isAnswerRevealed) || (!isAdmin && !isAnswerRevealed)) &&
-        !hasRecordedTime &&
-        !userTimes[currentUserId]) {
-        const endTime = Date.now();
-        const timeTaken = (endTime - startTime) / 1000; // Convert to seconds
-        setElapsedTime(timeTaken);
-        setHasRecordedTime(true);
-        // Send elapsed time to other users
-        wsManager.sendElapsedTime(parseInt(questionId), timeTaken, currentUserId);
-        console.log('=== SCORE LOG ===');
-        console.log(`Score: ${question?.price?.correct || 0} points`);
-        console.log(`Time taken: ${timeTaken.toFixed(3)} seconds`);
-        console.log('================');
-      }
+      handleBuzz();
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isQuestionRevealed, isAnswerRevealed, startTime, question, isAdmin, hasRecordedTime, questionId, currentUserId, userTimes, secretTargetId, crocodileResponse, crocodileTargetId, timer]);
+  }, [isBuzzResponse, handleBuzz]);
 
   // Start timer when question is revealed or when non-admin user sees the question
   // For cat-in-the-bag, wait until a player is chosen and the admin shows the question
@@ -1354,7 +1361,7 @@ const QuestionPage = () => {
       // The host gets the same question | answer design as normal questions
       if (isAdmin && isQuestionRevealed) {
         const questionCard = (
-          <div style={cardStyle}>
+          <div className="question-card" style={cardStyle}>
             <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
             {playField}
           </div>
@@ -1399,7 +1406,7 @@ const QuestionPage = () => {
       // The selector is excluded from the candidates unless self-pick is allowed
       const candidates = onlineUsers.filter(u => selfPick || u.id !== secretSelectorId);
       const pendingPanel = (
-        <div style={cardStyle}>
+        <div className="question-card" style={cardStyle}>
           <div style={{ fontSize: '4rem', marginBottom: '0.5rem' }}>🐱</div>
           <div style={{ fontSize: '2rem', fontWeight: '800', color: '#ffd600', marginBottom: '1rem', textShadow: '0 0 20px rgba(255, 214, 0, 0.4)' }}>
             {t('question.secretTitle')}
@@ -1461,7 +1468,7 @@ const QuestionPage = () => {
         {showQuestionContent ? (
           renderCore()
         ) : (
-          <div style={cardStyle}>
+          <div className="question-card" style={cardStyle}>
             <div style={{ fontSize: '1.2rem', color: 'var(--text-secondary)' }}>
               {t('question.waitingReveal')}
             </div>
@@ -2088,7 +2095,7 @@ const QuestionPage = () => {
   );
 
   const renderCrocodileResponseCard = () => (
-    <div style={cardStyle}>
+    <div className="question-card" style={cardStyle}>
       <div style={cardBadgeStyle}>{t('question.crocodileResponseLabel')}</div>
       {renderAnswerValue(crocodileResponse, { imgMaxWidth: 460, imgMaxHeight: 340, audioWidth: 420 })}
     </div>
@@ -2107,7 +2114,7 @@ const QuestionPage = () => {
     // PHASE 1: choose the performer
     if (!crocodileTargetId) {
       const pickerPanel = (
-        <div style={cardStyle}>
+        <div className="question-card" style={cardStyle}>
           <div style={{ fontSize: '4rem', marginBottom: '0.5rem' }}>🐊</div>
           <div style={{ fontSize: '2rem', fontWeight: '800', color: '#4ade80', marginBottom: '1rem', textShadow: '0 0 20px rgba(74, 222, 128, 0.4)' }}>
             {t('question.crocodileTitle')}
@@ -2152,7 +2159,7 @@ const QuestionPage = () => {
     // guessers until the host presses "Show original request"; the performer
     // and host always see it through their own question card.
     const requestCard = isAnswerRevealed ? (
-      <div style={cardStyle}>
+      <div className="question-card" style={cardStyle}>
         <div style={cardBadgeStyle}>{t('question.crocodileRequestLabel')}</div>
         {(question.rules || []).map((rule, index) => (
           <div key={index} style={{ marginBottom: '8px', width: '100%' }}>
@@ -2433,7 +2440,7 @@ const QuestionPage = () => {
       // The host gets the same question | answer design as normal questions
       if (isAdmin && isQuestionRevealed) {
         const questionCard = (
-          <div style={cardStyle}>
+          <div className="question-card" style={cardStyle}>
             <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
             {playField}
           </div>
@@ -2672,7 +2679,7 @@ const QuestionPage = () => {
           );
         }
         const questionCard = (
-          <div style={cardStyle}>
+          <div className="question-card" style={cardStyle}>
             <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
             {question.rules.map((rule, index) => (
               <div key={index} style={{ marginBottom: '8px', width: '100%' }}>
@@ -2702,7 +2709,7 @@ const QuestionPage = () => {
     if (rule.type === 'embedded') {
       // Reveal images render through ProgressiveImage inside the card
       if (ruleHasReveal(rule.content)) {
-        return <div style={cardStyle}>{badgeEl}{renderRevealHtml(rule.content)}</div>;
+        return <div className="question-card" style={cardStyle}>{badgeEl}{renderRevealHtml(rule.content)}</div>;
       }
       const html = renderHtmlContent(rule.content);
       if (!isAdmin && isAudioOnlyContent(html)) {
@@ -2715,7 +2722,7 @@ const QuestionPage = () => {
         );
       }
       return (
-        <div style={cardStyle}>
+        <div className="question-card" style={cardStyle}>
           {badgeEl}
           <div
             className="question-content"
@@ -2725,13 +2732,13 @@ const QuestionPage = () => {
         </div>
       );
     }
-    return <div style={cardStyle}>{badgeEl}{renderRule(rule)}</div>;
+    return <div className="question-card" style={cardStyle}>{badgeEl}{renderRule(rule)}</div>;
   };
 
   return (
-    <div style={pageStyle}>
+    <div className="question-page" style={pageStyle}>
       {/* Header: Settings button and the Jeoparty logo */}
-      <div style={{
+      <div className="question-brand-row" style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -2742,7 +2749,7 @@ const QuestionPage = () => {
       }}>
         <button
           onClick={() => setSettingsOpen(true)}
-          className="glass-panel"
+          className="glass-panel question-settings-button"
           style={{
             padding: '0.75rem 1.25rem',
             color: 'var(--text-secondary)',
@@ -2761,7 +2768,7 @@ const QuestionPage = () => {
           onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
           onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
         >
-          <span>⚙️</span> {t('common.settings')}
+          <span>⚙️</span> <span className="question-settings-button__label">{t('common.settings')}</span>
         </button>
         <div style={{
           flex: 1,
@@ -2773,7 +2780,7 @@ const QuestionPage = () => {
         </div>
       </div>
       {/* Theme (left) — timer (always centered) — price (right) */}
-      <div style={{
+      <div className="question-meta-row" style={{
         width: '100%',
         maxWidth: 1200,
         display: 'grid',
@@ -2786,7 +2793,7 @@ const QuestionPage = () => {
       }}>
         <div style={{ display: 'flex', justifyContent: 'flex-end', minWidth: 0 }}>
           {themeName && (
-            <div className="glass-panel" style={{
+            <div className="glass-panel question-meta-chip" style={{
               padding: '0.5rem 1.25rem',
               borderRadius: '12px',
               color: 'var(--text-primary)',
@@ -2820,7 +2827,7 @@ const QuestionPage = () => {
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
           {question.price?.text && (
-            <div className="glass-panel" style={{
+            <div className="glass-panel question-meta-chip" style={{
               padding: '0.5rem 1.25rem',
               borderRadius: '12px',
               color: 'var(--accent)',
@@ -2914,12 +2921,28 @@ const QuestionPage = () => {
         maxWidth: 'min(1600px, 100%)',
         margin: '0 auto 20px auto'
       }}>
-        <div style={boardGridStyle} onClick={handleQuestionImageClick}>
+        <div className="question-board-grid" style={boardGridStyle} onClick={handleQuestionImageClick}>
           {renderContent()}
         </div>
       </div>
       {/* Action buttons (Show Question/Show Answer/Show Response/Back to Game) */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+      <div className="question-actions" style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+        {!isAdmin && isBuzzResponse && question.type !== 'crocodile'
+          && !buzzSelectionLocked && buzzWindowOpen && (
+          <button
+            type="button"
+            onClick={handleBuzz}
+            className="btn-primary question-buzz-button"
+            style={buttonStyle}
+            disabled={!canBuzz}
+          >
+            {hasCurrentUserBuzzed
+              ? t('question.answerAccepted')
+              : isMultiBuzz(question) && timer <= 0
+                ? t('question.timeUp')
+                : `⚡ ${t('question.buzzAnswer')}`}
+          </button>
+        )}
         {/* Crocodile needs no "Show Question": the performer sees the prompt as
             soon as they're picked, and guessers must not see it (they guess). */}
         {isAdmin && !isQuestionRevealed && question.type !== 'crocodile' && question.type !== 'spectrum' && (

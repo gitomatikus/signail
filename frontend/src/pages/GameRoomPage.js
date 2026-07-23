@@ -46,7 +46,7 @@ const Lobby = () => {
   };
 
   return (
-    <div className="fade-in" style={{
+    <div className="fade-in mobile-page lobby-page" style={{
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -56,7 +56,7 @@ const Lobby = () => {
       gap: '1.5rem'
     }}>
       {/* Settings button in the top left corner */}
-      <div style={{ position: 'absolute', top: '1rem', left: '1rem', zIndex: 10 }}>
+      <div className="lobby-settings-wrap" style={{ position: 'absolute', top: '1rem', left: '1rem', zIndex: 10 }}>
         <button
           onClick={() => setSettingsOpen(true)}
           className="glass-panel"
@@ -77,7 +77,7 @@ const Lobby = () => {
           <span>⚙️</span> {t('common.settings')}
         </button>
       </div>
-      <div className="glass-panel" style={{
+      <div className="glass-panel lobby-panel" style={{
         padding: '2.5rem',
         width: '100%',
         maxWidth: '700px',
@@ -90,7 +90,7 @@ const Lobby = () => {
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
             {t('lobby.title')}
           </div>
-          <h1 style={{ fontSize: '2.5rem', fontWeight: 800, margin: '0.25rem 0 0' }}>
+          <h1 className="lobby-title" style={{ fontSize: '2.5rem', fontWeight: 800, margin: '0.25rem 0 0' }}>
             {gameInfo.packName}
           </h1>
           <div style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
@@ -172,7 +172,7 @@ const Lobby = () => {
         </div>
 
         {isHost ? (
-          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+          <div className="mobile-action-row lobby-actions" style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
             <button
               className="btn-primary"
               style={{ padding: '0.75rem 3rem', fontSize: '1.1rem' }}

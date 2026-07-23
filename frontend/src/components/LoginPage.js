@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import Logo from './Logo';
@@ -14,6 +14,7 @@ const LoginPage = ({ onLogin, onClose }) => {
   const [pastedImage, setPastedImage] = useState(null); // { dataUrl, bytes }
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
+  const fileInputRef = useRef(null);
 
   const validateImageUrl = (url) => {
     const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.mp4', '.webp'];
@@ -32,6 +33,22 @@ const LoginPage = ({ onLogin, onClose }) => {
     }
   };
 
+  // Device uploads and clipboard images share the exact same compression and
+  // Base64 data-URL path, so the stored user object keeps one avatar format.
+  const processImageFile = async (file, source) => {
+    setProcessing(true);
+    setError('');
+    try {
+      const image = await compressImageToDataUrl(file);
+      setPastedImage({ ...image, source });
+      setImageUrl('');
+    } catch {
+      setError(source === 'upload' ? 'login.errorUploadFailed' : 'login.errorPasteFailed');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   // Catches image pastes anywhere in the form; text pastes fall through to
   // the focused input untouched.
   const handlePaste = async (e) => {
@@ -41,17 +58,14 @@ const LoginPage = ({ onLogin, onClose }) => {
 
     e.preventDefault();
     const file = item.getAsFile();
-    if (!file) return;
+    if (file) await processImageFile(file, 'paste');
+  };
 
-    setProcessing(true);
-    setError('');
-    try {
-      setPastedImage(await compressImageToDataUrl(file));
-    } catch {
-      setError('login.errorPasteFailed');
-    } finally {
-      setProcessing(false);
-    }
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    // Let the same file be selected again after it has been removed.
+    e.target.value = '';
+    if (file) await processImageFile(file, 'upload');
   };
 
   const handleSubmit = (e) => {
@@ -123,6 +137,7 @@ const LoginPage = ({ onLogin, onClose }) => {
         {onClose && (
           <button
             type="button"
+            className="login-close-button"
             onClick={onClose}
             aria-label={t('common.close')}
             style={{
@@ -203,7 +218,8 @@ const LoginPage = ({ onLogin, onClose }) => {
                 fontSize: '0.875rem'
               }}>
                 <span>
-                  {t('login.pastedImage')} ({Math.round(pastedImage.bytes / 1024)} KB)
+                  {t(pastedImage.source === 'upload' ? 'login.uploadedImage' : 'login.pastedImage')}
+                  {' '}({Math.round(pastedImage.bytes / 1024)} KB)
                 </span>
                 <button
                   type="button"
@@ -230,8 +246,35 @@ const LoginPage = ({ onLogin, onClose }) => {
                 placeholder={t('login.avatarPlaceholder')}
               />
             )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileUpload}
+              disabled={processing}
+              aria-label={t('login.uploadAvatar')}
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={processing}
+              style={{
+                width: '100%',
+                minHeight: '44px',
+                marginTop: '0.65rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.55rem'
+              }}
+            >
+              <span aria-hidden="true">↑</span>
+              {processing ? t('login.processingImage') : t('login.uploadAvatar')}
+            </button>
             <div style={{ marginTop: '0.4rem', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-              {processing ? t('login.processingImage') : t('login.pasteHint')}
+              {t('login.pasteHint')}
             </div>
           </div>
 

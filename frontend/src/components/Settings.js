@@ -145,7 +145,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
   };
 
   const modalContent = (
-    <div className="fade-in" style={{
+    <div className="fade-in mobile-dialog-overlay" style={{
       position: 'fixed',
       top: 0,
       left: 0,
@@ -159,7 +159,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
       zIndex: 99999 // Ensure it's on top of everything
     }} onClick={onClose}>
       <div
-        className="glass-panel"
+        className="glass-panel mobile-dialog"
         style={{
           padding: '2rem',
           borderRadius: '16px',
@@ -181,7 +181,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
         }}>{t('settings.title')}</h2>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{
+          <div className="mobile-dialog-row" style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -196,7 +196,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
             <LanguageSwitcher />
           </div>
 
-          <div style={{
+          <div className="mobile-dialog-row" style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -222,7 +222,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
           <MicCheckSetting />
 
           {isAdmin && (
-            <div style={{
+            <div className="mobile-dialog-row" style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -270,7 +270,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
           )}
 
           {!isAdmin && (
-            <div style={{
+            <div className="mobile-dialog-row" style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -328,7 +328,7 @@ const Settings = ({ onClose, isAdmin = false }) => {
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
                 {t('settings.gamePassword')} {gameInfo?.hasPassword ? t('settings.passwordSet') : t('settings.passwordNone')}
               </span>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div className="mobile-dialog-inline-actions" style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
                   type="text"
                   value={passwordInput}

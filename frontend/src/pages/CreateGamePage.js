@@ -147,7 +147,7 @@ const CreateGamePage = ({ user }) => {
     };
 
     return (
-        <div className="fade-in" style={{
+        <div className="fade-in mobile-page create-game-page" style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -155,7 +155,7 @@ const CreateGamePage = ({ user }) => {
             minHeight: '100vh',
             padding: '2rem'
         }}>
-            <div className="glass-panel" style={{
+            <div className="glass-panel create-game-panel" style={{
                 padding: '3rem',
                 width: '100%',
                 maxWidth: '600px',
@@ -171,7 +171,7 @@ const CreateGamePage = ({ user }) => {
                     {t('create.back')}
                 </button>
 
-                <h1 style={{
+                <h1 className="create-game-title" style={{
                     fontSize: '3rem',
                     fontWeight: '800',
                     margin: 0,
@@ -185,7 +185,7 @@ const CreateGamePage = ({ user }) => {
                     flexDirection: 'column',
                     gap: '1.5rem'
                 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.5rem', padding: '.35rem', borderRadius: '14px', background: 'var(--surface-soft)', border: '1px solid var(--glass-border)' }}>
+                    <div className="create-mode-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.5rem', padding: '.35rem', borderRadius: '14px', background: 'var(--surface-soft)', border: '1px solid var(--glass-border)' }}>
                         {['quiz', 'spectrogram'].map(mode => (
                             <button
                                 key={mode}
@@ -250,7 +250,7 @@ const CreateGamePage = ({ user }) => {
                             <label style={{ display: 'block', marginBottom: '.75rem', color: 'var(--text-secondary)', fontSize: '.875rem', fontWeight: 500 }}>
                                 {t('create.clueMode')}
                             </label>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.75rem' }}>
+                            <div className="create-clue-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.75rem' }}>
                                 {['text', 'verbal'].map(mode => (
                                     <button
                                         key={mode}

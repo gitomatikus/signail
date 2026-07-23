@@ -20,6 +20,7 @@ const LanguageSwitcher = ({ style }) => {
 
   return (
     <div
+      className="language-switcher"
       title={t('common.language')}
       style={{
         display: 'inline-flex',

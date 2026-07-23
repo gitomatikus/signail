@@ -195,8 +195,8 @@ const GameBoard = ({ isAdmin = false }) => {
   const maxQuestions = Math.max(...themes.map(theme => theme.questions.length));
 
   return (
-    <div className="fade-in" style={{ width: '100%', padding: '0 1rem' }}>
-      <div style={{
+    <div className="fade-in board-shell" style={{ width: '100%', padding: '0 1rem' }}>
+      <div className="board-brand-row" style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -205,7 +205,7 @@ const GameBoard = ({ isAdmin = false }) => {
       }}>
         <button
           onClick={() => setSettingsOpen(true)}
-          className="glass-panel"
+          className="glass-panel board-settings-button"
           style={{
             padding: '0.75rem 1.25rem',
             color: 'var(--text-secondary)',
@@ -224,7 +224,7 @@ const GameBoard = ({ isAdmin = false }) => {
           onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
           onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
         >
-          <span>⚙️</span> {t('common.settings')}
+          <span>⚙️</span> <span className="board-settings-button__label">{t('common.settings')}</span>
         </button>
 
         <div style={{ textAlign: 'center' }}>
@@ -232,7 +232,7 @@ const GameBoard = ({ isAdmin = false }) => {
         </div>
       </div>
 
-      <div style={{
+      <div className="board-round-row" style={{
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
@@ -264,9 +264,10 @@ const GameBoard = ({ isAdmin = false }) => {
         )}
       </div>
 
-      <div className="glass-panel" style={{
+      <div className={`glass-panel board-scroll board-grid${isAdmin ? ' board-grid--admin' : ''}`} style={{
         display: 'grid',
         gridTemplateColumns: `240px repeat(${maxQuestions}, 1fr)`,
+        '--question-columns': maxQuestions,
         gap: '12px',
         padding: '1.5rem',
         margin: '0 auto',
@@ -311,28 +312,42 @@ const GameBoard = ({ isAdmin = false }) => {
                 : `board-cell${rowVariant}${isLocked ? ' board-cell--locked' : ''}`;
 
             return (
-              <div
-                key={`q-${rowIdx}-${colIdx}`}
-                className={cellClass}
-                style={{
-                  // Staggered pop-in, wave running diagonally across the board
-                  animationDelay: `${Math.min((rowIdx + colIdx) * 45, 600)}ms`
-                }}
-                onClick={() => {
-                  if (!isDisabled) {
-                    handleQuestionClick(question);
-                  }
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  // Toggle open/closed on right-click; the current tile keeps
-                  // its own "being played" state and is left alone
-                  if (isAdmin && !isCurrent) {
-                    handleQuestionToggle(question);
-                  }
-                }}
-              >
-                {question.price?.text || ''}
+              <div key={`q-${rowIdx}-${colIdx}`} className="board-slot">
+                <button
+                  type="button"
+                  className={cellClass}
+                  aria-disabled={isDisabled}
+                  style={{
+                    // Staggered pop-in, wave running diagonally across the board
+                    animationDelay: `${Math.min((rowIdx + colIdx) * 45, 600)}ms`
+                  }}
+                  onClick={() => {
+                    if (!isDisabled) {
+                      handleQuestionClick(question);
+                    }
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    // Toggle open/closed on right-click; the current tile keeps
+                    // its own "being played" state and is left alone
+                    if (isAdmin && !isCurrent) {
+                      handleQuestionToggle(question);
+                    }
+                  }}
+                >
+                  {question.price?.text || ''}
+                </button>
+                {isAdmin && !isCurrent && (
+                  <button
+                    type="button"
+                    className="board-cell-toggle"
+                    aria-label={`${isAnswered ? t('board.reopenQuestion') : t('board.closeQuestion')} ${question.price?.text || ''}`}
+                    title={isAnswered ? t('board.reopenQuestion') : t('board.closeQuestion')}
+                    onClick={() => handleQuestionToggle(question)}
+                  >
+                    {isAnswered ? '↻' : '×'}
+                  </button>
+                )}
               </div>
             );
           })

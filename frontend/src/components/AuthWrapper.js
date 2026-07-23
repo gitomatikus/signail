@@ -29,6 +29,7 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
   });
   const [loginOpen, setLoginOpen] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState(() => getTheme());
 
   const handleThemeChange = (e) => {
@@ -60,47 +61,19 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
   }
 
   return (
-    <div>
+    <div className={`app-shell${showHeader ? ' app-shell--with-toolbar' : ''}`}>
       {showHeader && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          right: 0,
-          padding: '1rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1rem',
-          zIndex: 1000
-        }}>
-          <select
-            value={theme}
-            onChange={handleThemeChange}
-            aria-label={t('settings.design')}
-            title={t('settings.design')}
-            style={{ width: 'auto', padding: '0.4rem 0.6rem', fontSize: '0.85rem', borderRadius: '8px' }}
-          >
-            {THEMES.map(option => (
-              <option key={option.id} value={option.id}>{option.name}</option>
-            ))}
-          </select>
-          <LanguageSwitcher />
+        <header className={`app-toolbar${user ? '' : ' app-toolbar--anonymous'}`}>
           {user && (
-            <>
+            <div className="app-toolbar__identity">
               <div
+                className="app-toolbar__profile"
                 onClick={() => setEditProfileOpen(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  cursor: 'pointer',
-                  padding: '0.3rem 0.6rem',
-                  borderRadius: '8px',
-                  background: 'var(--surface-soft)',
-                  border: '1px solid var(--glass-border)',
-                  transition: 'var(--transition-fast)'
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') setEditProfileOpen(true);
                 }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--primary)'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--glass-border)'}
                 title={t('profile.editTooltip')}
               >
                 {user.imageUrl.toLowerCase().endsWith('.mp4') ? (
@@ -129,10 +102,35 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
                     }}
                   />
                 )}
-                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{user.name}</span>
+                <span className="app-toolbar__profile-name" style={{ fontWeight: 500 }}>{user.name}</span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>✏️</span>
               </div>
               <MicCheckSetting variant="compact" />
+              <button
+                type="button"
+                className="btn-ghost app-toolbar__menu-toggle"
+                aria-label={t('common.settings')}
+                aria-expanded={mobileMenuOpen}
+                onClick={() => setMobileMenuOpen(open => !open)}
+              >
+                ⋯
+              </button>
+            </div>
+          )}
+          <div className={`app-toolbar__secondary${mobileMenuOpen ? ' is-open' : ''}`}>
+            <select
+              value={theme}
+              onChange={handleThemeChange}
+              aria-label={t('settings.design')}
+              title={t('settings.design')}
+              style={{ width: 'auto', minHeight: '44px', padding: '0.4rem 0.6rem', fontSize: '0.85rem', borderRadius: '8px' }}
+            >
+              {THEMES.map(option => (
+                <option key={option.id} value={option.id}>{option.name}</option>
+              ))}
+            </select>
+            <LanguageSwitcher />
+            {user && (
               <button
                 onClick={handleLogout}
                 className="btn-ghost"
@@ -140,9 +138,9 @@ const AuthWrapper = ({ children, showHeader = true, requireAuth = true }) => {
               >
                 {t('common.logout')}
               </button>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        </header>
       )}
       {React.cloneElement(children, { user, onUpdateUser: handleUpdateUser, onRequestLogin: () => setLoginOpen(true) })}
       {!user && loginOpen && (

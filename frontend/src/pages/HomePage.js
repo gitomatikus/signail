@@ -105,7 +105,7 @@ const HomePage = ({ user, onRequestLogin }) => {
   };
 
   return (
-    <div className="fade-in" style={{
+    <div className="fade-in mobile-page home-page" style={{
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -148,6 +148,7 @@ const HomePage = ({ user, onRequestLogin }) => {
         )}
 
         <a
+          className="home-editor-link"
           href={config.packEditorUrl}
           target="_blank"
           rel="noopener noreferrer"
@@ -186,7 +187,7 @@ const HomePage = ({ user, onRequestLogin }) => {
             {games.map(game => {
               const isMine = !!getHostToken(game.id);
               return (
-                <div key={game.id} className="glass-panel card-hover" style={{
+                <div key={game.id} className="glass-panel card-hover home-game-card" style={{
                   padding: '1rem 1.5rem',
                   display: 'flex',
                   alignItems: 'center',
@@ -194,7 +195,7 @@ const HomePage = ({ user, onRequestLogin }) => {
                   flexWrap: 'wrap'
                 }}>
                   <Avatar src={game.hostImageUrl} alt={game.hostName} />
-                  <div style={{ flex: 1, minWidth: '200px' }}>
+                  <div className="home-game-card__body" style={{ flex: 1, minWidth: '200px' }}>
                     <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.1rem' }}>
                       {game.hasPassword && <span title={t('home.passwordProtected')} style={{ marginRight: '0.4rem' }}>🔒</span>}
                       {game.mode === 'spectrogram' && <span title={t('create.spectrogramTab')} style={{ marginRight: '0.4rem' }}>🌈</span>}
@@ -205,14 +206,14 @@ const HomePage = ({ user, onRequestLogin }) => {
                       {game.packAuthor ? <> · {t('home.packBy')} {game.packAuthor}</> : null}
                     </div>
                   </div>
-                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', whiteSpace: 'nowrap' }}>
+                  <div className="home-game-card__meta" style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', whiteSpace: 'nowrap' }}>
                     {tp('home.playersCount', game.playerCount)}
                     {' · '}
                     <span style={{ color: game.status === 'started' ? '#4ade80' : 'var(--accent)' }}>
                       {game.status === 'started' ? t('home.inProgress') : t('home.lobby')}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <div className="home-game-card__actions" style={{ display: 'flex', gap: '0.5rem' }}>
                     <button
                       className="btn-primary"
                       onClick={() => handleJoin(game)}
@@ -239,7 +240,7 @@ const HomePage = ({ user, onRequestLogin }) => {
       </div>
 
       {passwordPromptGame && (
-        <div style={{
+        <div className="mobile-dialog-overlay" style={{
           position: 'fixed',
           inset: 0,
           background: 'rgba(0, 0, 0, 0.7)',
@@ -250,7 +251,7 @@ const HomePage = ({ user, onRequestLogin }) => {
           zIndex: 99999
         }} onClick={() => setPasswordPromptGame(null)}>
           <form
-            className="glass-panel"
+            className="glass-panel mobile-dialog"
             style={{ padding: '2rem', minWidth: '320px', display: 'flex', flexDirection: 'column', gap: '1rem' }}
             onClick={e => e.stopPropagation()}
             onSubmit={handlePasswordSubmit}
@@ -268,7 +269,7 @@ const HomePage = ({ user, onRequestLogin }) => {
             {passwordError && (
               <div style={{ color: '#ef4444', fontSize: '0.875rem', textAlign: 'center' }}>{t(passwordError)}</div>
             )}
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div className="mobile-action-row" style={{ display: 'flex', gap: '0.5rem' }}>
               <button type="submit" className="btn-primary" style={{ flex: 1 }}>{t('home.join')}</button>
               <button
                 type="button"

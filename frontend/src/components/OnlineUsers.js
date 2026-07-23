@@ -230,7 +230,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
   };
 
   return (
-    <div style={{
+    <div className="online-users" style={{
       width: '100%',
       boxSizing: 'border-box',
       display: 'flex',
@@ -466,7 +466,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
         return (
           <div
             key={user.id || user.name}
-            className="fade-in"
+            className="fade-in online-user-card"
             style={{
               width: '124px',
               display: 'flex',
@@ -545,7 +545,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             )}
 
             <div
-              className={isPerfectGuess ? 'rainbow-frame' : undefined}
+              className={`online-user-avatar${isPerfectGuess ? ' rainbow-frame' : ''}`}
               style={{
                 width: '110px',
                 height: '110px',
@@ -577,7 +577,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
               )}
             </div>
 
-            <span style={{
+            <span className="online-user-name" style={{
               fontWeight: '600',
               fontSize: '1.25rem',
               color: 'var(--text-primary)',
@@ -609,6 +609,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
               <span
+                className="online-user-score"
                 contentEditable={isAdmin}
                 suppressContentEditableWarning={true}
                 onBlur={(e) => {
@@ -838,7 +839,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
           in Settings. */}
       {gameInfo && gameInfo.mode !== 'spectrogram' && !hideHost && (
         <div
-          className="fade-in"
+          className="fade-in online-user-host"
           style={{
             display: 'flex',
             alignItems: 'flex-start',
@@ -847,14 +848,14 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             marginLeft: '0.25rem'
           }}
         >
-          <div style={{
+          <div className="online-user-host-card" style={{
             width: '124px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             position: 'relative'
           }}>
-            <div style={{
+            <div className="online-user-avatar" style={{
               width: '110px',
               height: '110px',
               borderRadius: '24px',

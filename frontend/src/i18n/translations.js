@@ -18,19 +18,22 @@ export const translations = {
 
     "login.tagline": "No sign-up needed — log in with any name and image",
     "login.errorName": "Please enter your name",
-    "login.errorImage": "Please enter an image URL",
+    "login.errorImage": "Please choose an image or enter an image URL",
     "login.errorImageInvalid":
       "Please enter a valid image URL (jpg, jpeg, png, gif, mp4, or webp)",
     "login.playerName": "Player Name",
     "login.namePlaceholder": "Enter your name",
-    "login.avatarUrl": "Avatar URL",
+    "login.avatarUrl": "Avatar",
     "login.findGif": "Find GIF",
     "login.avatarPlaceholder": "Paste image or GIF URL",
     "login.pasteHint": "or paste an image from your clipboard (Ctrl+V)",
     "login.pastedImage": "Pasted image",
+    "login.uploadAvatar": "Upload from device",
+    "login.uploadedImage": "Uploaded image",
     "login.removeImage": "Remove image",
     "login.processingImage": "Compressing image…",
     "login.errorPasteFailed": "Could not process the pasted image",
+    "login.errorUploadFailed": "Could not process the selected image",
     "login.join": "Join Game",
 
     "home.tagline": "Pick a game to join or host your own",
@@ -98,6 +101,8 @@ export const translations = {
     "board.downloadingPack": "Downloading Quiz... {progress}",
     "board.errorLoadingPack": "Error loading quiz",
     "board.orderedTheme": "Ordered theme — questions open left to right",
+    "board.closeQuestion": "Close question",
+    "board.reopenQuestion": "Reopen question",
 
     "settings.title": "Settings",
     "settings.design": "Design",
@@ -230,6 +235,7 @@ export const translations = {
     "question.pointCorrectRadius": "The green area is counted as correct ({value}% of the image diagonal).",
     "question.confirmAnswer": "Confirm answer",
     "question.answerAccepted": "Answer accepted ✓",
+    "question.buzzAnswer": "Answer",
     "question.textPlaceholder":
       "Type your answer or paste an image (Ctrl+V)...",
     "question.drawAnswer": "Draw",
@@ -337,19 +343,22 @@ export const translations = {
     "login.tagline":
       "Реєстрація не потрібна — увійдіть з будь-яким ім'ям та зображенням",
     "login.errorName": "Будь ласка, введіть ім'я",
-    "login.errorImage": "Будь ласка, введіть URL зображення",
+    "login.errorImage": "Оберіть зображення або введіть його URL",
     "login.errorImageInvalid":
       "Введіть коректний URL зображення (jpg, jpeg, png, gif, mp4 або webp)",
     "login.playerName": "Ім'я гравця",
     "login.namePlaceholder": "Введіть ваше ім'я",
-    "login.avatarUrl": "URL аватара",
+    "login.avatarUrl": "Аватар",
     "login.findGif": "Знайти GIF",
     "login.avatarPlaceholder": "Вставте URL зображення або GIF",
     "login.pasteHint": "або вставте зображення з буфера обміну (Ctrl+V)",
     "login.pastedImage": "Вставлене зображення",
+    "login.uploadAvatar": "Завантажити з телефона або комп’ютера",
+    "login.uploadedImage": "Завантажене зображення",
     "login.removeImage": "Видалити зображення",
     "login.processingImage": "Стискання зображення…",
     "login.errorPasteFailed": "Не вдалося обробити вставлене зображення",
+    "login.errorUploadFailed": "Не вдалося обробити вибране зображення",
     "login.join": "Увійти до гри",
 
     "home.tagline": "Оберіть гру, щоб приєднатися, або створіть власну",
@@ -426,6 +435,8 @@ export const translations = {
     "board.downloadingPack": "Завантаження квізу... {progress}",
     "board.errorLoadingPack": "Помилка завантаження квізу",
     "board.orderedTheme": "Впорядкована тема — питання відкриваються зліва направо",
+    "board.closeQuestion": "Закрити питання",
+    "board.reopenQuestion": "Відкрити питання знову",
 
     "settings.title": "Налаштування",
     "settings.design": "Дизайн",
@@ -558,6 +569,7 @@ export const translations = {
     "question.pointCorrectRadius": "Зелена область зараховується як правильна ({value}% діагоналі зображення).",
     "question.confirmAnswer": "Підтвердити відповідь",
     "question.answerAccepted": "Відповідь прийнято ✓",
+    "question.buzzAnswer": "Відповісти",
     "question.textPlaceholder":
       "Введіть відповідь або вставте зображення (Ctrl+V)...",
     "question.drawAnswer": "Намалювати",
