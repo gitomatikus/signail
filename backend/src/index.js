@@ -299,6 +299,31 @@ app.get('/api/games/:gameId/questions/:questionId/crocodile', (req, res) => {
   res.json({ status: 'success', data: game.getCrocodileInfo(parseInt(req.params.questionId)) });
 });
 
+// Timed multi-guess history for text-mode Crocodile. The host can restore all
+// live guesses after a refresh; players can restore only their own history
+// until the normal answer reveal makes every history public.
+app.get('/api/games/:gameId/questions/:questionId/crocodile-guesses', (req, res) => {
+  const game = requireGame(req, res);
+  if (!game) return;
+  const questionId = parseInt(req.params.questionId);
+  const requesterId = req.query.userId;
+  const hostToken = req.headers['x-host-token'] || req.query.hostToken;
+  const info = game.getCrocodileGuessesInfo(questionId);
+  const canSeeAll = info.revealed || (!!hostToken && hostToken === game.hostToken);
+  const guesses = {};
+  const counts = {};
+  for (const [userId, history] of info.guesses) {
+    counts[userId] = history.length;
+    if (canSeeAll || userId === requesterId) {
+      guesses[userId] = history;
+    }
+  }
+  res.json({
+    status: 'success',
+    data: { revealed: info.revealed, guesses, counts }
+  });
+});
+
 // Voting state for a question. Vote targets are masked (as `true`) in closed
 // mode until revealed; pass ?userId= to still get your own vote back after a
 // refresh. Open mode always returns targets.

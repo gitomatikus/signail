@@ -14,7 +14,7 @@ import wsManager from '../utils/websocket';
 // without destroying the drawing.
 
 const DEFAULT_W = 720;
-const DEFAULT_H = 420;
+const DEFAULT_H = 720;
 const MAX_W = 1280;
 const MAX_H = 720;
 // Checkerboard shown behind the (transparent) canvas so the user can tell
@@ -313,6 +313,7 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage, streamQuestionId = n
   // sibling at the page root) paint over the modal's controls.
   const modalContent = (
     <div
+      className="draw-canvas-modal"
       onPointerDown={(e) => {
         // Click on the dim backdrop (outside the panel) closes.
         if (e.target === e.currentTarget) onClose();
@@ -330,6 +331,7 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage, streamQuestionId = n
       }}
     >
       <div
+        className="draw-canvas-panel"
         style={{
           background: 'var(--card-bg, var(--input-bg))',
           border: '1px solid var(--glass-border)',
@@ -346,94 +348,116 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage, streamQuestionId = n
         }}
       >
         {/* Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div className="draw-canvas__header" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
             🖌 {t('paint.title')}
           </span>
           <div style={{ flex: 1 }} />
-          <button onClick={onClose} aria-label={t('common.close')} style={{ ...toolBtn(false), padding: '0.3rem 0.6rem' }}>
+          <button type="button" className="draw-canvas__close" onClick={onClose} aria-label={t('common.close')} style={{ ...toolBtn(false), padding: '0.3rem 0.6rem' }}>
             ×
           </button>
         </div>
 
-        {/* Row 1: foreground colours + brush size + tools */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-            {PALETTE.map((c) => (
-              <div
-                key={c}
-                onClick={() => { setColor(c); if (tool === 'eraser') setTool('brush'); }}
-                title={c}
+        <div className="draw-canvas__toolbar">
+          {/* Row 1: foreground colours + brush size + tools */}
+          <div className="draw-canvas__toolbar-row" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+            <div className="draw-canvas__palette" style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+              {PALETTE.map((c) => (
+                <button
+                  type="button"
+                  className="draw-canvas__swatch"
+                  key={c}
+                  onClick={() => { setColor(c); if (tool === 'eraser') setTool('brush'); }}
+                  title={c}
+                  aria-label={c}
+                  aria-pressed={tool !== 'eraser' && color === c}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    padding: 0,
+                    borderRadius: '50%',
+                    background: c,
+                    cursor: 'pointer',
+                    border: swatchBorder(c),
+                    outline: tool !== 'eraser' && color === c ? '2px solid var(--primary)' : 'none',
+                    outlineOffset: '2px',
+                  }}
+                />
+              ))}
+              <input
+                type="color"
+                className="draw-canvas__color-input"
+                value={color}
+                onChange={(e) => { setColor(e.target.value); if (tool === 'eraser') setTool('brush'); }}
+                title={t('paint.customColor')}
+                style={{ width: 28, height: 28, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
+              />
+            </div>
+
+            <div className="draw-canvas__size" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('paint.brushSize')}</span>
+              <input
+                type="range"
+                className="volume-slider draw-canvas__size-slider"
+                min={1}
+                max={40}
+                value={size}
+                onChange={(e) => setSize(Number(e.target.value))}
                 style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: '50%',
-                  background: c,
-                  cursor: 'pointer',
-                  border: swatchBorder(c),
-                  outline: tool !== 'eraser' && color === c ? '2px solid var(--primary)' : 'none',
-                  outlineOffset: '2px',
+                  width: 90,
+                  background: `linear-gradient(to right, var(--primary) ${((size - 1) / 39) * 100}%, var(--track) ${((size - 1) / 39) * 100}%)`,
                 }}
               />
-            ))}
-            <input
-              type="color"
-              value={color}
-              onChange={(e) => { setColor(e.target.value); if (tool === 'eraser') setTool('brush'); }}
-              title={t('paint.customColor')}
-              style={{ width: 28, height: 28, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
-            />
+            </div>
+
+            <div className="draw-canvas__tools">
+              <button type="button" className="draw-canvas__tool" style={toolBtn(tool === 'brush')} onClick={() => setTool('brush')} title={t('paint.brush')}>
+                <span aria-hidden="true">🖌</span><span className="draw-canvas__tool-label">{t('paint.brush')}</span>
+              </button>
+              <button type="button" className="draw-canvas__tool" style={toolBtn(tool === 'fill')} onClick={() => setTool('fill')} title={t('paint.fill')}>
+                <span aria-hidden="true">🪣</span><span className="draw-canvas__tool-label">{t('paint.fill')}</span>
+              </button>
+              <button type="button" className="draw-canvas__tool" style={toolBtn(tool === 'eraser')} onClick={() => setTool('eraser')} title={t('paint.eraser')}>
+                <span aria-hidden="true">🧽</span><span className="draw-canvas__tool-label">{t('paint.eraser')}</span>
+              </button>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('paint.brushSize')}</span>
-            <input
-              type="range"
-              className="volume-slider"
-              min={1}
-              max={40}
-              value={size}
-              onChange={(e) => setSize(Number(e.target.value))}
-              style={{
-                width: 90,
-                background: `linear-gradient(to right, var(--primary) ${((size - 1) / 39) * 100}%, var(--track) ${((size - 1) / 39) * 100}%)`,
-              }}
-            />
+          {/* Row 2: background controls + image + undo/clear */}
+          <div className="draw-canvas__toolbar-row draw-canvas__toolbar-row--secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
+            <div className="draw-canvas__background">
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('paint.bg')}</span>
+              <input
+                type="color"
+                className="draw-canvas__color-input"
+                value={bgColor ?? '#ffffff'}
+                onChange={(e) => setBgColor(e.target.value)}
+                title={t('paint.bgColor')}
+                style={{ width: 28, height: 28, padding: 0, border: 'none', background: 'none', cursor: 'pointer', opacity: transparent ? 0.4 : 1 }}
+              />
+              <button type="button" className="draw-canvas__tool" style={toolBtn(transparent)} onClick={() => setBgColor(transparent ? '#ffffff' : null)} title={t('paint.transparent')}>
+                <span aria-hidden="true">▧</span><span className="draw-canvas__tool-label">{t('paint.transparent')}</span>
+              </button>
+              <button type="button" className="draw-canvas__tool" style={toolBtn(false)} onClick={() => bgInputRef.current?.click()} title={t('paint.image')}>
+                <span aria-hidden="true">🖼</span><span className="draw-canvas__tool-label">{t('paint.image')}</span>
+              </button>
+            </div>
+
+            <div className="draw-canvas__history-tools">
+              <button type="button" className="draw-canvas__tool" style={{ ...toolBtn(false), opacity: canUndo ? 1 : 0.4 }} onClick={undo} disabled={!canUndo} title={t('paint.undo')}>
+                <span aria-hidden="true">↶</span><span className="draw-canvas__tool-label">{t('paint.undo')}</span>
+              </button>
+              <button type="button" className="draw-canvas__tool" style={toolBtn(false)} onClick={clear} title={t('paint.clear')}>
+                <span aria-hidden="true">🗑</span><span className="draw-canvas__tool-label">{t('paint.clear')}</span>
+              </button>
+            </div>
           </div>
-
-          <div style={{ flex: 1 }} />
-
-          <button style={toolBtn(tool === 'brush')} onClick={() => setTool('brush')}>🖌 {t('paint.brush')}</button>
-          <button style={toolBtn(tool === 'fill')} onClick={() => setTool('fill')}>🪣 {t('paint.fill')}</button>
-          <button style={toolBtn(tool === 'eraser')} onClick={() => setTool('eraser')}>🧽 {t('paint.eraser')}</button>
         </div>
 
-        {/* Row 2: background controls + image + undo/clear */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('paint.bg')}</span>
-          <input
-            type="color"
-            value={bgColor ?? '#ffffff'}
-            onChange={(e) => setBgColor(e.target.value)}
-            title={t('paint.bgColor')}
-            style={{ width: 28, height: 28, padding: 0, border: 'none', background: 'none', cursor: 'pointer', opacity: transparent ? 0.4 : 1 }}
-          />
-          <button style={toolBtn(transparent)} onClick={() => setBgColor(transparent ? '#ffffff' : null)}>
-            {t('paint.transparent')}
-          </button>
-          <button style={toolBtn(false)} onClick={() => bgInputRef.current?.click()}>🖼 {t('paint.image')}</button>
-
-          <div style={{ flex: 1 }} />
-
-          <button style={{ ...toolBtn(false), opacity: canUndo ? 1 : 0.4 }} onClick={undo} disabled={!canUndo} title={t('paint.undo')}>
-            ↶ {t('paint.undo')}
-          </button>
-          <button style={toolBtn(false)} onClick={clear} title={t('paint.clear')}>🗑 {t('paint.clear')}</button>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'center', background: 'var(--input-bg)', borderRadius: '8px', padding: '0.5rem' }}>
+        <div className="draw-canvas__canvas-frame" style={{ display: 'flex', justifyContent: 'center', background: 'var(--input-bg)', borderRadius: '8px', padding: '0.5rem' }}>
           <canvas
             ref={canvasRef}
+            className="draw-canvas__canvas"
             width={dims.w}
             height={dims.h}
             onPointerDown={handlePointerDown}
@@ -455,9 +479,9 @@ const DrawCanvas = ({ open, onClose, onApply, initialImage, streamQuestionId = n
         <input type="file" accept="image/*" ref={bgInputRef} style={{ display: 'none' }} onChange={handleBgChange} />
 
         {/* Actions */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
-          <button onClick={onClose} style={toolBtn(false)}>{t('common.cancel')}</button>
-          <button onClick={apply} className="btn-primary" style={{ ...toolBtn(true), padding: '0.5rem 1.1rem' }}>
+        <div className="draw-canvas__actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+          <button type="button" onClick={onClose} style={toolBtn(false)}>{t('common.cancel')}</button>
+          <button type="button" onClick={apply} className="btn-primary draw-canvas__apply" style={{ ...toolBtn(true), padding: '0.5rem 1.1rem' }}>
             ✓ {t('paint.use')}
           </button>
         </div>

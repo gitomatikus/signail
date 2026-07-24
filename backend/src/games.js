@@ -58,6 +58,10 @@ class Game {
     // Crocodile: one chosen player privately sees the question and submits a
     // text/image/audio response; everyone else then guesses by buzzing.
     this.crocodile = new Map();
+    // questionId -> Map(userId -> [{ value, time }]). Text-mode Crocodile
+    // players may make several guesses while the drawing develops; each entry
+    // keeps the server-measured seconds since the performer was assigned.
+    this.crocodileGuesses = new Map();
     // questionId -> { id, ended, batches: [{seq, ops}] }
     // Crocodile "draw" mode: the assigned performer (kept in `crocodile`)
     // streams pen-stroke ops live. `batches` is an in-memory backlog so late
@@ -206,6 +210,7 @@ class Game {
     this.secretAssignments.clear();
     this.karaoke.clear();
     this.crocodile.clear();
+    this.crocodileGuesses.clear();
     this.drawing.clear();
     this.votes.clear();
     this.revealedVotes.clear();
@@ -294,6 +299,13 @@ class Game {
       revealed: this.revealedPointAnswers.has(questionId),
       answers: this.pointAnswers.get(questionId) || new Map(),
       hints: this.pointHints.get(questionId) || new Map()
+    };
+  }
+
+  getCrocodileGuessesInfo(questionId) {
+    return {
+      revealed: this.revealedAnswers.has(questionId),
+      guesses: this.crocodileGuesses.get(questionId) || new Map()
     };
   }
 

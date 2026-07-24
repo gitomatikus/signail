@@ -188,6 +188,7 @@ const QuestionPage = () => {
   const [crocodileSelectorId, setCrocodileSelectorId] = useState(null);
   const [crocodileTargetId, setCrocodileTargetId] = useState(null);
   const [crocodileResponse, setCrocodileResponse] = useState(null);
+  const [crocodileGuesses, setCrocodileGuesses] = useState({});
   const [clicksLeftMap, setClicksLeftMap] = useState({});
   const [numberAnswers, setNumberAnswers] = useState({});
   const [pointAnswers, setPointAnswers] = useState({});
@@ -247,6 +248,7 @@ const QuestionPage = () => {
     setCrocodileSelectorId(null);
     setCrocodileTargetId(null);
     setCrocodileResponse(null);
+    setCrocodileGuesses({});
     setRedJudgedUsers(new Set());
     setHostTab('question');
     setHostAnswerSeen(false);
@@ -304,6 +306,24 @@ const QuestionPage = () => {
         if (data.revealed) {
           setIsQuestionRevealed(true);
         }
+      });
+      const storedUser = localStorage.getItem('user');
+      const myId = storedUser ? JSON.parse(storedUser).id : null;
+      const params = new URLSearchParams();
+      if (myId) params.set('userId', myId);
+      const ht = getHostToken(gameId);
+      if (ht) params.set('hostToken', ht);
+      const query = params.toString() ? `?${params.toString()}` : '';
+      hydrate(`/crocodile-guesses${query}`, (data) => {
+        const restored = data.guesses || {};
+        setCrocodileGuesses(prev => ({ ...restored, ...prev }));
+        const latest = {};
+        Object.entries(restored).forEach(([userId, history]) => {
+          if (Array.isArray(history) && history.length > 0) {
+            latest[userId] = history[history.length - 1].value;
+          }
+        });
+        setNumberAnswers(prev => ({ ...latest, ...prev }));
       });
     }
 
@@ -438,6 +458,19 @@ const QuestionPage = () => {
         }
       } else if (data.type === 'crocodile_response' && data.data.questionId === parseInt(questionId)) {
         setCrocodileResponse(data.data.value);
+      } else if (data.type === 'crocodile_guess_submitted' && data.data.questionId === parseInt(questionId)) {
+        const { userId, guess } = data.data;
+        if (guess) {
+          setCrocodileGuesses(prev => ({
+            ...prev,
+            [userId]: [...(prev[userId] || []), guess]
+          }));
+          setNumberAnswers(prev => ({ ...prev, [userId]: guess.value }));
+        } else {
+          setNumberAnswers(prev => (
+            prev[userId] === undefined ? { ...prev, [userId]: true } : prev
+          ));
+        }
       } else if (data.type === 'karaoke_start' && data.data.questionId === parseInt(questionId)) {
         // Everyone's countdown follows the performance length
         const durationMs = Number(data.data.durationMs);
@@ -477,6 +510,9 @@ const QuestionPage = () => {
         }
       } else if (data.type === 'number_answers' && data.data.questionId === parseInt(questionId)) {
         setNumberAnswers(prev => ({ ...prev, ...data.data.answers }));
+        if (data.data.guessHistories) {
+          setCrocodileGuesses(prev => ({ ...prev, ...data.data.guessHistories }));
+        }
         setAnswersRevealed(true);
       } else if (data.type === 'point_answer_submitted' && data.data.questionId === parseInt(questionId)) {
         setPointHints(prev => ({ ...prev, [data.data.userId]: data.data.hint }));
@@ -1393,7 +1429,7 @@ const QuestionPage = () => {
       if (isAdmin && isQuestionRevealed) {
         const questionCard = (
           <div className="question-card" style={cardStyle}>
-            <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
+            <div className="question-card-badge" style={cardBadgeStyle}>{t('question.questionLabel')}</div>
             {playField}
           </div>
         );
@@ -2072,11 +2108,18 @@ const QuestionPage = () => {
   };
 
   const handleSubmitCrocodileResponse = (value) => {
-    if (!value || currentUserId !== crocodileTargetId || crocodileResponse) {
+    if (!value || (!isAdmin && currentUserId !== crocodileTargetId) || crocodileResponse) {
       return;
     }
     setCrocodileResponse(value); // optimistic; the broadcast echo is idempotent
     wsManager.sendCrocodileResponse(parseInt(questionId), value);
+  };
+
+  const handleSubmitCrocodileGuess = (value) => {
+    if (!currentUserId || !value || currentUserId === crocodileTargetId || answersRevealed) {
+      return;
+    }
+    wsManager.sendCrocodileGuess(parseInt(questionId), value);
   };
 
   // One candidate avatar in the crocodile picker (mirrors the cat-in-the-bag UI)
@@ -2127,7 +2170,7 @@ const QuestionPage = () => {
 
   const renderCrocodileResponseCard = () => (
     <div className="question-card" style={cardStyle}>
-      <div style={cardBadgeStyle}>{t('question.crocodileResponseLabel')}</div>
+      <div className="question-card-badge" style={cardBadgeStyle}>{t('question.crocodileResponseLabel')}</div>
       {renderAnswerValue(crocodileResponse, { imgMaxWidth: 460, imgMaxHeight: 340, audioWidth: 420 })}
     </div>
   );
@@ -2191,7 +2234,7 @@ const QuestionPage = () => {
     // and host always see it through their own question card.
     const requestCard = isAnswerRevealed ? (
       <div className="question-card" style={cardStyle}>
-        <div style={cardBadgeStyle}>{t('question.crocodileRequestLabel')}</div>
+        <div className="question-card-badge" style={cardBadgeStyle}>{t('question.crocodileRequestLabel')}</div>
         {(question.rules || []).map((rule, index) => (
           <div key={index} style={{ marginBottom: '8px', width: '100%' }}>
             {renderRule(rule)}
@@ -2200,6 +2243,41 @@ const QuestionPage = () => {
       </div>
     ) : null;
 
+    const renderGuessValue = (guess, index) => (
+      <div key={`${index}-${guess.time}`} className="crocodile-guess-history__item">
+        <span className="crocodile-guess-history__time">
+          {Number.isFinite(Number(guess.time)) ? `${Number(guess.time).toFixed(1)}s` : '—'}
+        </span>
+        <div className="crocodile-guess-history__value">
+          {renderAnswerValue(guess.value, { imgMaxWidth: 160, imgMaxHeight: 100, audioWidth: 200 })}
+        </div>
+      </div>
+    );
+
+    const renderGuessComposer = () => {
+      const myGuesses = currentUserId ? (crocodileGuesses[currentUserId] || []) : [];
+      return (
+        <div className="answer-composer-card crocodile-guess-composer" style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
+          {myGuesses.length > 0 && (
+            <div className="crocodile-guess-history crocodile-guess-history--mine">
+              <div className="crocodile-guess-history__title">{t('question.yourGuesses')}</div>
+              {myGuesses.map(renderGuessValue)}
+            </div>
+          )}
+          {!answersRevealed && (
+            <AnswerComposer
+              key={`crocodile-guess-${questionId}`}
+              onSubmit={handleSubmitCrocodileGuess}
+              onPreviewImage={setLightboxImage}
+              submitLabel={myGuesses.length > 0 ? t('question.submitAnotherGuess') : t('question.submitAnswer')}
+              buttonStyle={buttonStyle}
+              clearAfterSubmit
+            />
+          )}
+        </div>
+      );
+    };
+
     // PHASE 2: a performer is assigned and draws LIVE. Everyone watches the
     // strokes stream in; guessers answer concurrently by the configured method
     // (dixit = type a guess, fastest = buzz, choice = pick). The performer's
@@ -2207,9 +2285,12 @@ const QuestionPage = () => {
     // drops everyone into PHASE 3 reveal/scoring.
     if (!crocodileResponse) {
       const liveCanvas = (mode) => (
-        <div style={{ ...cardStyle, minHeight: 'auto', padding: mode === 'performer' ? '1.5rem' : '1rem' }}>
+        <div
+          className={`crocodile-live-card crocodile-live-card--${mode}`}
+          style={{ ...cardStyle, minHeight: 'auto', padding: mode === 'performer' ? '1.5rem' : '1rem' }}
+        >
           {mode === 'performer' && (
-            <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+            <div className="crocodile-draw-instructions" style={{ fontSize: '1.1rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
               {t('question.crocodileDrawPrompt')}
             </div>
           )}
@@ -2218,7 +2299,9 @@ const QuestionPage = () => {
             questionId={parseInt(questionId)}
             mode={mode}
             currentUserId={currentUserId}
-            onFinish={mode === 'performer' ? handleSubmitCrocodileResponse : undefined}
+            onFinish={mode === 'performer' || mode === 'host'
+              ? handleSubmitCrocodileResponse
+              : undefined}
           />
         </div>
       );
@@ -2226,7 +2309,7 @@ const QuestionPage = () => {
       if (isPerformer) {
         // The performer sees the prompt (their plain question card) and draws.
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="crocodile-performer-layout" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {renderNormalContent()}
             {liveCanvas('performer')}
           </div>
@@ -2257,29 +2340,12 @@ const QuestionPage = () => {
         );
       }
       if (guessMethod === 'text') {
-        const myGuess = currentUserId ? numberAnswers[currentUserId] : undefined;
-        const hasGuessed = myGuess !== undefined;
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {header}
             {liveCanvas('watcher')}
             {requestCard}
-            <div className="answer-composer-card" style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
-              {hasGuessed ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
-                  {renderAnswerValue(myGuess)}
-                </div>
-              ) : (
-                <AnswerComposer
-                  key={`crocodile-guess-${questionId}`}
-                  onSubmit={handleSubmitTextAnswer}
-                  onPreviewImage={setLightboxImage}
-                  submitLabel={t('question.submitAnswer')}
-                  buttonStyle={buttonStyle}
-                />
-              )}
-            </div>
+            {renderGuessComposer()}
           </div>
         );
       }
@@ -2343,29 +2409,12 @@ const QuestionPage = () => {
 
     // Dixit: everyone types their guess (mirrors the text-answer flow)
     if (guessMethod === 'text') {
-      const myGuess = currentUserId ? numberAnswers[currentUserId] : undefined;
-      const hasGuessed = myGuess !== undefined;
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {header}
           {responseCard}
           {requestCard}
-          <div className="answer-composer-card" style={{ ...cardStyle, minHeight: 'auto', padding: '1.5rem' }}>
-            {hasGuessed ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{t('question.yourAnswer')}</div>
-                {renderAnswerValue(myGuess)}
-              </div>
-            ) : (
-              <AnswerComposer
-                key={`crocodile-guess-${questionId}`}
-                onSubmit={handleSubmitTextAnswer}
-                onPreviewImage={setLightboxImage}
-                submitLabel={t('question.submitAnswer')}
-                buttonStyle={buttonStyle}
-              />
-            )}
-          </div>
+          {renderGuessComposer()}
           {answerCard}
         </div>
       );
@@ -2472,7 +2521,7 @@ const QuestionPage = () => {
       if (isAdmin && isQuestionRevealed) {
         const questionCard = (
           <div className="question-card" style={cardStyle}>
-            <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
+            <div className="question-card-badge" style={cardBadgeStyle}>{t('question.questionLabel')}</div>
             {playField}
           </div>
         );
@@ -2711,7 +2760,7 @@ const QuestionPage = () => {
         }
         const questionCard = (
           <div className="question-card" style={cardStyle}>
-            <div style={cardBadgeStyle}>{t('question.questionLabel')}</div>
+            <div className="question-card-badge" style={cardBadgeStyle}>{t('question.questionLabel')}</div>
             {question.rules.map((rule, index) => (
               <div key={index} style={{ marginBottom: '8px', width: '100%' }}>
                 {renderRule(rule)}
@@ -2736,7 +2785,7 @@ const QuestionPage = () => {
   // show players (controls are stripped), so keep the audio mounted (hidden)
   // for playback but skip the empty card entirely.
   const renderRuleCard = (rule, badge) => {
-    const badgeEl = badge ? <div style={cardBadgeStyle}>{badge}</div> : null;
+    const badgeEl = badge ? <div className="question-card-badge" style={cardBadgeStyle}>{badge}</div> : null;
     if (rule.type === 'embedded') {
       // Reveal images render through ProgressiveImage inside the card
       if (ruleHasReveal(rule.content)) {
@@ -2766,8 +2815,35 @@ const QuestionPage = () => {
     return <div className="question-card" style={cardStyle}>{badgeEl}{renderRule(rule)}</div>;
   };
 
+  const playerAnswer = currentUserId ? numberAnswers[currentUserId] : undefined;
+  const exclusiveObserver = isExclusiveSelection(question)
+    && (!secretTargetId || currentUserId !== secretTargetId);
+  const playerHasResponded = isBuzzResponse
+    ? hasCurrentUserBuzzed
+    : question.type === 'find-a-cat'
+      ? hasRecordedTime || isOutOfClicks
+      : question.type === 'point-on-image'
+        ? Boolean(currentUserId && pointAnswers[currentUserId])
+        : playerAnswer !== undefined;
+  const playerFocusMode = !isAdmin
+    && Boolean(currentUserId)
+    && !playerHasResponded
+    && !isAnswerRevealed
+    && !exclusiveObserver
+    && !['karaoke', 'crocodile', 'spectrum'].includes(question.type);
+  const crocodilePerformerMode = question.type === 'crocodile'
+    && !crocodileResponse
+    && Boolean(currentUserId)
+    && currentUserId === crocodileTargetId;
+  const questionPageClassName = [
+    'question-page',
+    question.type === 'find-a-cat' ? 'question-page--find-a-cat' : '',
+    playerFocusMode ? 'question-page--player-focus' : '',
+    crocodilePerformerMode ? 'question-page--crocodile-performer' : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className={`question-page${question.type === 'find-a-cat' ? ' question-page--find-a-cat' : ''}`} style={pageStyle}>
+    <div className={questionPageClassName} style={pageStyle}>
       {/* Header: Settings button and the Jeoparty logo */}
       <div className="question-brand-row" style={{
         display: 'flex',
@@ -2943,7 +3019,7 @@ const QuestionPage = () => {
         </div>
       )}
       {/* Main board: rules grid */}
-      <div style={{
+      <div className="question-stage" style={{
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
@@ -3117,6 +3193,7 @@ const QuestionPage = () => {
           crocodileTargetId={question?.type === 'crocodile' ? crocodileTargetId : null}
           clicksLeftMap={clicksLeftMap}
           numberAnswers={numberAnswers}
+          crocodileGuesses={crocodileGuesses}
           pointAnswers={pointAnswers}
           answersRevealed={answersRevealed}
           responseRevealed={isResponseRevealed}

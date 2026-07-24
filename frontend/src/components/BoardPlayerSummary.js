@@ -89,8 +89,10 @@ const BoardPlayerSummary = () => {
                 type="button"
                 key={player.id || player.name}
                 className={`board-player-chip${isCurrentUser ? ' board-player-chip--you' : ''}`}
-                onClick={() => hasExpandableRoster && setIsOpen(true)}
+                onClick={() => setIsOpen(true)}
                 aria-label={`${player.name}, ${numericScore(player)}`}
+                aria-haspopup="dialog"
+                aria-expanded={isOpen}
               >
                 <PlayerAvatar player={player} />
                 <span className="board-player-chip__copy">
@@ -112,6 +114,8 @@ const BoardPlayerSummary = () => {
               type="button"
               className="board-player-chip board-player-chip--host"
               onClick={() => setIsOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={isOpen}
             >
               <PlayerAvatar player={{
                 imageUrl: gameInfo.hostImageUrl,

@@ -379,9 +379,12 @@ class WebSocketManager {
       if (!game.revealedAnswers.has(questionId)) {
         game.revealedAnswers.add(questionId);
         const answers = game.questionAnswers.get(questionId) || new Map();
+        const guessHistories = game.getQuestionType(questionId) === 'crocodile'
+          ? Object.fromEntries(game.getCrocodileGuessesInfo(questionId).guesses)
+          : undefined;
         game.broadcast({
           type: 'number_answers',
-          data: { questionId, answers: Object.fromEntries(answers) }
+          data: { questionId, answers: Object.fromEntries(answers), guessHistories }
         });
       }
     } else if (data.type === 'secret_assign') {
@@ -505,29 +508,79 @@ class WebSocketManager {
       // cat-in-the-bag, the selector may pick themselves.
       const canAssign = !existing || (ws.isHost && !existing.response);
       if (targetUserId && canAssign) {
+        const samePerformer = existing?.targetUserId === targetUserId;
+        if (existing && !samePerformer) {
+          game.crocodileGuesses.delete(questionId);
+          game.questionAnswers.delete(questionId);
+        }
         game.crocodile.set(questionId, {
           targetUserId,
           selectorUserId: selectorUserId || (existing ? existing.selectorUserId : null),
-          response: existing ? existing.response : null
+          response: existing ? existing.response : null,
+          startedAt: samePerformer ? (existing.startedAt || Date.now()) : Date.now()
         });
         game.broadcast({
           type: 'crocodile_assign',
           data: { questionId, targetUserId, selectorUserId: selectorUserId || null }
         });
       }
+    } else if (data.type === 'crocodile_guess') {
+      // Text-mode Crocodile is an active guessing game: a player can submit
+      // several attempts while the drawing develops. Keep a bounded, timed
+      // history and also mirror the latest value into questionAnswers so the
+      // existing host scoring/reveal flow remains compatible.
+      const { questionId, value } = data.data || {};
+      const entry = game.crocodile.get(questionId);
+      const sender = game.onlineUsers.get(ws);
+      if (!entry || !sender || sender.id === entry.targetUserId
+        || game.revealedAnswers.has(questionId) || !this.isValidAnswerValue(value)) {
+        return;
+      }
+      if (!game.crocodileGuesses.has(questionId)) {
+        game.crocodileGuesses.set(questionId, new Map());
+      }
+      const histories = game.crocodileGuesses.get(questionId);
+      const history = histories.get(sender.id) || [];
+      if (history.length >= 20) return;
+      const guess = {
+        value,
+        time: Number((Math.max(0, Date.now() - (entry.startedAt || Date.now())) / 1000).toFixed(3))
+      };
+      // Bound the full per-player history as well as each individual answer.
+      if (JSON.stringify([...history, guess]).length > 8000000) return;
+      history.push(guess);
+      histories.set(sender.id, history);
+      if (!game.questionAnswers.has(questionId)) {
+        game.questionAnswers.set(questionId, new Map());
+      }
+      game.questionAnswers.get(questionId).set(sender.id, value);
+
+      game.sockets.forEach((client) => {
+        if (client.readyState !== WebSocket.OPEN) return;
+        const clientUser = game.onlineUsers.get(client);
+        const maySeeGuess = client.isHost || clientUser?.id === sender.id;
+        client.send(JSON.stringify({
+          type: 'crocodile_guess_submitted',
+          data: {
+            questionId,
+            userId: sender.id,
+            count: history.length,
+            ...(maySeeGuess ? { guess } : {})
+          }
+        }));
+      });
     } else if (data.type === 'crocodile_response') {
-      // Only the chosen performer may submit, exactly once. The response is a
-      // text/image/audio string and is broadcast unmasked so everyone else can
-      // start guessing.
+      // The chosen performer normally submits; the host may also finalize the
+      // host-side replay when ending a live drawing. First valid response wins.
       const { questionId, value } = data.data;
       const entry = game.crocodile.get(questionId);
       const sender = game.onlineUsers.get(ws);
-      if (entry && !entry.response && sender && sender.id === entry.targetUserId
-        && this.isValidAnswerValue(value)) {
+      const maySubmit = ws.isHost || (sender && sender.id === entry?.targetUserId);
+      if (entry && !entry.response && maySubmit && this.isValidAnswerValue(value)) {
         entry.response = value;
         game.broadcast({
           type: 'crocodile_response',
-          data: { questionId, userId: sender.id, value }
+          data: { questionId, userId: entry.targetUserId, value }
         });
       }
     } else if (data.type === 'drawing_start') {

@@ -10,7 +10,7 @@ import { pointDistancePercent, isPointAnswerCorrect } from '../utils/pointOnImag
 import { getPlayerAccentFrame, getPlayerColor } from '../utils/playerIdentity';
 import { formatSpectrumPoints } from '../utils/spectrum';
 
-const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, selectedTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, pointAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false, spectrumAnswererIds = [], spectrumHostSubmitted = false, spectrumSuggestions = {}, spectrumMultipliers = {} }) => {
+const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmin = false, question, selectedTargetId = null, crocodileTargetId = null, clicksLeftMap = {}, numberAnswers = {}, crocodileGuesses = {}, pointAnswers = {}, answersRevealed = false, responseRevealed = false, votes = {}, votesRevealed = false, spectrumAnswererIds = [], spectrumHostSubmitted = false, spectrumSuggestions = {}, spectrumMultipliers = {} }) => {
   const location = useLocation();
   const { t } = useTranslation();
   const isQuestionPage = location.pathname.includes('/question/');
@@ -229,6 +229,32 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
     }
   };
 
+  const showCrocodileGuessBoard = isCrocodileCollect
+    && !isCrocodileChoice
+    && (answersRevealed || isAdmin);
+  const crocodileGuessUsers = showCrocodileGuessBoard
+    ? users.filter(player => Array.isArray(crocodileGuesses[player.id])
+      && crocodileGuesses[player.id].length > 0)
+    : [];
+
+  const renderCrocodileGuessValue = (guess) => {
+    if (typeof guess.value === 'string' && guess.value.startsWith('data:image')) {
+      return (
+        <img
+          src={guess.value}
+          alt="answer"
+          title={t('question.clickToEnlarge')}
+          onClick={() => setLightboxSrc(guess.value)}
+          className="online-user-guess-history__image"
+        />
+      );
+    }
+    if (typeof guess.value === 'string' && guess.value.startsWith('data:audio')) {
+      return <audio controls src={guess.value} className="online-user-guess-history__audio" />;
+    }
+    return <span className="online-user-guess-history__value">{guess.value}</span>;
+  };
+
   return (
     <div className="online-users" style={{
       width: '100%',
@@ -284,6 +310,9 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
         const hasSpectrumAnswer = isSpectrumQuestion && spectrumAnswererIds.includes(user.id);
         const spectrumSuggestion = hasSpectrumSuggestion ? Number(spectrumSuggestions[user.id]) : null;
         const showSpectrumSuggestion = isAdmin && hasSpectrumSuggestion && !isUpdated && !isPenalized;
+        const guessHistory = Array.isArray(crocodileGuesses[user.id])
+          ? crocodileGuesses[user.id]
+          : [];
         const showAwardRow = !isSpectrumQuestion && isAdmin && !isUpdated && !isPenalized && (
           selectedTargetId
             ? user.id === selectedTargetId
@@ -307,7 +336,7 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                           : isCrocodileCollect
                             // Host sees guesses live, so they can score as soon
                             // as a guess arrives (no need to wait for reveal)
-                            ? (numberAnswers[user.id] !== undefined)
+                            ? (guessHistory.length > 0 || numberAnswers[user.id] !== undefined)
                             : position === 0)
                       : isVotingQuestion
                         // Host hands out +/- to everyone once answers are out
@@ -778,8 +807,8 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
                   for the admin, choice picks appear in real time. Correctness colors
                   appear for the admin right away and for players only after the
                   admin shows the response. */}
-              {(isChoiceQuestion || isTextQuestion || isCrocodileCollect)
-                && (answersRevealed || (isAdmin && (isChoiceQuestion || isCrocodileCollect)))
+              {(isChoiceQuestion || isTextQuestion || (isCrocodileCollect && isCrocodileChoice))
+                && (answersRevealed || (isAdmin && (isChoiceQuestion || (isCrocodileCollect && isCrocodileChoice))))
                 && submittedAnswer !== undefined && submittedAnswer !== true && (
                 <div className="glass-panel" style={{
                   marginTop: '4px',
@@ -919,6 +948,50 @@ const OnlineUsers = ({ users, elapsedTime, currentUserId, userTimes = {}, isAdmi
             </span>
           </div>
         </div>
+      )}
+
+      {crocodileGuessUsers.length > 0 && (
+        <section className="crocodile-guess-board" aria-label={t('question.crocodileGuesses')}>
+          <h3 className="crocodile-guess-board__title">{t('question.crocodileGuesses')}</h3>
+          <div className="crocodile-guess-board__grid">
+            {crocodileGuessUsers.map((player) => {
+              const guessHistory = crocodileGuesses[player.id];
+              const playerColor = getPlayerColor(player);
+              const imageUrl = player.imageUrl || '';
+              const isVideo = imageUrl.toLowerCase().endsWith('.mp4');
+
+              return (
+                <article
+                  className="glass-panel crocodile-guess-card"
+                  key={player.id || player.name}
+                  style={{ '--guess-player-color': playerColor }}
+                >
+                  <header className="crocodile-guess-card__header">
+                    <span className="crocodile-guess-card__avatar" aria-hidden="true">
+                      {isVideo ? (
+                        <video src={imageUrl} autoPlay loop muted playsInline />
+                      ) : (
+                        <img src={imageUrl} alt="" />
+                      )}
+                    </span>
+                    <strong className="crocodile-guess-card__name">{player.name}</strong>
+                    <span className="crocodile-guess-card__count">{guessHistory.length}</span>
+                  </header>
+                  <div className="online-user-guess-history">
+                    {guessHistory.map((guess, index) => (
+                      <div className="online-user-guess-history__item" key={`${index}-${guess.time}`}>
+                        <span className="online-user-guess-history__time">
+                          {Number.isFinite(Number(guess.time)) ? `${Number(guess.time).toFixed(1)}s` : '—'}
+                        </span>
+                        {renderCrocodileGuessValue(guess)}
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />

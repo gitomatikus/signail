@@ -3,11 +3,17 @@ import wsManager from '../utils/websocket';
 import { useTranslation } from '../i18n/LanguageContext';
 import {
   DRAW_W,
-  DRAW_H,
   PALETTE,
   createReplay,
   pointerToNorm,
 } from '../utils/drawingEngine';
+
+// A square live board gives phone players substantially more usable drawing
+// room than the one-shot editor's wide 12:7 canvas. Every CrocodileDrawing
+// instance uses the same dimensions, so streamed strokes still replay without
+// aspect-ratio distortion.
+const LIVE_DRAW_W = DRAW_W;
+const LIVE_DRAW_H = DRAW_W;
 
 // Live crocodile "draw" mode. The chosen performer draws on a canvas whose
 // pen-stroke ops stream to everyone in real time (mirrors the karaoke chunk
@@ -18,7 +24,7 @@ import {
 // crocodile response — flipping everyone into the normal reveal/score step.
 //
 // mode: 'performer' | 'host' | 'watcher'
-// onFinish(pngDataUrl): performer only — submit the flattened drawing.
+// onFinish(pngDataUrl): performer or host — submit the flattened drawing.
 // idleHidden: watcher/host render nothing until a drawing is actually streaming
 //   (used by cat-in-the-bag, where drawing is optional). Crocodile leaves it
 //   false so the canvas shows as soon as the round begins.
@@ -106,11 +112,9 @@ const CrocodileDrawing = ({ questionId, mode, currentUserId, onFinish, idleHidde
     wsManager.sendDrawingStart(questionId, id);
   }, [questionId, currentUserId, ensureReplay]);
 
-  const finish = useCallback(() => {
-    if (finishedRef.current) return;
+  const captureDrawing = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    finishedRef.current = true;
+    if (!canvas) return null;
     // Composite onto white so the response card shows the drawing on a solid bg.
     const off = document.createElement('canvas');
     off.width = canvas.width;
@@ -119,10 +123,17 @@ const CrocodileDrawing = ({ questionId, mode, currentUserId, onFinish, idleHidde
     octx.fillStyle = '#ffffff';
     octx.fillRect(0, 0, off.width, off.height);
     octx.drawImage(canvas, 0, 0);
-    const png = off.toDataURL('image/png');
+    return off.toDataURL('image/png');
+  }, []);
+
+  const finish = useCallback(() => {
+    if (finishedRef.current) return;
+    const png = captureDrawing();
+    if (!png) return;
+    finishedRef.current = true;
     wsManager.sendDrawingEnd(questionId, perfIdRef.current);
     if (onFinish) onFinish(png);
-  }, [questionId, onFinish]);
+  }, [captureDrawing, questionId, onFinish]);
 
   // ----- Performer pointer handlers -----
 
@@ -243,7 +254,18 @@ const CrocodileDrawing = ({ questionId, mode, currentUserId, onFinish, idleHidde
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPerformer, questionId]);
 
-  const hostEnd = () => wsManager.sendDrawingEnd(questionId, watchPerfRef.current);
+  const hostEnd = () => {
+    if (finishedRef.current || !watchPerfRef.current) return;
+    const png = captureDrawing();
+    if (!png) return;
+    finishedRef.current = true;
+    setEnded(true);
+    wsManager.sendDrawingEnd(questionId, watchPerfRef.current);
+    // Finalize from the host's replayed canvas as well. This makes the host
+    // completion path independent of the performer's connection and advances
+    // the question to the same reveal controls as the performer's Done button.
+    if (onFinish) onFinish(png);
+  };
 
   // ----- UI -----
   const toolBtn = (active) => ({
@@ -261,19 +283,23 @@ const CrocodileDrawing = ({ questionId, mode, currentUserId, onFinish, idleHidde
     c.toLowerCase() === '#ffffff' ? '1px solid var(--glass-border)' : '1px solid transparent';
 
   const canvasEl = (
-    <div style={{ display: 'flex', justifyContent: 'center', background: 'var(--input-bg)', borderRadius: '8px', padding: '0.5rem' }}>
+    <div
+      className="crocodile-drawing__canvas-frame"
+      style={{ display: 'flex', justifyContent: 'center', background: 'var(--input-bg)', borderRadius: '8px', padding: '0.5rem' }}
+    >
       <canvas
         ref={canvasRef}
-        width={DRAW_W}
-        height={DRAW_H}
+        className="crocodile-drawing__canvas"
+        width={LIVE_DRAW_W}
+        height={LIVE_DRAW_H}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endStroke}
         onPointerLeave={endStroke}
         style={{
           width: '100%',
-          maxWidth: DRAW_W,
-          aspectRatio: `${DRAW_W} / ${DRAW_H}`,
+          maxWidth: LIVE_DRAW_W,
+          aspectRatio: '1',
           borderRadius: 6,
           background: '#ffffff',
           touchAction: 'none',
@@ -288,7 +314,7 @@ const CrocodileDrawing = ({ questionId, mode, currentUserId, onFinish, idleHidde
     if (idleHidden && !active) return null;
     // Watcher / host: read-only canvas, plus a host-only End control.
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%' }}>
+      <div className="crocodile-drawing crocodile-drawing--viewer" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%' }}>
         {canvasEl}
         {isHost && active && !ended && (
           <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -301,17 +327,22 @@ const CrocodileDrawing = ({ questionId, mode, currentUserId, onFinish, idleHidde
 
   // Performer: full toolbar + Done.
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-        <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+    <div className="crocodile-drawing crocodile-drawing--performer" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%' }}>
+      <div className="crocodile-drawing__toolbar" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+        <div className="crocodile-drawing__palette" style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
           {PALETTE.map((c) => (
-            <div
+            <button
+              type="button"
+              className="crocodile-drawing__swatch"
               key={c}
               onClick={() => { setColor(c); if (tool === 'eraser') setTool('brush'); }}
               title={c}
+              aria-label={c}
+              aria-pressed={tool !== 'eraser' && color === c}
               style={{
                 width: 24,
                 height: 24,
+                padding: 0,
                 borderRadius: '50%',
                 background: c,
                 cursor: 'pointer',
@@ -323,6 +354,7 @@ const CrocodileDrawing = ({ questionId, mode, currentUserId, onFinish, idleHidde
           ))}
           <input
             type="color"
+            className="crocodile-drawing__custom-color"
             value={color}
             onChange={(e) => { setColor(e.target.value); if (tool === 'eraser') setTool('brush'); }}
             title={t('paint.customColor')}
@@ -330,11 +362,11 @@ const CrocodileDrawing = ({ questionId, mode, currentUserId, onFinish, idleHidde
           />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div className="crocodile-drawing__size" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('paint.brushSize')}</span>
           <input
             type="range"
-            className="volume-slider"
+            className="volume-slider crocodile-drawing__size-slider"
             min={1}
             max={40}
             value={size}
@@ -346,17 +378,29 @@ const CrocodileDrawing = ({ questionId, mode, currentUserId, onFinish, idleHidde
           />
         </div>
 
-        <button style={toolBtn(tool === 'brush')} onClick={() => setTool('brush')}>🖌 {t('paint.brush')}</button>
-        <button style={toolBtn(tool === 'fill')} onClick={() => setTool('fill')}>🪣 {t('paint.fill')}</button>
-        <button style={toolBtn(tool === 'eraser')} onClick={() => setTool('eraser')}>🧽 {t('paint.eraser')}</button>
-        <button style={toolBtn(false)} onClick={undo} title={t('paint.undo')}>↶ {t('paint.undo')}</button>
-        <button style={toolBtn(false)} onClick={clear} title={t('paint.clear')}>🗑 {t('paint.clear')}</button>
+        <div className="crocodile-drawing__tools">
+          <button className="crocodile-drawing__tool" style={toolBtn(tool === 'brush')} onClick={() => setTool('brush')} title={t('paint.brush')}>
+            <span aria-hidden="true">🖌</span><span className="crocodile-drawing__tool-label">{t('paint.brush')}</span>
+          </button>
+          <button className="crocodile-drawing__tool" style={toolBtn(tool === 'fill')} onClick={() => setTool('fill')} title={t('paint.fill')}>
+            <span aria-hidden="true">🪣</span><span className="crocodile-drawing__tool-label">{t('paint.fill')}</span>
+          </button>
+          <button className="crocodile-drawing__tool" style={toolBtn(tool === 'eraser')} onClick={() => setTool('eraser')} title={t('paint.eraser')}>
+            <span aria-hidden="true">🧽</span><span className="crocodile-drawing__tool-label">{t('paint.eraser')}</span>
+          </button>
+          <button className="crocodile-drawing__tool" style={toolBtn(false)} onClick={undo} title={t('paint.undo')}>
+            <span aria-hidden="true">↶</span><span className="crocodile-drawing__tool-label">{t('paint.undo')}</span>
+          </button>
+          <button className="crocodile-drawing__tool" style={toolBtn(false)} onClick={clear} title={t('paint.clear')}>
+            <span aria-hidden="true">🗑</span><span className="crocodile-drawing__tool-label">{t('paint.clear')}</span>
+          </button>
+        </div>
       </div>
 
       {canvasEl}
 
-      <div style={{ display: 'flex', justifyContent: 'center' }}>
-        <button onClick={finish} className="btn-primary" style={{ ...toolBtn(true), padding: '0.5rem 1.4rem' }}>
+      <div className="crocodile-drawing__actions" style={{ display: 'flex', justifyContent: 'center' }}>
+        <button onClick={finish} className="btn-primary crocodile-drawing__done" style={{ ...toolBtn(true), padding: '0.5rem 1.4rem' }}>
           ✓ {t('question.crocodileDoneDrawing')}
         </button>
       </div>

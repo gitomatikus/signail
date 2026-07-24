@@ -297,6 +297,10 @@ class WebSocketManager {
     this.send({ type: 'crocodile_response', data: { questionId, value } });
   }
 
+  sendCrocodileGuess(questionId, value) {
+    this.send({ type: 'crocodile_guess', data: { questionId, value } });
+  }
+
   // Crocodile "draw" mode: the performer streams pen-stroke ops live; mirrors
   // the karaoke chunk pipeline above.
   sendDrawingStart(questionId, performanceId) {
